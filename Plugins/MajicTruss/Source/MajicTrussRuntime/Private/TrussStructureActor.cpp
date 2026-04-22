@@ -132,7 +132,7 @@ void ATrussStructureActor::BuildArch()
 	const float RightLegX = CornerWidthCm + SpanCombination.ActualLengthCm;
 	const float TopCornerZ = BaseHeightCm + LegCombination.ActualLengthCm;
 	const float LegCenterInsetX = ArchCornerConnectionOffsetCm + (CornerWidthCm * 0.5f);
-	const FRotator VerticalRotation(0.0f, 0.0f, -90.0f);
+	const FRotator VerticalRotation(0.0f, 90.0f, 90.0f);
 
 	for (float LegX : {LeftLegX, RightLegX})
 	{
