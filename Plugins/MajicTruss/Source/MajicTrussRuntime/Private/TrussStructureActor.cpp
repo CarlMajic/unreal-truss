@@ -79,8 +79,8 @@ void ATrussStructureActor::BuildRectangle()
 
 	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, 0.0f, 0.0f), FRotator::ZeroRotator);
 	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, BackY, 0.0f), FRotator::ZeroRotator);
-	AddStraightRun(WidthCombination.Pieces, FVector(0.0f, CornerY, 0.0f), FRotator(0.0f, 90.0f, 0.0f));
-	AddStraightRun(WidthCombination.Pieces, FVector(RightX, CornerY, 0.0f), FRotator(0.0f, 90.0f, 0.0f));
+	AddStraightRun(WidthCombination.Pieces, FVector(RectangleYRunXOffsetCm, CornerY, 0.0f), FRotator(0.0f, 90.0f, 0.0f));
+	AddStraightRun(WidthCombination.Pieces, FVector(RightX + RectangleYRunXOffsetCm, CornerY, 0.0f), FRotator(0.0f, 90.0f, 0.0f));
 
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet((2.0f * (CornerX + CornerY)) + (2.0f * LengthCombination.ActualLengthCm) + (2.0f * WidthCombination.ActualLengthCm));
 }

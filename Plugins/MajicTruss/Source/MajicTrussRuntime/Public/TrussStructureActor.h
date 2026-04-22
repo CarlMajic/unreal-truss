@@ -50,6 +50,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "2.0", Units = "ft"))
 	float RectangleWidthFt = 16.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (Units = "cm"))
+	float RectangleYRunXOffsetCm = 30.48f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;
 
