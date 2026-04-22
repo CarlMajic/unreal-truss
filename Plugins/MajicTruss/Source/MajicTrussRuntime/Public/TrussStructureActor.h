@@ -64,13 +64,16 @@ public:
 	float ArchCornerConnectionOffsetCm = 15.24f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
-	float ArchLegYOffsetCm = -30.48f;
+	float ArchLegYOffsetCm = 15.24f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
 	float ArchVerticalLegXOffsetCm = 30.48f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
-	float ArchSpanYOffsetCm = -15.24f;
+	float ArchBaseYOffsetCm = -15.24f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
+	float ArchSpanYOffsetCm = 15.24f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch")
 	FRotator ArchVerticalSectionRotation = FRotator(0.0f, 90.0f, 0.0f);

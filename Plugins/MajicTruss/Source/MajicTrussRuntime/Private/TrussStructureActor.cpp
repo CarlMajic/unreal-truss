@@ -138,7 +138,7 @@ void ATrussStructureActor::BuildArch()
 	{
 		const float LegCenterX = LegX + LegCenterInsetX;
 		const float BaseMinX = LegCenterX - (BaseExtent.X * 0.5f);
-		const float BaseMinY = ArchLegYOffsetCm - (BaseExtent.Y * 0.5f);
+		const float BaseMinY = ArchBaseYOffsetCm - (BaseExtent.Y * 0.5f);
 		AddPieceInstance(ETrussPieceType::Base, FVector(BaseMinX, BaseMinY, 0.0f), FRotator::ZeroRotator);
 
 		AddStraightRun(
