@@ -12,7 +12,8 @@ UENUM(BlueprintType)
 enum class ETrussBuildMode : uint8
 {
 	StraightRun UMETA(DisplayName = "Straight Run"),
-	Rectangle UMETA(DisplayName = "Rectangle")
+	Rectangle UMETA(DisplayName = "Rectangle"),
+	Arch UMETA(DisplayName = "Arch")
 };
 
 UCLASS(BlueprintType)
@@ -53,6 +54,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (Units = "cm"))
 	float RectangleYRunXOffsetCm = 30.48f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (ClampMin = "4.0", Units = "ft"))
+	float ArchHeightFt = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (ClampMin = "4.0", Units = "ft"))
+	float ArchWidthFt = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
+	float ArchCornerConnectionOffsetCm = 15.24f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
+	float ArchLegYOffsetCm = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
+	float ArchSpanYOffsetCm = -15.24f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;
 
@@ -64,6 +80,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void BuildRectangle();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void BuildArch();
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void ClearGeneratedTruss();
@@ -81,5 +100,6 @@ private:
 	FVector GetScaledRotatedMeshExtent(UStaticMesh* StaticMesh, const FRotator& Rotation) const;
 	void AddPieceInstance(ETrussPieceType PieceType, const FVector& TargetMinLocation, const FRotator& Rotation);
 	void AddStraightRun(const TArray<ETrussPieceType>& Pieces, const FVector& StartMinLocation, const FRotator& Rotation);
+	void AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, const FVector& TargetMinLocation, const FRotator& Rotation);
 	void AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX);
 };

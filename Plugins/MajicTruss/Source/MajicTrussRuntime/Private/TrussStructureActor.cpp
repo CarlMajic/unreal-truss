@@ -20,6 +20,9 @@ void ATrussStructureActor::OnConstruction(const FTransform& Transform)
 	{
 		switch (BuildMode)
 		{
+		case ETrussBuildMode::Arch:
+			BuildArch();
+			break;
 		case ETrussBuildMode::Rectangle:
 			BuildRectangle();
 			break;
@@ -85,6 +88,82 @@ void ATrussStructureActor::BuildRectangle()
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet((2.0f * (CornerX + CornerY)) + (2.0f * LengthCombination.ActualLengthCm) + (2.0f * WidthCombination.ActualLengthCm));
 }
 
+void ATrussStructureActor::BuildArch()
+{
+	ClearGeneratedTruss();
+
+	FTrussPieceDefinition CornerDefinition;
+	UStaticMesh* CornerMesh = nullptr;
+	if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+	{
+		return;
+	}
+
+	FTrussPieceDefinition BaseDefinition;
+	UStaticMesh* BaseMesh = nullptr;
+	if (!GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+	{
+		return;
+	}
+
+	const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+	const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+	const float CornerWidthCm = CornerExtent.X;
+	const float CornerHeightCm = CornerExtent.Z;
+	const float BaseHeightCm = BaseExtent.Z;
+	const float TargetHeightCm = UTrussMathLibrary::FeetToCentimeters(ArchHeightFt);
+	const float TargetWidthCm = UTrussMathLibrary::FeetToCentimeters(ArchWidthFt);
+	const float LegTargetCm = TargetHeightCm - CornerHeightCm;
+	const float SpanTargetCm = TargetWidthCm - (2.0f * CornerWidthCm);
+
+	if (LegTargetCm <= 0.0f || SpanTargetCm <= 0.0f)
+	{
+		return;
+	}
+
+	const FTrussCombinationResult LegCombination = UTrussMathLibrary::FindBestTrussCombination(LegTargetCm);
+	const FTrussCombinationResult SpanCombination = UTrussMathLibrary::FindBestTrussCombination(SpanTargetCm);
+	if (LegCombination.Pieces.IsEmpty() || SpanCombination.Pieces.IsEmpty())
+	{
+		return;
+	}
+
+	const float LeftLegX = 0.0f;
+	const float RightLegX = CornerWidthCm + SpanCombination.ActualLengthCm;
+	const float TopCornerZ = BaseHeightCm + LegCombination.ActualLengthCm;
+	const float LegCenterInsetX = ArchCornerConnectionOffsetCm + (CornerWidthCm * 0.5f);
+	const FRotator VerticalRotation(0.0f, 0.0f, -90.0f);
+
+	for (float LegX : {LeftLegX, RightLegX})
+	{
+		const float LegCenterX = LegX + LegCenterInsetX;
+		const float BaseMinX = LegCenterX - (BaseExtent.X * 0.5f);
+		const float BaseMinY = ArchLegYOffsetCm - (BaseExtent.Y * 0.5f);
+		AddPieceInstance(ETrussPieceType::Base, FVector(BaseMinX, BaseMinY, 0.0f), FRotator::ZeroRotator);
+
+		AddStraightRun(
+			LegCombination.Pieces,
+			FVector(LegCenterX - ArchCornerConnectionOffsetCm, ArchLegYOffsetCm, BaseHeightCm),
+			VerticalRotation
+		);
+
+		AddPieceInstance(
+			ETrussPieceType::CornerBlock,
+			FVector(LegX + ArchCornerConnectionOffsetCm, ArchSpanYOffsetCm, TopCornerZ),
+			FRotator::ZeroRotator
+		);
+	}
+
+	const float SpanZ = TopCornerZ + (CornerHeightCm * 0.5f) - ArchCornerConnectionOffsetCm;
+	AddStraightRun(
+		SpanCombination.Pieces,
+		FVector(CornerWidthCm + ArchCornerConnectionOffsetCm, ArchSpanYOffsetCm, SpanZ),
+		FRotator::ZeroRotator
+	);
+
+	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(BaseHeightCm + LegCombination.ActualLengthCm + CornerHeightCm);
+}
+
 void ATrussStructureActor::AddStraightRun(const TArray<ETrussPieceType>& Pieces, const FVector& StartMinLocation, const FRotator& Rotation)
 {
 	const FVector Direction = Rotation.RotateVector(FVector::ForwardVector);
@@ -124,7 +203,7 @@ void ATrussStructureActor::AddPieceInstance(ETrussPieceType PieceType, const FVe
 	}
 	else
 	{
-		AddDebugPiece(PieceType, PieceLengthCm, TargetMinLocation.X);
+		AddDebugPiece(PieceType, PieceLengthCm, TargetMinLocation, Rotation);
 	}
 }
 
@@ -279,6 +358,11 @@ FVector ATrussStructureActor::GetScaledRotatedMeshExtent(UStaticMesh* StaticMesh
 
 void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX)
 {
+	AddDebugPiece(PieceType, PieceLengthCm, FVector(StartX, 0.0f, 0.0f), FRotator::ZeroRotator);
+}
+
+void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, const FVector& TargetMinLocation, const FRotator& Rotation)
+{
 	const FString ComponentName = FString::Printf(TEXT("Debug_%s_%d"), *UTrussMathLibrary::PieceTypeToLabel(PieceType).Replace(TEXT(" "), TEXT("_")), GeneratedComponents.Num());
 
 	UBoxComponent* BoxComponent = NewObject<UBoxComponent>(this, FName(*ComponentName), RF_Transactional);
@@ -289,7 +373,8 @@ void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceL
 
 	BoxComponent->SetupAttachment(SceneRoot);
 	BoxComponent->SetBoxExtent(FVector(PieceLengthCm * 0.5f, DebugCrossSectionCm * 0.5f, DebugCrossSectionCm * 0.5f));
-	BoxComponent->SetRelativeLocation(FVector(StartX + (PieceLengthCm * 0.5f), 0.0f, 0.0f));
+	BoxComponent->SetRelativeRotation(Rotation);
+	BoxComponent->SetRelativeLocation(TargetMinLocation + Rotation.RotateVector(FVector(PieceLengthCm * 0.5f, DebugCrossSectionCm * 0.5f, DebugCrossSectionCm * 0.5f)));
 	BoxComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BoxComponent->RegisterComponent();
 	AddInstanceComponent(BoxComponent);

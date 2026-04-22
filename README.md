@@ -16,6 +16,7 @@ The first milestone is a straight truss run. The plugin keeps the truss math in 
   - 4 ft
   - 2 ft
 - Rectangle generation with four corner blocks and four straight runs
+- Arch generation with bases, vertical legs, top corner blocks, and a horizontal span
 - Instanced Static Mesh output when meshes are assigned
 - Debug box output when meshes are not assigned yet
 
@@ -28,6 +29,8 @@ Create a `Truss Inventory Data Asset`, assign meshes when available, place a `Tr
 To test a rectangle, place/select `Truss Structure Actor`, set `Build Mode` to `Rectangle`, then set `Rectangle Length Ft` and `Rectangle Width Ft`. The actor also exposes `Build Rectangle` as a Blueprint-callable runtime API.
 
 Rectangle side runs use `Rectangle Y Run X Offset Cm`, default `30.48` cm / 12 in, to align Y-direction truss sections with the corner block connection face.
+
+To test an arch, set `Build Mode` to `Arch`, then adjust `Arch Height Ft` and `Arch Width Ft`. Arch alignment exposes 6-inch connection defaults through `Arch Corner Connection Offset Cm`, `Arch Leg Y Offset Cm`, and `Arch Span Y Offset Cm`.
 
 The plugin can also be copied into another Unreal Engine 5.6 project's `Plugins` folder.
 
