@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.6",
+	"Category": "Tools",
+	"Description": "Majic Unreal Truss test project.",
+	"Modules": [
+		{
+			"Name": "UnrealTruss",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "MajicTruss",
+			"Enabled": true
+		}
+	]
+}
