@@ -36,6 +36,8 @@ If no inventory asset is assigned, `Truss Structure Actor` attempts to use the m
 
 The default `Mesh Scale Multiplier` is `0.0254` for migrated assets that arrive at inch-style scale. The truss spacing still uses Unreal centimeters, so a 20 ft run remains 609.6 cm long.
 
+`Flip Short Majic Gear Truss Sections` is enabled by default because the imported 8 ft, 5 ft, 4 ft, and 2 ft meshes appear to extend along local negative X while the builder expects sections to extend along positive X.
+
 ## Notes
 
 Unreal uses centimeters internally, so piece lengths are stored in centimeters.

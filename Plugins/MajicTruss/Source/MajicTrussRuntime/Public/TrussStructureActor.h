@@ -28,6 +28,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss", meta = (ClampMin = "0.0001"))
 	float MeshScaleMultiplier = 0.0254f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss")
+	bool bFlipShortMajicGearTrussSections = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "2.0", Units = "ft"))
 	float LengthFt = 20.0f;
 
@@ -54,5 +57,6 @@ private:
 
 	UInstancedStaticMeshComponent* FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh);
 	UStaticMesh* LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const;
+	FRotator GetMeshRotation(ETrussPieceType PieceType, bool bUsingMajicGearDefaultMesh) const;
 	void AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX);
 };

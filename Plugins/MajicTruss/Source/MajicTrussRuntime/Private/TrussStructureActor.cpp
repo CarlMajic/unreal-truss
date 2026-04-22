@@ -36,10 +36,12 @@ void ATrussStructureActor::BuildStraightRun()
 		const bool bHasInventoryPiece = Inventory && Inventory->FindPiece(PieceType, PieceDefinition);
 		const float PieceLengthCm = bHasInventoryPiece ? PieceDefinition.LengthCm : UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType);
 		UStaticMesh* PieceMesh = bHasInventoryPiece ? PieceDefinition.StaticMesh.Get() : nullptr;
+		bool bUsingMajicGearDefaultMesh = false;
 
 		if (!PieceMesh && bUseMajicGearDefaultMeshes)
 		{
 			PieceMesh = LoadMajicGearDefaultMesh(PieceType);
+			bUsingMajicGearDefaultMesh = PieceMesh != nullptr;
 		}
 
 		if (PieceMesh)
@@ -48,7 +50,7 @@ void ATrussStructureActor::BuildStraightRun()
 			if (MeshComponent)
 			{
 				MeshComponent->AddInstance(FTransform(
-					FRotator::ZeroRotator,
+					GetMeshRotation(PieceType, bUsingMajicGearDefaultMesh),
 					FVector(CursorX, 0.0f, 0.0f),
 					FVector(MeshScaleMultiplier)
 				));
@@ -142,6 +144,25 @@ UStaticMesh* ATrussStructureActor::LoadMajicGearDefaultMesh(ETrussPieceType Piec
 	}
 
 	return LoadObject<UStaticMesh>(nullptr, AssetPath);
+}
+
+FRotator ATrussStructureActor::GetMeshRotation(ETrussPieceType PieceType, bool bUsingMajicGearDefaultMesh) const
+{
+	if (!bUsingMajicGearDefaultMesh || !bFlipShortMajicGearTrussSections)
+	{
+		return FRotator::ZeroRotator;
+	}
+
+	switch (PieceType)
+	{
+	case ETrussPieceType::EightFoot:
+	case ETrussPieceType::FiveFoot:
+	case ETrussPieceType::FourFoot:
+	case ETrussPieceType::TwoFoot:
+		return FRotator(0.0f, 180.0f, 0.0f);
+	default:
+		return FRotator::ZeroRotator;
+	}
 }
 
 void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX)
