@@ -70,13 +70,19 @@ public:
 	float ArchVerticalLegXOffsetCm = 30.48f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
-	float ArchBaseYOffsetCm = -15.24f;
+	float ArchBaseYOffsetCm = 30.48f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
 	float ArchSpanYOffsetCm = 15.24f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch")
-	FRotator ArchVerticalSectionRotation = FRotator(0.0f, 90.0f, 0.0f);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "deg"))
+	float ArchVerticalRotationXDeg = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "deg"))
+	float ArchVerticalRotationYDeg = 90.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "deg"))
+	float ArchVerticalRotationZDeg = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;

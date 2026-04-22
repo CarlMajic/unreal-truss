@@ -30,7 +30,7 @@ To test a rectangle, place/select `Truss Structure Actor`, set `Build Mode` to `
 
 Rectangle side runs use `Rectangle Y Run X Offset Cm`, default `30.48` cm / 12 in, to align Y-direction truss sections with the corner block connection face.
 
-To test an arch, set `Build Mode` to `Arch`, then adjust `Arch Height Ft` and `Arch Width Ft`. Arch alignment exposes 6-inch connection defaults through `Arch Corner Connection Offset Cm`, `Arch Leg Y Offset Cm`, `Arch Vertical Leg X Offset Cm`, `Arch Base Y Offset Cm`, and `Arch Span Y Offset Cm`. `Arch Vertical Section Rotation` defaults to Y 90 degrees for the imported truss meshes.
+To test an arch, set `Build Mode` to `Arch`, then adjust `Arch Height Ft` and `Arch Width Ft`. Arch alignment exposes 6-inch connection defaults through `Arch Corner Connection Offset Cm`, `Arch Leg Y Offset Cm`, `Arch Vertical Leg X Offset Cm`, `Arch Base Y Offset Cm`, and `Arch Span Y Offset Cm`. Vertical section rotation is exposed as explicit X/Y/Z degree fields and defaults to Y 90, Z 0 for the imported truss meshes.
 
 The plugin can also be copied into another Unreal Engine 5.6 project's `Plugins` folder.
 
