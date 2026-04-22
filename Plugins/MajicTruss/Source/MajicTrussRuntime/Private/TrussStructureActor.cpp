@@ -143,7 +143,7 @@ void ATrussStructureActor::BuildArch()
 
 		AddStraightRun(
 			LegCombination.Pieces,
-			FVector(LegCenterX - ArchCornerConnectionOffsetCm, ArchLegYOffsetCm, BaseHeightCm),
+			FVector(LegCenterX - ArchCornerConnectionOffsetCm + ArchVerticalLegXOffsetCm, ArchLegYOffsetCm, BaseHeightCm),
 			VerticalRotation
 		);
 
