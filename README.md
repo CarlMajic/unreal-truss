@@ -15,6 +15,7 @@ The first milestone is a straight truss run. The plugin keeps the truss math in 
   - 5 ft
   - 4 ft
   - 2 ft
+- Rectangle generation with four corner blocks and four straight runs
 - Instanced Static Mesh output when meshes are assigned
 - Debug box output when meshes are not assigned yet
 
@@ -23,6 +24,8 @@ The first milestone is a straight truss run. The plugin keeps the truss math in 
 Open `UnrealTruss.uproject` with Unreal Engine 5.6.
 
 Create a `Truss Inventory Data Asset`, assign meshes when available, place a `Truss Structure Actor`, and call `Build Straight Run` or enable `Build On Construction`.
+
+To test a rectangle, place/select `Truss Structure Actor`, set `Build Mode` to `Rectangle`, then set `Rectangle Length Ft` and `Rectangle Width Ft`. The actor also exposes `Build Rectangle` as a Blueprint-callable runtime API.
 
 The plugin can also be copied into another Unreal Engine 5.6 project's `Plugins` folder.
 

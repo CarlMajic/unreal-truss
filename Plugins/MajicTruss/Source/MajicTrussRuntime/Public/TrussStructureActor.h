@@ -8,6 +8,13 @@
 class UBoxComponent;
 class UInstancedStaticMeshComponent;
 
+UENUM(BlueprintType)
+enum class ETrussBuildMode : uint8
+{
+	StraightRun UMETA(DisplayName = "Straight Run"),
+	Rectangle UMETA(DisplayName = "Rectangle")
+};
+
 UCLASS(BlueprintType)
 class MAJICTRUSSRUNTIME_API ATrussStructureActor : public AActor
 {
@@ -28,11 +35,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss", meta = (ClampMin = "0.0001"))
 	float MeshScaleMultiplier = 0.0254f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss")
+	ETrussBuildMode BuildMode = ETrussBuildMode::StraightRun;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "2.0", Units = "ft"))
 	float LengthFt = 20.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run")
 	bool bBuildOnConstruction = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "2.0", Units = "ft"))
+	float RectangleLengthFt = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "2.0", Units = "ft"))
+	float RectangleWidthFt = 16.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;
@@ -42,6 +58,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void BuildStraightRun();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void BuildRectangle();
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void ClearGeneratedTruss();
@@ -54,6 +73,10 @@ private:
 
 	UInstancedStaticMeshComponent* FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh);
 	UStaticMesh* LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const;
-	FVector GetMeshPlacementLocation(UStaticMesh* StaticMesh, float StartX) const;
+	bool GetPieceDefinition(ETrussPieceType PieceType, FTrussPieceDefinition& OutPiece, UStaticMesh*& OutMesh) const;
+	FVector GetMeshPlacementLocation(UStaticMesh* StaticMesh, const FVector& TargetMinLocation, const FRotator& Rotation) const;
+	FVector GetScaledRotatedMeshExtent(UStaticMesh* StaticMesh, const FRotator& Rotation) const;
+	void AddPieceInstance(ETrussPieceType PieceType, const FVector& TargetMinLocation, const FRotator& Rotation);
+	void AddStraightRun(const TArray<ETrussPieceType>& Pieces, const FVector& StartMinLocation, const FRotator& Rotation);
 	void AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX);
 };
