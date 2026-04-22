@@ -28,6 +28,30 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss")
 	TObjectPtr<USceneComponent> SceneRoot;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> TenFootTrussInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> EightFootTrussInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> FiveFootTrussInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> FourFootTrussInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> TwoFootTrussInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> CornerBlockInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> BaseInstances;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
+	TObjectPtr<UInstancedStaticMeshComponent> HingeInstances;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss")
 	TObjectPtr<UTrussInventoryDataAsset> Inventory;
 
@@ -128,6 +152,7 @@ private:
 	TArray<TObjectPtr<UActorComponent>> GeneratedComponents;
 
 	UInstancedStaticMeshComponent* FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh);
+	UInstancedStaticMeshComponent* GetMeshComponentForPiece(ETrussPieceType PieceType) const;
 	UStaticMesh* LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const;
 	bool GetPieceDefinition(ETrussPieceType PieceType, FTrussPieceDefinition& OutPiece, UStaticMesh*& OutMesh) const;
 	FVector GetMeshPlacementLocation(UStaticMesh* StaticMesh, const FVector& TargetMinLocation, const FRotator& Rotation) const;

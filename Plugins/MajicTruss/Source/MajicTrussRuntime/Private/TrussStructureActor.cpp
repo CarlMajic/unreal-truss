@@ -10,6 +10,30 @@ ATrussStructureActor::ATrussStructureActor()
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
+
+	TenFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TenFootTrussInstances"));
+	TenFootTrussInstances->SetupAttachment(SceneRoot);
+
+	EightFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("EightFootTrussInstances"));
+	EightFootTrussInstances->SetupAttachment(SceneRoot);
+
+	FiveFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FiveFootTrussInstances"));
+	FiveFootTrussInstances->SetupAttachment(SceneRoot);
+
+	FourFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FourFootTrussInstances"));
+	FourFootTrussInstances->SetupAttachment(SceneRoot);
+
+	TwoFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TwoFootTrussInstances"));
+	TwoFootTrussInstances->SetupAttachment(SceneRoot);
+
+	CornerBlockInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CornerBlockInstances"));
+	CornerBlockInstances->SetupAttachment(SceneRoot);
+
+	BaseInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BaseInstances"));
+	BaseInstances->SetupAttachment(SceneRoot);
+
+	HingeInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("HingeInstances"));
+	HingeInstances->SetupAttachment(SceneRoot);
 }
 
 void ATrussStructureActor::OnConstruction(const FTransform& Transform)
@@ -314,6 +338,23 @@ bool ATrussStructureActor::GetPieceDefinition(ETrussPieceType PieceType, FTrussP
 
 void ATrussStructureActor::ClearGeneratedTruss()
 {
+	for (UInstancedStaticMeshComponent* MeshComponent : {
+		TenFootTrussInstances.Get(),
+		EightFootTrussInstances.Get(),
+		FiveFootTrussInstances.Get(),
+		FourFootTrussInstances.Get(),
+		TwoFootTrussInstances.Get(),
+		CornerBlockInstances.Get(),
+		BaseInstances.Get(),
+		HingeInstances.Get()
+	})
+	{
+		if (MeshComponent)
+		{
+			MeshComponent->ClearInstances();
+		}
+	}
+
 	for (UActorComponent* Component : GeneratedComponents)
 	{
 		if (Component)
@@ -327,29 +368,43 @@ void ATrussStructureActor::ClearGeneratedTruss()
 
 UInstancedStaticMeshComponent* ATrussStructureActor::FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh)
 {
-	const FString ComponentName = FString::Printf(TEXT("ISM_%s"), *UTrussMathLibrary::PieceTypeToLabel(PieceType).Replace(TEXT(" "), TEXT("_")));
-
-	for (UActorComponent* Component : GeneratedComponents)
-	{
-		UInstancedStaticMeshComponent* Existing = Cast<UInstancedStaticMeshComponent>(Component);
-		if (Existing && Existing->GetFName() == FName(*ComponentName))
-		{
-			return Existing;
-		}
-	}
-
-	UInstancedStaticMeshComponent* MeshComponent = NewObject<UInstancedStaticMeshComponent>(this, FName(*ComponentName), RF_Transactional);
+	UInstancedStaticMeshComponent* MeshComponent = GetMeshComponentForPiece(PieceType);
 	if (!MeshComponent)
 	{
 		return nullptr;
 	}
 
-	MeshComponent->SetupAttachment(SceneRoot);
-	MeshComponent->SetStaticMesh(StaticMesh);
-	MeshComponent->RegisterComponent();
-	AddInstanceComponent(MeshComponent);
-	GeneratedComponents.Add(MeshComponent);
+	if (MeshComponent->GetStaticMesh() != StaticMesh)
+	{
+		MeshComponent->SetStaticMesh(StaticMesh);
+	}
+
 	return MeshComponent;
+}
+
+UInstancedStaticMeshComponent* ATrussStructureActor::GetMeshComponentForPiece(ETrussPieceType PieceType) const
+{
+	switch (PieceType)
+	{
+	case ETrussPieceType::TenFoot:
+		return TenFootTrussInstances;
+	case ETrussPieceType::EightFoot:
+		return EightFootTrussInstances;
+	case ETrussPieceType::FiveFoot:
+		return FiveFootTrussInstances;
+	case ETrussPieceType::FourFoot:
+		return FourFootTrussInstances;
+	case ETrussPieceType::TwoFoot:
+		return TwoFootTrussInstances;
+	case ETrussPieceType::CornerBlock:
+		return CornerBlockInstances;
+	case ETrussPieceType::Base:
+		return BaseInstances;
+	case ETrussPieceType::Hinge:
+		return HingeInstances;
+	default:
+		return nullptr;
+	}
 }
 
 UStaticMesh* ATrussStructureActor::LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const
@@ -449,9 +504,7 @@ void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceL
 
 void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, const FVector& TargetMinLocation, const FRotator& Rotation)
 {
-	const FString ComponentName = FString::Printf(TEXT("Debug_%s_%d"), *UTrussMathLibrary::PieceTypeToLabel(PieceType).Replace(TEXT(" "), TEXT("_")), GeneratedComponents.Num());
-
-	UBoxComponent* BoxComponent = NewObject<UBoxComponent>(this, FName(*ComponentName), RF_Transactional);
+	UBoxComponent* BoxComponent = NewObject<UBoxComponent>(this, NAME_None, RF_Transactional);
 	if (!BoxComponent)
 	{
 		return;
