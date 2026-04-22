@@ -69,6 +69,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
 	float ArchSpanYOffsetCm = -15.24f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch")
+	FRotator ArchVerticalSectionRotation = FRotator::ZeroRotator;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;
 
