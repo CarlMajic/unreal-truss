@@ -14,7 +14,8 @@ enum class ETrussBuildMode : uint8
 	StraightRun UMETA(DisplayName = "Straight Run"),
 	Rectangle UMETA(DisplayName = "Rectangle"),
 	Arch UMETA(DisplayName = "Arch"),
-	Cube UMETA(DisplayName = "Cube")
+	Cube UMETA(DisplayName = "Cube"),
+	CubeArch UMETA(DisplayName = "Cube Arch")
 };
 
 UCLASS(BlueprintType)
@@ -124,6 +125,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (Units = "cm"))
 	float CubeYRunXOffsetCm = 45.720001f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch", meta = (ClampMin = "8.0", Units = "ft"))
+	float CubeArchWidthFt = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeArchHeightFt = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch")
+	ETrussPieceType CubeArchSideSpacingPiece = ETrussPieceType::FourFoot;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch")
+	ETrussPieceType CubeArchDepthSpacingPiece = ETrussPieceType::FourFoot;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch", meta = (Units = "cm"))
+	float CubeArchLeftClusterOffsetCm = -30.48f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;
 
@@ -141,6 +157,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void BuildCube();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void BuildCubeArch();
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void ClearGeneratedTruss();
