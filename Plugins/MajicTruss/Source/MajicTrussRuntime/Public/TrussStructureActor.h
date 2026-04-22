@@ -25,6 +25,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss")
 	bool bUseMajicGearDefaultMeshes = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss", meta = (ClampMin = "0.0001"))
+	float MeshScaleMultiplier = 0.0254f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "2.0", Units = "ft"))
 	float LengthFt = 20.0f;
 

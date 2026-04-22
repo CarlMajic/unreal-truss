@@ -34,6 +34,8 @@ If no inventory asset is assigned, `Truss Structure Actor` attempts to use the m
 - `/Game/Majic_Gear/Truss/4ftTruss/StaticMeshes/SM___ft_Truss_v2`
 - `/Game/Majic_Gear/Truss/2ftTruss/StaticMeshes/SM___ft_Truss_v1`
 
+The default `Mesh Scale Multiplier` is `0.0254` for migrated assets that arrive at inch-style scale. The truss spacing still uses Unreal centimeters, so a 20 ft run remains 609.6 cm long.
+
 ## Notes
 
 Unreal uses centimeters internally, so piece lengths are stored in centimeters.

@@ -47,7 +47,11 @@ void ATrussStructureActor::BuildStraightRun()
 			UInstancedStaticMeshComponent* MeshComponent = FindOrCreateMeshComponent(PieceType, PieceMesh);
 			if (MeshComponent)
 			{
-				MeshComponent->AddInstance(FTransform(FRotator::ZeroRotator, FVector(CursorX, 0.0f, 0.0f)));
+				MeshComponent->AddInstance(FTransform(
+					FRotator::ZeroRotator,
+					FVector(CursorX, 0.0f, 0.0f),
+					FVector(MeshScaleMultiplier)
+				));
 			}
 		}
 		else
