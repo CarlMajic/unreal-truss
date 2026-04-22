@@ -13,7 +13,8 @@ enum class ETrussBuildMode : uint8
 {
 	StraightRun UMETA(DisplayName = "Straight Run"),
 	Rectangle UMETA(DisplayName = "Rectangle"),
-	Arch UMETA(DisplayName = "Arch")
+	Arch UMETA(DisplayName = "Arch"),
+	Cube UMETA(DisplayName = "Cube")
 };
 
 UCLASS(BlueprintType)
@@ -84,6 +85,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "deg"))
 	float ArchVerticalRotationZDeg = 0.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeLengthFt = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeWidthFt = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeHeightFt = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (Units = "cm"))
+	float CubeCornerConnectionOffsetCm = 15.24f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (Units = "cm"))
+	float CubeYRunXOffsetCm = 30.48f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;
 
@@ -98,6 +114,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void BuildArch();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void BuildCube();
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void ClearGeneratedTruss();

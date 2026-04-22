@@ -20,6 +20,9 @@ void ATrussStructureActor::OnConstruction(const FTransform& Transform)
 	{
 		switch (BuildMode)
 		{
+		case ETrussBuildMode::Cube:
+			BuildCube();
+			break;
 		case ETrussBuildMode::Arch:
 			BuildArch();
 			break;
@@ -160,6 +163,89 @@ void ATrussStructureActor::BuildArch()
 		FVector(CornerWidthCm + ArchCornerConnectionOffsetCm, ArchSpanYOffsetCm, SpanZ),
 		FRotator::ZeroRotator
 	);
+
+	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(BaseHeightCm + LegCombination.ActualLengthCm + CornerHeightCm);
+}
+
+void ATrussStructureActor::BuildCube()
+{
+	ClearGeneratedTruss();
+
+	FTrussPieceDefinition CornerDefinition;
+	UStaticMesh* CornerMesh = nullptr;
+	if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+	{
+		return;
+	}
+
+	FTrussPieceDefinition BaseDefinition;
+	UStaticMesh* BaseMesh = nullptr;
+	if (!GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+	{
+		return;
+	}
+
+	const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+	const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+	const float CornerX = CornerExtent.X;
+	const float CornerY = CornerExtent.Y;
+	const float CornerHeightCm = CornerExtent.Z;
+	const float BaseHeightCm = BaseExtent.Z;
+
+	const float InnerLengthCm = UTrussMathLibrary::FeetToCentimeters(CubeLengthFt) - (2.0f * CornerX);
+	const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(CubeWidthFt) - (2.0f * CornerY);
+	const float LegTargetCm = UTrussMathLibrary::FeetToCentimeters(CubeHeightFt) - CornerHeightCm;
+	if (InnerLengthCm <= 0.0f || InnerWidthCm <= 0.0f || LegTargetCm <= 0.0f)
+	{
+		return;
+	}
+
+	const FTrussCombinationResult LengthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerLengthCm);
+	const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+	const FTrussCombinationResult LegCombination = UTrussMathLibrary::FindBestTrussCombination(LegTargetCm);
+	if (LengthCombination.Pieces.IsEmpty() || WidthCombination.Pieces.IsEmpty() || LegCombination.Pieces.IsEmpty())
+	{
+		return;
+	}
+
+	const float LeftX = 0.0f;
+	const float RightX = CornerX + LengthCombination.ActualLengthCm;
+	const float FrontY = 0.0f;
+	const float BackY = CornerY + WidthCombination.ActualLengthCm;
+	const float TopZ = BaseHeightCm + LegCombination.ActualLengthCm;
+	const float SpanZ = TopZ + (CornerHeightCm * 0.5f) - CubeCornerConnectionOffsetCm;
+	const FRotator VerticalRotation(ArchVerticalRotationYDeg, ArchVerticalRotationZDeg, ArchVerticalRotationXDeg);
+
+	const TArray<FVector2D> CornerPositions = {
+		FVector2D(LeftX, FrontY),
+		FVector2D(RightX, FrontY),
+		FVector2D(RightX, BackY),
+		FVector2D(LeftX, BackY)
+	};
+
+	for (const FVector2D& CornerPosition : CornerPositions)
+	{
+		const float LegCenterX = CornerPosition.X + CubeCornerConnectionOffsetCm + (CornerX * 0.5f);
+		const float BaseMinX = LegCenterX - (BaseExtent.X * 0.5f);
+		const float BaseMinY = CornerPosition.Y + ArchBaseYOffsetCm - (BaseExtent.Y * 0.5f);
+		AddPieceInstance(ETrussPieceType::Base, FVector(BaseMinX, BaseMinY, 0.0f), FRotator::ZeroRotator);
+
+		AddStraightRun(
+			LegCombination.Pieces,
+			FVector(LegCenterX - CubeCornerConnectionOffsetCm + ArchVerticalLegXOffsetCm, CornerPosition.Y + ArchLegYOffsetCm, BaseHeightCm),
+			VerticalRotation
+		);
+	}
+
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(LeftX + CubeCornerConnectionOffsetCm, FrontY + ArchSpanYOffsetCm, TopZ), FRotator::ZeroRotator);
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX + CubeCornerConnectionOffsetCm, FrontY + ArchSpanYOffsetCm, TopZ), FRotator::ZeroRotator);
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX + CubeCornerConnectionOffsetCm, BackY + ArchSpanYOffsetCm, TopZ), FRotator::ZeroRotator);
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(LeftX + CubeCornerConnectionOffsetCm, BackY + ArchSpanYOffsetCm, TopZ), FRotator::ZeroRotator);
+
+	AddStraightRun(LengthCombination.Pieces, FVector(CornerX + CubeCornerConnectionOffsetCm, FrontY + ArchSpanYOffsetCm, SpanZ), FRotator::ZeroRotator);
+	AddStraightRun(LengthCombination.Pieces, FVector(CornerX + CubeCornerConnectionOffsetCm, BackY + ArchSpanYOffsetCm, SpanZ), FRotator::ZeroRotator);
+	AddStraightRun(WidthCombination.Pieces, FVector(LeftX + CubeYRunXOffsetCm, CornerY + ArchSpanYOffsetCm, SpanZ), FRotator(0.0f, 90.0f, 0.0f));
+	AddStraightRun(WidthCombination.Pieces, FVector(RightX + CubeYRunXOffsetCm, CornerY + ArchSpanYOffsetCm, SpanZ), FRotator(0.0f, 90.0f, 0.0f));
 
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(BaseHeightCm + LegCombination.ActualLengthCm + CornerHeightCm);
 }
