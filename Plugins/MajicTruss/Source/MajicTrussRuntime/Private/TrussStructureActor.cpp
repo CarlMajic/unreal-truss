@@ -36,12 +36,10 @@ void ATrussStructureActor::BuildStraightRun()
 		const bool bHasInventoryPiece = Inventory && Inventory->FindPiece(PieceType, PieceDefinition);
 		const float PieceLengthCm = bHasInventoryPiece ? PieceDefinition.LengthCm : UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType);
 		UStaticMesh* PieceMesh = bHasInventoryPiece ? PieceDefinition.StaticMesh.Get() : nullptr;
-		bool bUsingMajicGearDefaultMesh = false;
 
 		if (!PieceMesh && bUseMajicGearDefaultMeshes)
 		{
 			PieceMesh = LoadMajicGearDefaultMesh(PieceType);
-			bUsingMajicGearDefaultMesh = PieceMesh != nullptr;
 		}
 
 		if (PieceMesh)
@@ -50,8 +48,8 @@ void ATrussStructureActor::BuildStraightRun()
 			if (MeshComponent)
 			{
 				MeshComponent->AddInstance(FTransform(
-					GetMeshRotation(PieceType, bUsingMajicGearDefaultMesh),
-					FVector(CursorX, 0.0f, 0.0f),
+					FRotator::ZeroRotator,
+					GetMeshPlacementLocation(PieceMesh, CursorX),
 					FVector(MeshScaleMultiplier)
 				));
 			}
@@ -146,23 +144,20 @@ UStaticMesh* ATrussStructureActor::LoadMajicGearDefaultMesh(ETrussPieceType Piec
 	return LoadObject<UStaticMesh>(nullptr, AssetPath);
 }
 
-FRotator ATrussStructureActor::GetMeshRotation(ETrussPieceType PieceType, bool bUsingMajicGearDefaultMesh) const
+FVector ATrussStructureActor::GetMeshPlacementLocation(UStaticMesh* StaticMesh, float StartX) const
 {
-	if (!bUsingMajicGearDefaultMesh || !bFlipShortMajicGearTrussSections)
+	if (!StaticMesh)
 	{
-		return FRotator::ZeroRotator;
+		return FVector(StartX, 0.0f, 0.0f);
 	}
 
-	switch (PieceType)
-	{
-	case ETrussPieceType::EightFoot:
-	case ETrussPieceType::FiveFoot:
-	case ETrussPieceType::FourFoot:
-	case ETrussPieceType::TwoFoot:
-		return FRotator(0.0f, 180.0f, 0.0f);
-	default:
-		return FRotator::ZeroRotator;
-	}
+	const FBoxSphereBounds Bounds = StaticMesh->GetBounds();
+	const FVector LocalMin = Bounds.Origin - Bounds.BoxExtent;
+	return FVector(
+		StartX - (LocalMin.X * MeshScaleMultiplier),
+		-(LocalMin.Y * MeshScaleMultiplier),
+		-(LocalMin.Z * MeshScaleMultiplier)
+	);
 }
 
 void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX)
