@@ -35,10 +35,16 @@ void ATrussStructureActor::BuildStraightRun()
 		FTrussPieceDefinition PieceDefinition;
 		const bool bHasInventoryPiece = Inventory && Inventory->FindPiece(PieceType, PieceDefinition);
 		const float PieceLengthCm = bHasInventoryPiece ? PieceDefinition.LengthCm : UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType);
+		UStaticMesh* PieceMesh = bHasInventoryPiece ? PieceDefinition.StaticMesh.Get() : nullptr;
 
-		if (bHasInventoryPiece && PieceDefinition.StaticMesh)
+		if (!PieceMesh && bUseMajicGearDefaultMeshes)
 		{
-			UInstancedStaticMeshComponent* MeshComponent = FindOrCreateMeshComponent(PieceType, PieceDefinition.StaticMesh);
+			PieceMesh = LoadMajicGearDefaultMesh(PieceType);
+		}
+
+		if (PieceMesh)
+		{
+			UInstancedStaticMeshComponent* MeshComponent = FindOrCreateMeshComponent(PieceType, PieceMesh);
 			if (MeshComponent)
 			{
 				MeshComponent->AddInstance(FTransform(FRotator::ZeroRotator, FVector(CursorX, 0.0f, 0.0f)));
@@ -93,6 +99,45 @@ UInstancedStaticMeshComponent* ATrussStructureActor::FindOrCreateMeshComponent(E
 	AddInstanceComponent(MeshComponent);
 	GeneratedComponents.Add(MeshComponent);
 	return MeshComponent;
+}
+
+UStaticMesh* ATrussStructureActor::LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const
+{
+	const TCHAR* AssetPath = nullptr;
+
+	switch (PieceType)
+	{
+	case ETrussPieceType::TenFoot:
+		AssetPath = TEXT("/Game/Majic_Gear/Truss/10ftTruss/StaticMeshes/SM__0_ft_Truss_v2.SM__0_ft_Truss_v2");
+		break;
+	case ETrussPieceType::EightFoot:
+		AssetPath = TEXT("/Game/Majic_Gear/Truss/8ftTruss/StaticMeshes/SM___ft_Truss_v1.SM___ft_Truss_v1");
+		break;
+	case ETrussPieceType::FiveFoot:
+		AssetPath = TEXT("/Game/Majic_Gear/Truss/5ftTruss/StaticMeshes/SM___ft_Truss_v1.SM___ft_Truss_v1");
+		break;
+	case ETrussPieceType::FourFoot:
+		AssetPath = TEXT("/Game/Majic_Gear/Truss/4ftTruss/StaticMeshes/SM___ft_Truss_v2.SM___ft_Truss_v2");
+		break;
+	case ETrussPieceType::TwoFoot:
+		AssetPath = TEXT("/Game/Majic_Gear/Truss/2ftTruss/StaticMeshes/SM___ft_Truss_v1.SM___ft_Truss_v1");
+		break;
+	case ETrussPieceType::CornerBlock:
+		AssetPath = TEXT("/Game/Majic_Gear/Truss/5way_Corner_Block/StaticMeshes/SM___Way_Corner_Block_v2.SM___Way_Corner_Block_v2");
+		break;
+	case ETrussPieceType::Base:
+		AssetPath = TEXT("/Game/Majic_Gear/Truss/Base/StaticMeshes/SM_Base_v2.SM_Base_v2");
+		break;
+	default:
+		break;
+	}
+
+	if (!AssetPath)
+	{
+		return nullptr;
+	}
+
+	return LoadObject<UStaticMesh>(nullptr, AssetPath);
 }
 
 void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX)

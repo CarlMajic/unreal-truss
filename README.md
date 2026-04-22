@@ -26,6 +26,14 @@ Create a `Truss Inventory Data Asset`, assign meshes when available, place a `Tr
 
 The plugin can also be copied into another Unreal Engine 5.6 project's `Plugins` folder.
 
+If no inventory asset is assigned, `Truss Structure Actor` attempts to use the migrated Majic Gear truss meshes at:
+
+- `/Game/Majic_Gear/Truss/10ftTruss/StaticMeshes/SM__0_ft_Truss_v2`
+- `/Game/Majic_Gear/Truss/8ftTruss/StaticMeshes/SM___ft_Truss_v1`
+- `/Game/Majic_Gear/Truss/5ftTruss/StaticMeshes/SM___ft_Truss_v1`
+- `/Game/Majic_Gear/Truss/4ftTruss/StaticMeshes/SM___ft_Truss_v2`
+- `/Game/Majic_Gear/Truss/2ftTruss/StaticMeshes/SM___ft_Truss_v1`
+
 ## Notes
 
 Unreal uses centimeters internally, so piece lengths are stored in centimeters.

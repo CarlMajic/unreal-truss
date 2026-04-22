@@ -22,6 +22,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss")
 	TObjectPtr<UTrussInventoryDataAsset> Inventory;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss")
+	bool bUseMajicGearDefaultMeshes = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "2.0", Units = "ft"))
 	float LengthFt = 20.0f;
 
@@ -47,6 +50,6 @@ private:
 	TArray<TObjectPtr<UActorComponent>> GeneratedComponents;
 
 	UInstancedStaticMeshComponent* FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh);
+	UStaticMesh* LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const;
 	void AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX);
 };
-
