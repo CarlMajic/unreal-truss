@@ -98,7 +98,7 @@ public:
 	float CubeCornerConnectionOffsetCm = 15.24f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (Units = "cm"))
-	float CubeYRunXOffsetCm = 30.48f;
+	float CubeYRunXOffsetCm = 45.720001f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (ClampMin = "1.0", Units = "cm"))
 	float DebugCrossSectionCm = 30.48f;
