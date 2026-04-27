@@ -42,26 +42,76 @@ void ATrussStructureActor::OnConstruction(const FTransform& Transform)
 
 	if (bBuildOnConstruction)
 	{
-		switch (BuildMode)
-		{
-		case ETrussBuildMode::CubeArch:
-			BuildCubeArch();
-			break;
-		case ETrussBuildMode::Cube:
-			BuildCube();
-			break;
-		case ETrussBuildMode::Arch:
-			BuildArch();
-			break;
-		case ETrussBuildMode::Rectangle:
-			BuildRectangle();
-			break;
-		case ETrussBuildMode::StraightRun:
-		default:
-			BuildStraightRun();
-			break;
-		}
+		BuildCurrentMode();
 	}
+}
+
+void ATrussStructureActor::BuildCurrentMode()
+{
+	switch (BuildMode)
+	{
+	case ETrussBuildMode::CubeArch:
+		BuildCubeArch();
+		break;
+	case ETrussBuildMode::Cube:
+		BuildCube();
+		break;
+	case ETrussBuildMode::Arch:
+		BuildArch();
+		break;
+	case ETrussBuildMode::Rectangle:
+		BuildRectangle();
+		break;
+	case ETrussBuildMode::StraightRun:
+	default:
+		BuildStraightRun();
+		break;
+	}
+}
+
+void ATrussStructureActor::ApplyBuildDefinition(const FTrussBuildDefinition& Definition, bool bRebuild)
+{
+	BuildMode = Definition.BuildMode;
+	LengthFt = Definition.LengthFt;
+	StraightRunHeightFt = Definition.StraightRunHeightFt;
+	RectangleLengthFt = Definition.RectangleLengthFt;
+	RectangleWidthFt = Definition.RectangleWidthFt;
+	RectangleHeightFt = Definition.RectangleHeightFt;
+	ArchHeightFt = Definition.ArchHeightFt;
+	ArchWidthFt = Definition.ArchWidthFt;
+	CubeLengthFt = Definition.CubeLengthFt;
+	CubeWidthFt = Definition.CubeWidthFt;
+	CubeHeightFt = Definition.CubeHeightFt;
+	CubeArchWidthFt = Definition.CubeArchWidthFt;
+	CubeArchHeightFt = Definition.CubeArchHeightFt;
+	CubeArchSideSpacingPiece = Definition.CubeArchSideSpacingPiece;
+	CubeArchDepthSpacingPiece = Definition.CubeArchDepthSpacingPiece;
+
+	if (bRebuild)
+	{
+		BuildCurrentMode();
+	}
+}
+
+FTrussBuildDefinition ATrussStructureActor::GetBuildDefinition() const
+{
+	FTrussBuildDefinition Definition;
+	Definition.BuildMode = BuildMode;
+	Definition.LengthFt = LengthFt;
+	Definition.StraightRunHeightFt = StraightRunHeightFt;
+	Definition.RectangleLengthFt = RectangleLengthFt;
+	Definition.RectangleWidthFt = RectangleWidthFt;
+	Definition.RectangleHeightFt = RectangleHeightFt;
+	Definition.ArchHeightFt = ArchHeightFt;
+	Definition.ArchWidthFt = ArchWidthFt;
+	Definition.CubeLengthFt = CubeLengthFt;
+	Definition.CubeWidthFt = CubeWidthFt;
+	Definition.CubeHeightFt = CubeHeightFt;
+	Definition.CubeArchWidthFt = CubeArchWidthFt;
+	Definition.CubeArchHeightFt = CubeArchHeightFt;
+	Definition.CubeArchSideSpacingPiece = CubeArchSideSpacingPiece;
+	Definition.CubeArchDepthSpacingPiece = CubeArchDepthSpacingPiece;
+	return Definition;
 }
 
 void ATrussStructureActor::BuildStraightRun()
@@ -70,8 +120,9 @@ void ATrussStructureActor::BuildStraightRun()
 
 	const float TargetLengthCm = UTrussMathLibrary::FeetToCentimeters(LengthFt);
 	const FTrussCombinationResult Combination = UTrussMathLibrary::FindBestTrussCombination(TargetLengthCm);
+	const float HeightCm = UTrussMathLibrary::FeetToCentimeters(StraightRunHeightFt);
 
-	AddStraightRun(Combination.Pieces, FVector::ZeroVector, FRotator::ZeroRotator);
+	AddStraightRun(Combination.Pieces, FVector(0.0f, 0.0f, HeightCm), FRotator::ZeroRotator);
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(Combination.ActualLengthCm);
 }
 
@@ -89,6 +140,7 @@ void ATrussStructureActor::BuildRectangle()
 	const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
 	const float CornerX = CornerExtent.X;
 	const float CornerY = CornerExtent.Y;
+	const float HeightCm = UTrussMathLibrary::FeetToCentimeters(RectangleHeightFt);
 	const float TargetLengthCm = UTrussMathLibrary::FeetToCentimeters(RectangleLengthFt);
 	const float TargetWidthCm = UTrussMathLibrary::FeetToCentimeters(RectangleWidthFt);
 	const float InnerLengthCm = TargetLengthCm - (2.0f * CornerX);
@@ -105,15 +157,15 @@ void ATrussStructureActor::BuildRectangle()
 	const float RightX = CornerX + LengthCombination.ActualLengthCm;
 	const float BackY = CornerY + WidthCombination.ActualLengthCm;
 
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(0.0f, 0.0f, 0.0f), FRotator::ZeroRotator);
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX, 0.0f, 0.0f), FRotator::ZeroRotator);
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX, BackY, 0.0f), FRotator::ZeroRotator);
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(0.0f, BackY, 0.0f), FRotator::ZeroRotator);
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(0.0f, 0.0f, HeightCm), FRotator::ZeroRotator);
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX, 0.0f, HeightCm), FRotator::ZeroRotator);
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX, BackY, HeightCm), FRotator::ZeroRotator);
+	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(0.0f, BackY, HeightCm), FRotator::ZeroRotator);
 
-	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, 0.0f, 0.0f), FRotator::ZeroRotator);
-	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, BackY, 0.0f), FRotator::ZeroRotator);
-	AddStraightRun(WidthCombination.Pieces, FVector(RectangleYRunXOffsetCm, CornerY, 0.0f), FRotator(0.0f, 90.0f, 0.0f));
-	AddStraightRun(WidthCombination.Pieces, FVector(RightX + RectangleYRunXOffsetCm, CornerY, 0.0f), FRotator(0.0f, 90.0f, 0.0f));
+	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, 0.0f, HeightCm), FRotator::ZeroRotator);
+	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, BackY, HeightCm), FRotator::ZeroRotator);
+	AddStraightRun(WidthCombination.Pieces, FVector(RectangleYRunXOffsetCm, CornerY, HeightCm), FRotator(0.0f, 90.0f, 0.0f));
+	AddStraightRun(WidthCombination.Pieces, FVector(RightX + RectangleYRunXOffsetCm, CornerY, HeightCm), FRotator(0.0f, 90.0f, 0.0f));
 
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet((2.0f * (CornerX + CornerY)) + (2.0f * LengthCombination.ActualLengthCm) + (2.0f * WidthCombination.ActualLengthCm));
 }

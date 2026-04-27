@@ -12,8 +12,16 @@ public class UnrealTruss : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"InputCore"
+			"InputCore",
+			"AssetRegistry",
+			"MajicTrussRuntime",
+			"UMG"
+		});
+
+		PrivateDependencyModuleNames.AddRange(new[]
+		{
+			"Slate",
+			"SlateCore"
 		});
 	}
 }
-

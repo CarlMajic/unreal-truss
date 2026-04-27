@@ -18,6 +18,57 @@ enum class ETrussBuildMode : uint8
 	CubeArch UMETA(DisplayName = "Cube Arch")
 };
 
+USTRUCT(BlueprintType)
+struct FTrussBuildDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truss")
+	ETrussBuildMode BuildMode = ETrussBuildMode::StraightRun;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "2.0", Units = "ft"))
+	float LengthFt = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "0.0", Units = "ft"))
+	float StraightRunHeightFt = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "2.0", Units = "ft"))
+	float RectangleLengthFt = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "2.0", Units = "ft"))
+	float RectangleWidthFt = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "0.0", Units = "ft"))
+	float RectangleHeightFt = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (ClampMin = "4.0", Units = "ft"))
+	float ArchHeightFt = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (ClampMin = "4.0", Units = "ft"))
+	float ArchWidthFt = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeLengthFt = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeWidthFt = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeHeightFt = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch", meta = (ClampMin = "8.0", Units = "ft"))
+	float CubeArchWidthFt = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch", meta = (ClampMin = "4.0", Units = "ft"))
+	float CubeArchHeightFt = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch")
+	ETrussPieceType CubeArchSideSpacingPiece = ETrussPieceType::FourFoot;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube Arch")
+	ETrussPieceType CubeArchDepthSpacingPiece = ETrussPieceType::FourFoot;
+};
+
 UCLASS(BlueprintType)
 class MAJICTRUSSRUNTIME_API ATrussStructureActor : public AActor
 {
@@ -68,6 +119,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "2.0", Units = "ft"))
 	float LengthFt = 20.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run", meta = (ClampMin = "0.0", Units = "ft"))
+	float StraightRunHeightFt = 10.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Straight Run")
 	bool bBuildOnConstruction = true;
 
@@ -76,6 +130,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "2.0", Units = "ft"))
 	float RectangleWidthFt = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "0.0", Units = "ft"))
+	float RectangleHeightFt = 10.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (Units = "cm"))
 	float RectangleYRunXOffsetCm = 30.48f;
@@ -160,6 +217,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void BuildCubeArch();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void BuildCurrentMode();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void ApplyBuildDefinition(const FTrussBuildDefinition& Definition, bool bRebuild = true);
+
+	UFUNCTION(BlueprintPure, Category = "Truss")
+	FTrussBuildDefinition GetBuildDefinition() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void ClearGeneratedTruss();
