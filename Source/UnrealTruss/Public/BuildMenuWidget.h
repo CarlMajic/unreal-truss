@@ -159,6 +159,7 @@ private:
 	static ETrussBuildMode OptionToBuildMode(const FString& Option);
 	static FString PieceTypeToOption(ETrussPieceType PieceType);
 	static ETrussPieceType OptionToPieceType(const FString& Option);
+	UWidget* GenerateComboItemWidget(FString Item);
 
 	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);

@@ -116,11 +116,60 @@ Current test controls:
 - `Tab`: open or close the placeholder build menu
 - `B`: toggle build mode
 - `E`: edit the truss actor currently under the view
+- `L`: toggle truss light placement mode
 - Looking at a truss actor with the menu closed should now highlight its selection bounds before pressing `E`.
 - `Left Mouse Button`: place the selected build item
 - `R`: rotate positive
 - `F`: rotate negative
 - `Q`: cancel build mode
+
+Light placement first pass:
+
+- Press `L` to enter light placement mode.
+- A separate light menu opens with lighting blueprints discovered from `/Game/Majic_Gear/Lighting`.
+- Choose a fixture and `Over Slung` or `Under Slung`, then click `Place`.
+- After clicking `Place`, a live preview of that light follows the truss pointer.
+- Left click on a truss rail to place the selected light.
+- The same light remains active so repeated placement does not require reopening the menu every time.
+- Press `L` again or `Q` to cancel the active light placement session.
+- Runtime light placement now writes to `ATrussStructureActor` mounted-fixture definitions instead of leaving loose attached actors.
+- That means runtime-placed lights and editor-placed lights now share the same underlying truss-owned data model.
+- This pass uses a simple four-rail mount model on the truss bounds:
+  - left/right rail from the click side
+  - top rails for `Over Slung`
+  - bottom rails for `Under Slung`
+- This is intended as the first runtime workflow for hanging fixtures. It should be refined later with fixture-specific orientation, clamp offsets, and better mount previews.
+
+Shared targeting pointer:
+
+- The project now has a shared camera-driven targeting pointer component.
+- It uses the same core concept for both truss placement and truss light placement:
+  - trace from the player camera
+  - draw a visible beam in world space
+  - show a hit marker at the impact point
+- `B` build mode uses the pointer for world placement.
+- `L` light mode uses the pointer for truss rail targeting.
+- This keeps the targeting workflow unified so later systems like stage placement can reuse it instead of creating separate one-off traces.
+- Current visuals use lightweight engine basic-shape meshes for the beam and hit marker. This is a practical first pass and can later be upgraded to nicer materials or Niagara effects if needed.
+
+Current direction:
+
+- Keep truss create/edit and light placement as separate workflows.
+- Keep the targeting layer shared across build systems.
+- Use truss-targeted runtime mounting for DMX fixtures next, then expand into better preview/edit tools for placed lights.
+- Treat stage building as a separate system later, likely grid/cell based with per-section heights rather than a single repeated mesh array.
+
+Editor light placement first pass:
+
+- `ATrussStructureActor` now owns persistent `Mounted Fixtures`.
+- In the editor, select a truss actor and use:
+  - `Editor Fixture Class`
+  - `Editor Fixture Sling Type`
+  - `Editor Fixture Local Hit Location` (has an editor viewport widget)
+- Then click `Add Editor Mounted Fixture`.
+- `Rebuild Mounted Fixtures` happens through construction, so mounted lights respawn when the truss rebuilds.
+- `Clear Mounted Fixtures` removes all stored mounted-light definitions from that truss actor.
+- This is the first editor-side workflow. It uses a viewport handle plus `Call In Editor` buttons rather than a full custom editor mode.
 
 The plugin can also be copied into another Unreal Engine 5.6 project's `Plugins` folder.
 

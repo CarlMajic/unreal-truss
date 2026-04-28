@@ -184,6 +184,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	}
 
 	ModeComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("ModeComboBox"));
+	ModeComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::StraightRun));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Rectangle));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Arch));
@@ -268,6 +269,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	}
 
 	SidePieceComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("SidePieceComboBox"));
+	SidePieceComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
 	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TwoFoot));
 	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FourFoot));
 	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FiveFoot));
@@ -288,6 +290,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	}
 
 	DepthPieceComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("DepthPieceComboBox"));
+	DepthPieceComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
 	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TwoFoot));
 	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FourFoot));
 	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FiveFoot));
@@ -639,6 +642,18 @@ ETrussPieceType UBuildMenuWidget::OptionToPieceType(const FString& Option)
 		return ETrussPieceType::TenFoot;
 	}
 	return ETrussPieceType::FourFoot;
+}
+
+UWidget* UBuildMenuWidget::GenerateComboItemWidget(FString Item)
+{
+	UTextBlock* ItemText = WidgetTree ? WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass()) : NewObject<UTextBlock>(this);
+	if (ItemText)
+	{
+		ItemText->SetText(FText::FromString(Item));
+		ItemText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	}
+
+	return ItemText;
 }
 
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)

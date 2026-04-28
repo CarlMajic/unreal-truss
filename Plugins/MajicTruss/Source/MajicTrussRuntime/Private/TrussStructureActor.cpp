@@ -56,6 +56,8 @@ void ATrussStructureActor::OnConstruction(const FTransform& Transform)
 	{
 		BuildCurrentMode();
 	}
+
+	RebuildMountedFixtures();
 }
 
 void ATrussStructureActor::BuildCurrentMode()
@@ -572,6 +574,117 @@ void ATrussStructureActor::SetSelectionHighlighted(bool bHighlighted)
 	}
 }
 
+bool ATrussStructureActor::GetFixtureMountTransform(const FVector& WorldHitLocation, ETrussSlingType SlingType, FTransform& OutWorldTransform) const
+{
+	const FBox Bounds = GetGeneratedBounds();
+	if (!Bounds.IsValid)
+	{
+		return false;
+	}
+
+	const FTransform ActorTransform = GetActorTransform();
+	const FVector LocalHitLocation = ActorTransform.InverseTransformPosition(WorldHitLocation);
+	const FVector Min = Bounds.Min;
+	const FVector Max = Bounds.Max;
+	const FVector Extent = Bounds.GetExtent();
+
+	const float RailY = FMath::Max(0.0f, Extent.Y - RailInsetCm);
+	const float MountY = LocalHitLocation.Y >= Bounds.GetCenter().Y ? RailY : -RailY;
+	const float DesiredZ = LocalHitLocation.Z + (SlingType == ETrussSlingType::OverSlung ? RailInsetCm : -RailInsetCm);
+	const float RailZ = FMath::Clamp(DesiredZ, Min.Z + RailInsetCm, Max.Z - RailInsetCm);
+	const float MountX = FMath::Clamp(LocalHitLocation.X, Min.X, Max.X);
+	const FVector LocalMountLocation(MountX, MountY, RailZ);
+
+	FRotator WorldRotation = GetActorRotation();
+	if (SlingType == ETrussSlingType::UnderSlung)
+	{
+		WorldRotation.Roll += 180.0f;
+	}
+
+	OutWorldTransform = FTransform(WorldRotation, ActorTransform.TransformPosition(LocalMountLocation), FVector::OneVector);
+	return true;
+}
+
+bool ATrussStructureActor::AddMountedFixtureDefinition(TSubclassOf<AActor> FixtureClass, ETrussSlingType SlingType, const FVector& WorldHitLocation, bool bRespawnFixtures)
+{
+	if (!FixtureClass)
+	{
+		return false;
+	}
+
+	FMountedFixtureDefinition& NewFixture = MountedFixtures.AddDefaulted_GetRef();
+	NewFixture.FixtureClass = FixtureClass;
+	NewFixture.SlingType = SlingType;
+	NewFixture.LocalHitLocation = GetActorTransform().InverseTransformPosition(WorldHitLocation);
+
+	if (bRespawnFixtures)
+	{
+		RebuildMountedFixtures();
+	}
+
+	return true;
+}
+
+void ATrussStructureActor::RebuildMountedFixtures()
+{
+	DestroyMountedFixtureActors();
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (const FMountedFixtureDefinition& FixtureDefinition : MountedFixtures)
+	{
+		if (!FixtureDefinition.FixtureClass)
+		{
+			continue;
+		}
+
+		FTransform MountTransform;
+		const FVector WorldHitLocation = GetActorTransform().TransformPosition(FixtureDefinition.LocalHitLocation);
+		if (!GetFixtureMountTransform(WorldHitLocation, FixtureDefinition.SlingType, MountTransform))
+		{
+			continue;
+		}
+
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Owner = this;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		SpawnParameters.ObjectFlags |= RF_Transactional;
+
+		AActor* FixtureActor = World->SpawnActor<AActor>(FixtureDefinition.FixtureClass, MountTransform, SpawnParameters);
+		if (!FixtureActor)
+		{
+			continue;
+		}
+
+		FixtureActor->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+		SpawnedMountedFixtureActors.Add(FixtureActor);
+	}
+}
+
+void ATrussStructureActor::AddEditorMountedFixture()
+{
+	if (!EditorFixtureClass)
+	{
+		return;
+	}
+
+	FMountedFixtureDefinition& NewFixture = MountedFixtures.AddDefaulted_GetRef();
+	NewFixture.FixtureClass = EditorFixtureClass;
+	NewFixture.SlingType = EditorFixtureSlingType;
+	NewFixture.LocalHitLocation = EditorFixtureLocalHitLocation;
+	RebuildMountedFixtures();
+}
+
+void ATrussStructureActor::ClearMountedFixtures()
+{
+	MountedFixtures.Reset();
+	DestroyMountedFixtureActors();
+}
+
 UInstancedStaticMeshComponent* ATrussStructureActor::FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh)
 {
 	UInstancedStaticMeshComponent* MeshComponent = GetMeshComponentForPiece(PieceType);
@@ -769,4 +882,17 @@ void ATrussStructureActor::ExpandGeneratedBounds(const FBox& Bounds)
 	}
 
 	GeneratedBounds += Bounds;
+}
+
+void ATrussStructureActor::DestroyMountedFixtureActors()
+{
+	for (AActor* FixtureActor : SpawnedMountedFixtureActors)
+	{
+		if (FixtureActor)
+		{
+			FixtureActor->Destroy();
+		}
+	}
+
+	SpawnedMountedFixtureActors.Reset();
 }

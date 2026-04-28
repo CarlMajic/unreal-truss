@@ -6,10 +6,13 @@
 #include "BuildManagerComponent.h"
 #include "BuildMenuWidget.h"
 #include "BuildPreviewActor.h"
+#include "LightPlacementMenuWidget.h"
+#include "TargetingPointerComponent.h"
 #include "InputCoreTypes.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/SphereComponent.h"
+#include "Engine/Blueprint.h"
 #include "Engine/Engine.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/PlayerController.h"
@@ -41,6 +44,7 @@ AUnrealTrussBuildPawn::AUnrealTrussBuildPawn()
 	MovementComponent->Deceleration = 12000.0f;
 
 	BuildManagerComponent = CreateDefaultSubobject<UBuildManagerComponent>(TEXT("BuildManagerComponent"));
+	TargetingPointerComponent = CreateDefaultSubobject<UTargetingPointerComponent>(TEXT("TargetingPointerComponent"));
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
@@ -50,8 +54,10 @@ void AUnrealTrussBuildPawn::BeginPlay()
 	Super::BeginPlay();
 
 	GatherBuildItems();
+	GatherLightingBlueprints();
 	DefaultBuildItem = FindDefaultBuildItem();
 	EnsureBuildMenuWidget();
+	EnsureLightPlacementMenuWidget();
 	ShowControlsMessage();
 }
 
@@ -87,13 +93,57 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 		}
 	}
 
-	const bool bMenuVisible = BuildMenuWidget && BuildMenuWidget->GetVisibility() == ESlateVisibility::Visible;
-	if (!bMenuVisible)
+	if (bLightPlacementModeActive)
 	{
-		SetHoveredTrussActor(TraceForTrussActor());
+		UpdateLightPreview();
+	}
+
+	const bool bBuildMenuVisible = BuildMenuWidget && BuildMenuWidget->GetVisibility() == ESlateVisibility::Visible;
+	const bool bLightMenuVisible = LightPlacementMenuWidget && LightPlacementMenuWidget->GetVisibility() == ESlateVisibility::Visible;
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+
+	if (TargetingPointerComponent && PlayerController)
+	{
+		AActor* PreviewActorToIgnore = BuildManagerComponent ? BuildManagerComponent->ActivePreviewActor.Get() : nullptr;
+		AActor* PreviewChildToIgnore = BuildManagerComponent && BuildManagerComponent->ActivePreviewActor
+			? BuildManagerComponent->ActivePreviewActor->GetPreviewActor()
+			: nullptr;
+
+		if (!bBuildMenuVisible && !bLightMenuVisible && BuildManagerComponent && BuildManagerComponent->bBuildModeActive)
+		{
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+		}
+		else if (!bBuildMenuVisible && !bLightMenuVisible && bLightPlacementModeActive)
+		{
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::TrussSelection, PreviewActorToIgnore, PreviewChildToIgnore);
+		}
+		else
+		{
+			TargetingPointerComponent->HidePointer();
+		}
+	}
+
+	if (!bBuildMenuVisible && !bLightMenuVisible)
+	{
+		if (TargetingPointerComponent && TargetingPointerComponent->bHasValidHit && TargetingPointerComponent->CurrentTrussActor)
+		{
+			HoveredTrussHitLocation = TargetingPointerComponent->CurrentHitResult.ImpactPoint;
+			SetHoveredTrussActor(TargetingPointerComponent->CurrentTrussActor);
+		}
+		else
+		{
+			FHitResult TrussHitResult;
+			ATrussStructureActor* TrussActor = nullptr;
+			if (TraceForTrussHit(TrussHitResult, TrussActor))
+			{
+				HoveredTrussHitLocation = TrussHitResult.ImpactPoint;
+			}
+			SetHoveredTrussActor(TrussActor);
+		}
 	}
 	else
 	{
+		HoveredTrussHitLocation = FVector::ZeroVector;
 		SetHoveredTrussActor(nullptr);
 	}
 }
@@ -113,9 +163,9 @@ void AUnrealTrussBuildPawn::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindAction(TEXT("ConfirmBuild"), IE_Pressed, this, &AUnrealTrussBuildPawn::ConfirmBuildPlacement);
 	PlayerInputComponent->BindAction(TEXT("CancelBuild"), IE_Pressed, this, &AUnrealTrussBuildPawn::CancelBuildMode);
 	PlayerInputComponent->BindAction(TEXT("EditLookedAtTruss"), IE_Pressed, this, &AUnrealTrussBuildPawn::EditLookedAtTruss);
+	PlayerInputComponent->BindAction(TEXT("ToggleLightPlacementMode"), IE_Pressed, this, &AUnrealTrussBuildPawn::ToggleLightPlacementMode);
 	PlayerInputComponent->BindAction(TEXT("RotateBuildPositive"), IE_Pressed, this, &AUnrealTrussBuildPawn::RotateBuildPositive);
 	PlayerInputComponent->BindAction(TEXT("RotateBuildNegative"), IE_Pressed, this, &AUnrealTrussBuildPawn::RotateBuildNegative);
-	PlayerInputComponent->BindKey(EKeys::E, IE_Pressed, this, &AUnrealTrussBuildPawn::EditLookedAtTruss);
 }
 
 void AUnrealTrussBuildPawn::MoveForward(float Value)
@@ -204,6 +254,12 @@ void AUnrealTrussBuildPawn::ToggleBuildMenu()
 
 void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 {
+	if (bLightPlacementModeActive)
+	{
+		HandleLightPlacementActionRequested();
+		return;
+	}
+
 	if (!BuildManagerComponent || !BuildManagerComponent->bBuildModeActive)
 	{
 		return;
@@ -232,6 +288,12 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		BuildMenuWidget->SetEditingTarget(nullptr);
 	}
 
+	bLightPlacementModeActive = false;
+	ActiveLightFixtureClass = nullptr;
+	PendingLightTargetTruss = nullptr;
+	PendingLightTargetWorldLocation = FVector::ZeroVector;
+	DestroyLightPreviewActor();
+	SetLightPlacementMenuVisible(false);
 	SetHoveredTrussActor(nullptr);
 }
 
@@ -263,6 +325,54 @@ void AUnrealTrussBuildPawn::EditLookedAtTruss()
 	SetBuildMenuVisible(true);
 }
 
+void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
+{
+	const bool bMenuVisible = LightPlacementMenuWidget && LightPlacementMenuWidget->GetVisibility() == ESlateVisibility::Visible;
+	if (bLightPlacementModeActive || bMenuVisible)
+	{
+		bLightPlacementModeActive = false;
+		ActiveLightFixtureClass = nullptr;
+		PendingLightTargetTruss = nullptr;
+		PendingLightTargetWorldLocation = FVector::ZeroVector;
+		DestroyLightPreviewActor();
+		SetLightPlacementMenuVisible(false);
+		if (LightPlacementMenuWidget)
+		{
+			LightPlacementMenuWidget->SetPlacementReady(false);
+			LightPlacementMenuWidget->SetTargetTruss(nullptr);
+		}
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("Light placement canceled."));
+		}
+		return;
+	}
+
+	if (BuildManagerComponent)
+	{
+		BuildManagerComponent->ExitBuildMode();
+		BuildManagerComponent->ClearEditingTrussActor();
+	}
+
+	if (BuildMenuWidget)
+	{
+		BuildMenuWidget->SetEditingTarget(nullptr);
+	}
+
+	SetBuildMenuVisible(false);
+	EnsureLightPlacementMenuWidget();
+	if (LightPlacementMenuWidget)
+	{
+		LightPlacementMenuWidget->SetPlacementReady(false);
+		LightPlacementMenuWidget->SetTargetTruss(nullptr);
+	}
+	SetLightPlacementMenuVisible(true);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("Choose a light, then press Place to begin repeated truss light placement."));
+	}
+}
+
 void AUnrealTrussBuildPawn::RotateBuildPositive()
 {
 	if (BuildManagerComponent)
@@ -290,7 +400,7 @@ void AUnrealTrussBuildPawn::ShowControlsMessage() const
 		-1,
 		10.0f,
 		FColor::Cyan,
-		TEXT("Controls: WASD move, Space/Ctrl up-down, Mouse look, Tab menu, B create mode, E edit looked-at truss, Left Mouse place/update, R/F rotate, Q cancel")
+		TEXT("Controls: WASD move, Space/Ctrl up-down, Mouse look, Tab truss menu, B create mode, E edit looked-at truss, L light mode, Left Mouse place/click rail, R/F rotate, Q cancel")
 	);
 }
 
@@ -332,6 +442,42 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 		if (UBuildItemDataAsset* BuildItem = Cast<UBuildItemDataAsset>(AssetData.GetAsset()))
 		{
 			AvailableBuildItems.Add(BuildItem);
+		}
+	}
+}
+
+void AUnrealTrussBuildPawn::GatherLightingBlueprints()
+{
+	AvailableLightingNames.Reset();
+	AvailableLightingClasses.Reset();
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TArray<FAssetData> AssetDataList;
+	AssetRegistryModule.Get().GetAssetsByPath(FName(*LightingBlueprintFolder), AssetDataList, true, false);
+
+	for (const FAssetData& AssetData : AssetDataList)
+	{
+		if (AssetData.AssetClassPath != FTopLevelAssetPath(TEXT("/Script/Engine"), TEXT("Blueprint")))
+		{
+			continue;
+		}
+
+		const FString AssetName = AssetData.AssetName.ToString();
+		if (!AssetName.StartsWith(TEXT("BP_")))
+		{
+			continue;
+		}
+
+		if (UBlueprint* BlueprintAsset = Cast<UBlueprint>(AssetData.GetAsset()))
+		{
+			if (UClass* GeneratedClass = BlueprintAsset->GeneratedClass)
+			{
+				if (GeneratedClass->IsChildOf(AActor::StaticClass()))
+				{
+					AvailableLightingNames.Add(AssetName.RightChop(3));
+					AvailableLightingClasses.Add(GeneratedClass);
+				}
+			}
 		}
 	}
 }
@@ -378,6 +524,80 @@ void AUnrealTrussBuildPawn::EnsureBuildMenuWidget()
 	BuildMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
 
+void AUnrealTrussBuildPawn::EnsureLightPlacementMenuWidget()
+{
+	if (LightPlacementMenuWidget)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	TSubclassOf<ULightPlacementMenuWidget> MenuClass = LightPlacementMenuWidgetClass;
+	if (!MenuClass)
+	{
+		MenuClass = ULightPlacementMenuWidget::StaticClass();
+	}
+
+	LightPlacementMenuWidget = CreateWidget<ULightPlacementMenuWidget>(PlayerController, MenuClass);
+	if (!LightPlacementMenuWidget)
+	{
+		return;
+	}
+
+	LightPlacementMenuWidget->SetFixtureOptions(AvailableLightingNames, AvailableLightingClasses);
+	LightPlacementMenuWidget->SetPlacementReady(false);
+	LightPlacementMenuWidget->OnPlaceRequested.AddDynamic(this, &AUnrealTrussBuildPawn::HandleLightPlacementActionRequested);
+	LightPlacementMenuWidget->OnCancelRequested.AddDynamic(this, &AUnrealTrussBuildPawn::HandleLightPlacementCanceled);
+	LightPlacementMenuWidget->AddToViewport(11);
+	LightPlacementMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+bool AUnrealTrussBuildPawn::EnsureLightPreviewActor()
+{
+	if (LightPreviewActor)
+	{
+		return true;
+	}
+
+	if (!ActiveLightFixtureClass)
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	LightPreviewActor = World->SpawnActor<ABuildPreviewActor>(ABuildPreviewActor::StaticClass(), FTransform::Identity, SpawnParameters);
+	if (!LightPreviewActor)
+	{
+		return false;
+	}
+
+	LightPreviewActor->SetPreviewActorClass(ActiveLightFixtureClass);
+	LightPreviewActor->SetActorHiddenInGame(true);
+	return true;
+}
+
+void AUnrealTrussBuildPawn::DestroyLightPreviewActor()
+{
+	if (LightPreviewActor)
+	{
+		LightPreviewActor->Destroy();
+		LightPreviewActor = nullptr;
+	}
+}
+
 void AUnrealTrussBuildPawn::SetBuildMenuVisible(bool bVisible)
 {
 	if (!BuildMenuWidget)
@@ -398,6 +618,35 @@ void AUnrealTrussBuildPawn::SetBuildMenuVisible(bool bVisible)
 	{
 		FInputModeGameAndUI InputMode;
 		InputMode.SetWidgetToFocus(BuildMenuWidget->TakeWidget());
+		InputMode.SetHideCursorDuringCapture(false);
+		PlayerController->SetInputMode(InputMode);
+	}
+	else
+	{
+		PlayerController->SetInputMode(FInputModeGameOnly());
+	}
+}
+
+void AUnrealTrussBuildPawn::SetLightPlacementMenuVisible(bool bVisible)
+{
+	if (!LightPlacementMenuWidget)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	LightPlacementMenuWidget->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	PlayerController->bShowMouseCursor = bVisible;
+
+	if (bVisible)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(LightPlacementMenuWidget->TakeWidget());
 		InputMode.SetHideCursorDuringCapture(false);
 		PlayerController->SetInputMode(InputMode);
 	}
@@ -453,13 +702,100 @@ void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
 	SetBuildMenuVisible(false);
 }
 
-ATrussStructureActor* AUnrealTrussBuildPawn::TraceForTrussActor() const
+void AUnrealTrussBuildPawn::HandleLightPlacementActionRequested()
 {
+	if (!LightPlacementMenuWidget)
+	{
+		return;
+	}
+
+	if (!bLightPlacementModeActive)
+	{
+		UClass* FixtureClass = LightPlacementMenuWidget->GetSelectedFixtureClass();
+		if (!FixtureClass || !FixtureClass->IsChildOf(AActor::StaticClass()))
+		{
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("Failed to resolve selected lighting actor class."));
+			}
+			return;
+		}
+
+		ActiveLightFixtureClass = FixtureClass;
+		ActiveLightSlingType = LightPlacementMenuWidget->GetSelectedSlingType();
+		bLightPlacementModeActive = true;
+		PendingLightTargetTruss = nullptr;
+		PendingLightTargetWorldLocation = FVector::ZeroVector;
+		DestroyLightPreviewActor();
+		EnsureLightPreviewActor();
+		LightPlacementMenuWidget->SetPlacementReady(true);
+		SetLightPlacementMenuVisible(false);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, TEXT("Light selected. Aim at a truss rail and left click to place copies."));
+		}
+		return;
+	}
+
+	if (!PendingLightTargetTruss || !ActiveLightFixtureClass)
+	{
+		return;
+	}
+
+	FTransform MountTransform;
+	if (!PendingLightTargetTruss->GetFixtureMountTransform(PendingLightTargetWorldLocation, ActiveLightSlingType, MountTransform))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (PendingLightTargetTruss->AddMountedFixtureDefinition(ActiveLightFixtureClass, ActiveLightSlingType, PendingLightTargetWorldLocation, true))
+	{
+		PendingLightTargetTruss->Modify();
+	}
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("Placed light on truss."));
+	}
+}
+
+void AUnrealTrussBuildPawn::HandleLightPlacementCanceled()
+{
+	SetLightPlacementMenuVisible(false);
+	if (LightPlacementMenuWidget)
+	{
+		LightPlacementMenuWidget->SetPlacementReady(false);
+		LightPlacementMenuWidget->SetTargetTruss(nullptr);
+	}
+	PendingLightTargetTruss = nullptr;
+	PendingLightTargetWorldLocation = FVector::ZeroVector;
+	bLightPlacementModeActive = false;
+	ActiveLightFixtureClass = nullptr;
+	DestroyLightPreviewActor();
+}
+
+bool AUnrealTrussBuildPawn::TraceForTrussHit(FHitResult& OutHitResult, ATrussStructureActor*& OutActor) const
+{
+	if (TargetingPointerComponent && TargetingPointerComponent->bHasValidHit && TargetingPointerComponent->CurrentTrussActor)
+	{
+		OutHitResult = TargetingPointerComponent->CurrentHitResult;
+		OutActor = TargetingPointerComponent->CurrentTrussActor;
+		return true;
+	}
+
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	UWorld* World = GetWorld();
 	if (!PlayerController || !World)
 	{
-		return nullptr;
+		return false;
 	}
 
 	FVector ViewLocation = FVector::ZeroVector;
@@ -483,24 +819,104 @@ ATrussStructureActor* AUnrealTrussBuildPawn::TraceForTrussActor() const
 
 	if (!World->LineTraceMultiByObjectType(HitResults, ViewLocation, TraceEnd, ObjectQueryParams, QueryParams))
 	{
-		return nullptr;
+		return false;
 	}
 
 	for (const FHitResult& HitResult : HitResults)
 	{
 		if (ATrussStructureActor* TrussActor = Cast<ATrussStructureActor>(HitResult.GetActor()))
 		{
-			return TrussActor;
+			OutHitResult = HitResult;
+			OutActor = TrussActor;
+			return true;
 		}
 
 		if (const UActorComponent* HitComponent = HitResult.GetComponent())
 		{
 			if (ATrussStructureActor* OwnerTrussActor = Cast<ATrussStructureActor>(HitComponent->GetOwner()))
 			{
-				return OwnerTrussActor;
+				OutHitResult = HitResult;
+				OutActor = OwnerTrussActor;
+				return true;
 			}
 		}
 	}
 
-	return nullptr;
+	return false;
+}
+
+void AUnrealTrussBuildPawn::UpdateLightPreview()
+{
+	if (!bLightPlacementModeActive || !ActiveLightFixtureClass)
+	{
+		DestroyLightPreviewActor();
+		return;
+	}
+
+	if (!EnsureLightPreviewActor())
+	{
+		return;
+	}
+
+	if (LightPlacementMenuWidget)
+	{
+		LightPlacementMenuWidget->SetTargetTruss(HoveredTrussActor.Get());
+	}
+
+	if (!HoveredTrussActor)
+	{
+		LightPreviewActor->SetActorHiddenInGame(true);
+		PendingLightTargetTruss = nullptr;
+		return;
+	}
+
+	FTransform MountTransform;
+	if (!HoveredTrussActor->GetFixtureMountTransform(HoveredTrussHitLocation, ActiveLightSlingType, MountTransform))
+	{
+		LightPreviewActor->SetActorHiddenInGame(true);
+		PendingLightTargetTruss = nullptr;
+		return;
+	}
+
+	PendingLightTargetTruss = HoveredTrussActor.Get();
+	PendingLightTargetWorldLocation = HoveredTrussHitLocation;
+	LightPreviewActor->SetActorHiddenInGame(false);
+	LightPreviewActor->SetActorTransform(MountTransform);
+	LightPreviewActor->SetPlacementValid(true);
+}
+
+void AUnrealTrussBuildPawn::BeginLightPlacementSelection()
+{
+	if (!bLightPlacementModeActive)
+	{
+		return;
+	}
+
+	ATrussStructureActor* TargetTruss = HoveredTrussActor.Get();
+	if (!TargetTruss)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("Look at a truss before choosing a light mount point."));
+		}
+		return;
+	}
+
+	EnsureLightPlacementMenuWidget();
+	if (!LightPlacementMenuWidget)
+	{
+		return;
+	}
+
+	PendingLightTargetTruss = TargetTruss;
+	PendingLightTargetWorldLocation = HoveredTrussHitLocation;
+	LightPlacementMenuWidget->SetTargetTruss(TargetTruss);
+	SetLightPlacementMenuVisible(true);
+}
+
+ATrussStructureActor* AUnrealTrussBuildPawn::TraceForTrussActor() const
+{
+	FHitResult HitResult;
+	ATrussStructureActor* TrussActor = nullptr;
+	return TraceForTrussHit(HitResult, TrussActor) ? TrussActor : nullptr;
 }
