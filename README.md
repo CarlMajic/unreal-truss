@@ -38,6 +38,7 @@ What has been done:
   - truss mode selection and mode-dependent size editing in the placeholder menu
   - straight/rectangle hanging height controls
   - cube-arch side/depth spacer piece selection
+  - shared create/update action path for later editor-placed truss editing
 
 Why this direction:
 
@@ -52,6 +53,9 @@ Immediate next steps:
 - Add a basic UMG build menu that lets the player select a build item and tweak truss dimensions.
 - Add editing of additional truss-specific options like cube-arch spacing pieces and alignment offsets when needed.
 - Reuse the same truss settings panel later for editing already placed editor-built truss actors during play.
+- First-pass in-game editing flow is now based on selecting an existing `ATrussStructureActor`, loading its `FTrussBuildDefinition`, and updating that actor through the same menu.
+- Existing truss actors now expose a selection bounds box for reliable hover/edit targeting during play.
+- Editing an existing truss now rebuilds it in place instead of moving it to the preview transform.
 - Improve preview feedback:
   - valid/invalid placement materials or colors
   - snap behavior
@@ -111,6 +115,8 @@ Current test controls:
 - `Mouse`: look
 - `Tab`: open or close the placeholder build menu
 - `B`: toggle build mode
+- `E`: edit the truss actor currently under the view
+- Looking at a truss actor with the menu closed should now highlight its selection bounds before pressing `E`.
 - `Left Mouse Button`: place the selected build item
 - `R`: rotate positive
 - `F`: rotate negative

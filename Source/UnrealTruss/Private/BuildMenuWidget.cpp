@@ -13,6 +13,32 @@
 #include "TrussStructureActor.h"
 #include "Blueprint/WidgetTree.h"
 
+namespace
+{
+static UBuildItemDataAsset* FindMatchingBuildItemForActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ATrussStructureActor* TrussActor)
+{
+	if (!TrussActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (!BuildItem || BuildItem->ItemType != EBuildItemType::TrussStructure)
+		{
+			continue;
+		}
+
+		if (BuildItem->BuildActorClass && TrussActor->IsA(BuildItem->BuildActorClass))
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+}
+
 void UBuildMenuItemButtonProxy::Initialize(UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem)
 {
 	Owner = InOwner;
@@ -84,6 +110,11 @@ void UBuildMenuWidget::RefreshMenu()
 		DetailText->SetText(BuildDetailText());
 	}
 
+	if (ActionButtonText)
+	{
+		ActionButtonText->SetText(BuildActionButtonText());
+	}
+
 	RefreshTrussControls();
 	RebuildItemButtons();
 }
@@ -96,6 +127,27 @@ UBuildItemDataAsset* UBuildMenuWidget::GetSelectedBuildItem() const
 FTrussBuildDefinition UBuildMenuWidget::GetCurrentTrussDefinition() const
 {
 	return CurrentTrussDefinition;
+}
+
+void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
+{
+	EditingTarget = InEditingTarget;
+
+	if (EditingTarget)
+	{
+		CurrentTrussDefinition = EditingTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForActor(BuildItems, EditingTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+ATrussStructureActor* UBuildMenuWidget::GetEditingTarget() const
+{
+	return EditingTarget;
 }
 
 TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
@@ -247,6 +299,19 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 		DepthPieceComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 	}
 
+	ActionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ActionButton"));
+	ActionButton->SetBackgroundColor(FLinearColor(0.18f, 0.45f, 0.70f, 1.0f));
+	ActionButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleActionButtonClicked);
+
+	ActionButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ActionButtonText"));
+	ActionButtonText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	ActionButtonText->SetText(BuildActionButtonText());
+	ActionButton->AddChild(ActionButtonText);
+	if (UVerticalBoxSlot* ActionButtonSlot = RootBox->AddChildToVerticalBox(ActionButton))
+	{
+		ActionButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
 	ItemListBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ItemListBox"));
 	RootBox->AddChildToVerticalBox(ItemListBox);
 
@@ -264,6 +329,13 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ButtonProxies.Reset();
 	ItemListBox->ClearChildren();
 
+	const bool bShowBuildItemButtons = !EditingTarget && BuildItems.Num() > 1;
+	ItemListBox->SetVisibility(bShowBuildItemButtons ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (!bShowBuildItemButtons)
+	{
+		return;
+	}
+
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
 		if (!BuildItem)
@@ -277,7 +349,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 			: FLinearColor(0.10f, 0.10f, 0.12f, 1.0f));
 
 		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-		Label->SetText(FText::FromString(TEXT("Create")));
+		Label->SetText(BuildItem->DisplayName.IsEmpty() ? FText::FromName(BuildItem->ItemId) : BuildItem->DisplayName);
 		Label->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 		Button->AddChild(Label);
 
@@ -341,7 +413,16 @@ FText UBuildMenuWidget::BuildDetailText() const
 
 FText UBuildMenuWidget::BuildHeaderText() const
 {
-	return FText::FromString(TEXT("Build Menu"));
+	return EditingTarget
+		? FText::FromString(TEXT("Edit Truss"))
+		: FText::FromString(TEXT("Build Menu"));
+}
+
+FText UBuildMenuWidget::BuildActionButtonText() const
+{
+	return EditingTarget
+		? FText::FromString(TEXT("Edit"))
+		: FText::FromString(TEXT("Create"));
 }
 
 void UBuildMenuWidget::RefreshTrussControls()
@@ -720,4 +801,9 @@ void UBuildMenuWidget::HandleDepthPieceChanged(FString SelectedItemOption, ESele
 	{
 		DetailText->SetText(BuildDetailText());
 	}
+}
+
+void UBuildMenuWidget::HandleActionButtonClicked()
+{
+	OnActionRequested.Broadcast();
 }

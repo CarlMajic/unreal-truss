@@ -134,10 +134,37 @@ FBuildPlacementResult UBuildManagerComponent::ConfirmPlacement()
 		return Result;
 	}
 
+	if (EditingTrussActor && SelectedBuildItem->ItemType == EBuildItemType::TrussStructure)
+	{
+		EditingTrussActor->ApplyBuildDefinition(ActiveTrussDefinition, true);
+		Result.bSuccess = true;
+		Result.SpawnedActor = EditingTrussActor;
+		return Result;
+	}
+
 	AActor* SpawnedActor = SpawnBuildActor(CurrentPlacementTransform);
 	Result.bSuccess = SpawnedActor != nullptr;
 	Result.SpawnedActor = SpawnedActor;
 	return Result;
+}
+
+void UBuildManagerComponent::SetEditingTrussActor(ATrussStructureActor* TrussActor)
+{
+	EditingTrussActor = TrussActor;
+	if (EditingTrussActor)
+	{
+		ActiveTrussDefinition = EditingTrussActor->GetBuildDefinition();
+	}
+}
+
+void UBuildManagerComponent::ClearEditingTrussActor()
+{
+	EditingTrussActor = nullptr;
+}
+
+bool UBuildManagerComponent::IsEditingExistingActor() const
+{
+	return EditingTrussActor != nullptr;
 }
 
 FRotator UBuildManagerComponent::GetCurrentPlacementRotation() const

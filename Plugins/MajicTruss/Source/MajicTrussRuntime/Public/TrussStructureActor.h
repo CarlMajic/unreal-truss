@@ -80,6 +80,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss")
 	TObjectPtr<USceneComponent> SceneRoot;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss")
+	TObjectPtr<UBoxComponent> SelectionBounds;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Truss|Generated")
 	TObjectPtr<UInstancedStaticMeshComponent> TenFootTrussInstances;
 
@@ -230,11 +233,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void ClearGeneratedTruss();
 
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void SetSelectionHighlighted(bool bHighlighted);
+
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UActorComponent>> GeneratedComponents;
+
+	FBox GeneratedBounds;
 
 	UInstancedStaticMeshComponent* FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh);
 	UInstancedStaticMeshComponent* GetMeshComponentForPiece(ETrussPieceType PieceType) const;
@@ -246,4 +254,7 @@ private:
 	void AddStraightRun(const TArray<ETrussPieceType>& Pieces, const FVector& StartMinLocation, const FRotator& Rotation);
 	void AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, const FVector& TargetMinLocation, const FRotator& Rotation);
 	void AddDebugPiece(ETrussPieceType PieceType, float PieceLengthCm, float StartX);
+	void UpdateSelectionBounds();
+	FBox GetGeneratedBounds() const;
+	void ExpandGeneratedBounds(const FBox& Bounds);
 };

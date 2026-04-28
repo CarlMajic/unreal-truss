@@ -14,6 +14,7 @@ class UTextBlock;
 class UVerticalBox;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBuildMenuSelectionChanged, UBuildItemDataAsset*, SelectedItem);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBuildMenuActionRequested);
 
 UCLASS()
 class UNREALTRUSS_API UBuildMenuItemButtonProxy : public UObject
@@ -40,6 +41,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Build Menu")
 	FBuildMenuSelectionChanged OnBuildItemSelected;
 
+	UPROPERTY(BlueprintAssignable, Category = "Build Menu")
+	FBuildMenuActionRequested OnActionRequested;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuildItems);
 
@@ -57,6 +61,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FTrussBuildDefinition GetCurrentTrussDefinition() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class ATrussStructureActor* GetEditingTarget() const;
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -82,6 +92,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> DetailText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> ActionButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ActionButtonText = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ModeLabelText = nullptr;
@@ -128,11 +144,15 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UBuildMenuItemButtonProxy>> ButtonProxies;
 
+	UPROPERTY(Transient)
+	TObjectPtr<ATrussStructureActor> EditingTarget = nullptr;
+
 	bool bRefreshingControls = false;
 
 	void RebuildItemButtons();
 	FText BuildDetailText() const;
 	FText BuildHeaderText() const;
+	FText BuildActionButtonText() const;
 	void RefreshTrussControls();
 	void ApplyTrussDefinitionToBuildManager();
 	static FString BuildModeToOption(ETrussBuildMode BuildMode);
@@ -160,4 +180,7 @@ private:
 
 	UFUNCTION()
 	void HandleDepthPieceChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void HandleActionButtonClicked();
 };

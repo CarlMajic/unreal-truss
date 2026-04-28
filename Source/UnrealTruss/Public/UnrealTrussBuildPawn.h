@@ -7,6 +7,7 @@
 class UBuildItemDataAsset;
 class UBuildManagerComponent;
 class UBuildMenuWidget;
+class ATrussStructureActor;
 class UCameraComponent;
 class UFloatingPawnMovement;
 class USphereComponent;
@@ -57,6 +58,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UBuildMenuWidget> BuildMenuWidget;
 
+	UPROPERTY(Transient)
+	TObjectPtr<ATrussStructureActor> HoveredTrussActor;
+
 	UPROPERTY(EditAnywhere, Category = "Build")
 	TSubclassOf<UBuildMenuWidget> BuildMenuWidgetClass;
 
@@ -73,6 +77,7 @@ private:
 	void ToggleBuildMenu();
 	void ConfirmBuildPlacement();
 	void CancelBuildMode();
+	void EditLookedAtTruss();
 	void RotateBuildPositive();
 	void RotateBuildNegative();
 	void ShowControlsMessage() const;
@@ -80,6 +85,10 @@ private:
 	void GatherBuildItems();
 	void EnsureBuildMenuWidget();
 	void SetBuildMenuVisible(bool bVisible);
+	void SetHoveredTrussActor(ATrussStructureActor* NewHoveredActor);
 	UFUNCTION()
 	void HandleBuildItemSelected(UBuildItemDataAsset* SelectedItem);
+	UFUNCTION()
+	void HandleBuildMenuActionRequested();
+	ATrussStructureActor* TraceForTrussActor() const;
 };

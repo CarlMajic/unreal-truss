@@ -50,6 +50,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	FTrussBuildDefinition ActiveTrussDefinition;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
+
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool EnterBuildMode();
 
@@ -70,6 +73,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	FBuildPlacementResult ConfirmPlacement();
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetEditingTrussActor(ATrussStructureActor* TrussActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void ClearEditingTrussActor();
+
+	UFUNCTION(BlueprintPure, Category = "Build")
+	bool IsEditingExistingActor() const;
 
 	UFUNCTION(BlueprintPure, Category = "Build")
 	FRotator GetCurrentPlacementRotation() const;

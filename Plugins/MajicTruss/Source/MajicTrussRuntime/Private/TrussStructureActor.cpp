@@ -7,9 +7,21 @@
 ATrussStructureActor::ATrussStructureActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	GeneratedBounds = FBox(EForceInit::ForceInit);
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
+
+	SelectionBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("SelectionBounds"));
+	SelectionBounds->SetupAttachment(SceneRoot);
+	SelectionBounds->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	SelectionBounds->SetCollisionObjectType(ECC_WorldDynamic);
+	SelectionBounds->SetCollisionResponseToAllChannels(ECR_Ignore);
+	SelectionBounds->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	SelectionBounds->SetGenerateOverlapEvents(false);
+	SelectionBounds->SetHiddenInGame(true);
+	SelectionBounds->SetLineThickness(2.0f);
+	SelectionBounds->ShapeColor = FColor::Yellow;
 
 	TenFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TenFootTrussInstances"));
 	TenFootTrussInstances->SetupAttachment(SceneRoot);
@@ -124,6 +136,7 @@ void ATrussStructureActor::BuildStraightRun()
 
 	AddStraightRun(Combination.Pieces, FVector(0.0f, 0.0f, HeightCm), FRotator::ZeroRotator);
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(Combination.ActualLengthCm);
+	UpdateSelectionBounds();
 }
 
 void ATrussStructureActor::BuildRectangle()
@@ -168,6 +181,7 @@ void ATrussStructureActor::BuildRectangle()
 	AddStraightRun(WidthCombination.Pieces, FVector(RightX + RectangleYRunXOffsetCm, CornerY, HeightCm), FRotator(0.0f, 90.0f, 0.0f));
 
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet((2.0f * (CornerX + CornerY)) + (2.0f * LengthCombination.ActualLengthCm) + (2.0f * WidthCombination.ActualLengthCm));
+	UpdateSelectionBounds();
 }
 
 void ATrussStructureActor::BuildArch()
@@ -244,6 +258,7 @@ void ATrussStructureActor::BuildArch()
 	);
 
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(BaseHeightCm + LegCombination.ActualLengthCm + CornerHeightCm);
+	UpdateSelectionBounds();
 }
 
 void ATrussStructureActor::BuildCube()
@@ -327,6 +342,7 @@ void ATrussStructureActor::BuildCube()
 	AddStraightRun(WidthCombination.Pieces, FVector(RightX + CubeYRunXOffsetCm, CornerY + ArchSpanYOffsetCm, SpanZ), FRotator(0.0f, 90.0f, 0.0f));
 
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(BaseHeightCm + LegCombination.ActualLengthCm + CornerHeightCm);
+	UpdateSelectionBounds();
 }
 
 void ATrussStructureActor::BuildCubeArch()
@@ -448,6 +464,7 @@ void ATrussStructureActor::BuildCubeArch()
 
 	const float ActualHeightCm = BaseHeightCm + LowerLegCombination.ActualLengthCm + (2.0f * CornerHeightCm) + SideSpacingCm;
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(ActualHeightCm);
+	UpdateSelectionBounds();
 }
 
 void ATrussStructureActor::AddStraightRun(const TArray<ETrussPieceType>& Pieces, const FVector& StartMinLocation, const FRotator& Rotation)
@@ -480,6 +497,8 @@ void ATrussStructureActor::AddPieceInstance(ETrussPieceType PieceType, const FVe
 		UInstancedStaticMeshComponent* MeshComponent = FindOrCreateMeshComponent(PieceType, PieceMesh);
 		if (MeshComponent)
 		{
+			const FVector Extent = GetScaledRotatedMeshExtent(PieceMesh, Rotation);
+			ExpandGeneratedBounds(FBox(TargetMinLocation, TargetMinLocation + Extent));
 			MeshComponent->AddInstance(FTransform(
 				Rotation,
 				GetMeshPlacementLocation(PieceMesh, TargetMinLocation, Rotation),
@@ -514,6 +533,8 @@ bool ATrussStructureActor::GetPieceDefinition(ETrussPieceType PieceType, FTrussP
 
 void ATrussStructureActor::ClearGeneratedTruss()
 {
+	GeneratedBounds = FBox(EForceInit::ForceInit);
+
 	for (UInstancedStaticMeshComponent* MeshComponent : {
 		TenFootTrussInstances.Get(),
 		EightFootTrussInstances.Get(),
@@ -540,6 +561,15 @@ void ATrussStructureActor::ClearGeneratedTruss()
 	}
 
 	GeneratedComponents.Reset();
+	UpdateSelectionBounds();
+}
+
+void ATrussStructureActor::SetSelectionHighlighted(bool bHighlighted)
+{
+	if (SelectionBounds)
+	{
+		SelectionBounds->SetHiddenInGame(!bHighlighted);
+	}
 }
 
 UInstancedStaticMeshComponent* ATrussStructureActor::FindOrCreateMeshComponent(ETrussPieceType PieceType, UStaticMesh* StaticMesh)
@@ -694,4 +724,49 @@ void ATrussStructureActor::AddDebugPiece(ETrussPieceType PieceType, float PieceL
 	BoxComponent->RegisterComponent();
 	AddInstanceComponent(BoxComponent);
 	GeneratedComponents.Add(BoxComponent);
+
+	const FVector DebugExtent(PieceLengthCm, DebugCrossSectionCm, DebugCrossSectionCm);
+	ExpandGeneratedBounds(FBox(TargetMinLocation, TargetMinLocation + DebugExtent));
+}
+
+void ATrussStructureActor::UpdateSelectionBounds()
+{
+	if (!SelectionBounds)
+	{
+		return;
+	}
+
+	const FBox Bounds = GetGeneratedBounds();
+	if (!Bounds.IsValid)
+	{
+		SelectionBounds->SetBoxExtent(FVector(50.0f, 50.0f, 50.0f));
+		SelectionBounds->SetRelativeLocation(FVector::ZeroVector);
+		return;
+	}
+
+	const FVector CenterLocal = Bounds.GetCenter();
+	const FVector Extent = Bounds.GetExtent() + FVector(5.0f, 5.0f, 5.0f);
+	SelectionBounds->SetBoxExtent(Extent);
+	SelectionBounds->SetRelativeLocation(CenterLocal);
+}
+
+FBox ATrussStructureActor::GetGeneratedBounds() const
+{
+	return GeneratedBounds;
+}
+
+void ATrussStructureActor::ExpandGeneratedBounds(const FBox& Bounds)
+{
+	if (!Bounds.IsValid)
+	{
+		return;
+	}
+
+	if (!GeneratedBounds.IsValid)
+	{
+		GeneratedBounds = Bounds;
+		return;
+	}
+
+	GeneratedBounds += Bounds;
 }

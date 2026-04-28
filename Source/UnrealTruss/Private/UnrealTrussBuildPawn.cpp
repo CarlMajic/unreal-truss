@@ -5,6 +5,8 @@
 #include "BuildItemDataAsset.h"
 #include "BuildManagerComponent.h"
 #include "BuildMenuWidget.h"
+#include "BuildPreviewActor.h"
+#include "InputCoreTypes.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/SphereComponent.h"
@@ -12,6 +14,7 @@
 #include "GameFramework/FloatingPawnMovement.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "TrussStructureActor.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 
 AUnrealTrussBuildPawn::AUnrealTrussBuildPawn()
@@ -83,6 +86,16 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 			BuildManagerComponent->UpdatePreviewFromPlayerView(PlayerController);
 		}
 	}
+
+	const bool bMenuVisible = BuildMenuWidget && BuildMenuWidget->GetVisibility() == ESlateVisibility::Visible;
+	if (!bMenuVisible)
+	{
+		SetHoveredTrussActor(TraceForTrussActor());
+	}
+	else
+	{
+		SetHoveredTrussActor(nullptr);
+	}
 }
 
 void AUnrealTrussBuildPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -99,8 +112,10 @@ void AUnrealTrussBuildPawn::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindAction(TEXT("ToggleBuildMenu"), IE_Pressed, this, &AUnrealTrussBuildPawn::ToggleBuildMenu);
 	PlayerInputComponent->BindAction(TEXT("ConfirmBuild"), IE_Pressed, this, &AUnrealTrussBuildPawn::ConfirmBuildPlacement);
 	PlayerInputComponent->BindAction(TEXT("CancelBuild"), IE_Pressed, this, &AUnrealTrussBuildPawn::CancelBuildMode);
+	PlayerInputComponent->BindAction(TEXT("EditLookedAtTruss"), IE_Pressed, this, &AUnrealTrussBuildPawn::EditLookedAtTruss);
 	PlayerInputComponent->BindAction(TEXT("RotateBuildPositive"), IE_Pressed, this, &AUnrealTrussBuildPawn::RotateBuildPositive);
 	PlayerInputComponent->BindAction(TEXT("RotateBuildNegative"), IE_Pressed, this, &AUnrealTrussBuildPawn::RotateBuildNegative);
+	PlayerInputComponent->BindKey(EKeys::E, IE_Pressed, this, &AUnrealTrussBuildPawn::EditLookedAtTruss);
 }
 
 void AUnrealTrussBuildPawn::MoveForward(float Value)
@@ -144,6 +159,12 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	if (!DefaultBuildItem)
 	{
 		DefaultBuildItem = FindDefaultBuildItem();
+	}
+
+	BuildManagerComponent->ClearEditingTrussActor();
+	if (BuildMenuWidget)
+	{
+		BuildMenuWidget->SetEditingTarget(nullptr);
 	}
 
 	EnsureBuildMenuWidget();
@@ -203,7 +224,43 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 	if (BuildManagerComponent)
 	{
 		BuildManagerComponent->ExitBuildMode();
+		BuildManagerComponent->ClearEditingTrussActor();
 	}
+
+	if (BuildMenuWidget)
+	{
+		BuildMenuWidget->SetEditingTarget(nullptr);
+	}
+
+	SetHoveredTrussActor(nullptr);
+}
+
+void AUnrealTrussBuildPawn::EditLookedAtTruss()
+{
+	ATrussStructureActor* TrussActor = HoveredTrussActor.Get();
+	if (!TrussActor)
+	{
+		TrussActor = TraceForTrussActor();
+	}
+	if (!TrussActor || !BuildManagerComponent)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No truss actor found under the view."));
+		}
+		return;
+	}
+
+	EnsureBuildMenuWidget();
+	BuildManagerComponent->SetEditingTrussActor(TrussActor);
+	BuildManagerComponent->EnterBuildMode();
+
+	if (BuildMenuWidget)
+	{
+		BuildMenuWidget->SetEditingTarget(TrussActor);
+	}
+
+	SetBuildMenuVisible(true);
 }
 
 void AUnrealTrussBuildPawn::RotateBuildPositive()
@@ -233,7 +290,7 @@ void AUnrealTrussBuildPawn::ShowControlsMessage() const
 		-1,
 		10.0f,
 		FColor::Cyan,
-		TEXT("Controls: WASD move, Space/Ctrl up-down, Mouse look, Tab menu, B build mode, Left Mouse place, R/F rotate, Q cancel")
+		TEXT("Controls: WASD move, Space/Ctrl up-down, Mouse look, Tab menu, B create mode, E edit looked-at truss, Left Mouse place/update, R/F rotate, Q cancel")
 	);
 }
 
@@ -316,6 +373,7 @@ void AUnrealTrussBuildPawn::EnsureBuildMenuWidget()
 		BuildMenuWidget->SetSelectedBuildItem(DefaultBuildItem);
 	}
 	BuildMenuWidget->OnBuildItemSelected.AddDynamic(this, &AUnrealTrussBuildPawn::HandleBuildItemSelected);
+	BuildMenuWidget->OnActionRequested.AddDynamic(this, &AUnrealTrussBuildPawn::HandleBuildMenuActionRequested);
 	BuildMenuWidget->AddToViewport(10);
 	BuildMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
@@ -349,6 +407,26 @@ void AUnrealTrussBuildPawn::SetBuildMenuVisible(bool bVisible)
 	}
 }
 
+void AUnrealTrussBuildPawn::SetHoveredTrussActor(ATrussStructureActor* NewHoveredActor)
+{
+	if (HoveredTrussActor == NewHoveredActor)
+	{
+		return;
+	}
+
+	if (HoveredTrussActor)
+	{
+		HoveredTrussActor->SetSelectionHighlighted(false);
+	}
+
+	HoveredTrussActor = NewHoveredActor;
+
+	if (HoveredTrussActor)
+	{
+		HoveredTrussActor->SetSelectionHighlighted(true);
+	}
+}
+
 void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* SelectedItem)
 {
 	if (!SelectedItem || !BuildManagerComponent)
@@ -367,5 +445,62 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 		BuildManagerComponent->SetActiveTrussDefinition(SelectedItem->DefaultTrussDefinition);
 	}
 	BuildManagerComponent->EnterBuildMode();
+}
+
+void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
+{
+	ConfirmBuildPlacement();
 	SetBuildMenuVisible(false);
+}
+
+ATrussStructureActor* AUnrealTrussBuildPawn::TraceForTrussActor() const
+{
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	UWorld* World = GetWorld();
+	if (!PlayerController || !World)
+	{
+		return nullptr;
+	}
+
+	FVector ViewLocation = FVector::ZeroVector;
+	FRotator ViewRotation = FRotator::ZeroRotator;
+	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+
+	const FVector TraceEnd = ViewLocation + (ViewRotation.Vector() * 50000.0f);
+	TArray<FHitResult> HitResults;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(EditTrussTrace), true, this);
+	if (BuildManagerComponent && BuildManagerComponent->ActivePreviewActor)
+	{
+		QueryParams.AddIgnoredActor(BuildManagerComponent->ActivePreviewActor);
+		if (AActor* PreviewChildActor = BuildManagerComponent->ActivePreviewActor->GetPreviewActor())
+		{
+			QueryParams.AddIgnoredActor(PreviewChildActor);
+		}
+	}
+	FCollisionObjectQueryParams ObjectQueryParams;
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+	if (!World->LineTraceMultiByObjectType(HitResults, ViewLocation, TraceEnd, ObjectQueryParams, QueryParams))
+	{
+		return nullptr;
+	}
+
+	for (const FHitResult& HitResult : HitResults)
+	{
+		if (ATrussStructureActor* TrussActor = Cast<ATrussStructureActor>(HitResult.GetActor()))
+		{
+			return TrussActor;
+		}
+
+		if (const UActorComponent* HitComponent = HitResult.GetComponent())
+		{
+			if (ATrussStructureActor* OwnerTrussActor = Cast<ATrussStructureActor>(HitComponent->GetOwner()))
+			{
+				return OwnerTrussActor;
+			}
+		}
+	}
+
+	return nullptr;
 }
