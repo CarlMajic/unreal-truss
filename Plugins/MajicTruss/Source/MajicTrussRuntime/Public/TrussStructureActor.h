@@ -25,6 +25,25 @@ enum class ETrussSlingType : uint8
 	UnderSlung UMETA(DisplayName = "Under Slung")
 };
 
+UENUM(BlueprintType)
+enum class ETrussFixtureRail : uint8
+{
+	LeftTop UMETA(DisplayName = "Left Top"),
+	RightTop UMETA(DisplayName = "Right Top"),
+	LeftBottom UMETA(DisplayName = "Left Bottom"),
+	RightBottom UMETA(DisplayName = "Right Bottom")
+};
+
+UENUM(BlueprintType)
+enum class ETrussFixtureSpan : uint8
+{
+	MainSpan UMETA(DisplayName = "Main Span"),
+	FrontXRun UMETA(DisplayName = "Front X Run"),
+	BackXRun UMETA(DisplayName = "Back X Run"),
+	LeftYRun UMETA(DisplayName = "Left Y Run"),
+	RightYRun UMETA(DisplayName = "Right Y Run")
+};
+
 USTRUCT(BlueprintType)
 struct FTrussBuildDefinition
 {
@@ -86,6 +105,18 @@ struct FMountedFixtureDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
 	ETrussSlingType SlingType = ETrussSlingType::OverSlung;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
+	bool bUseExplicitRail = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
+	bool bUseExplicitSpan = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture", meta = (EditCondition = "bUseExplicitSpan", EditConditionHides))
+	ETrussFixtureSpan FixtureSpan = ETrussFixtureSpan::MainSpan;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture", meta = (EditCondition = "bUseExplicitRail", EditConditionHides))
+	ETrussFixtureRail FixtureRail = ETrussFixtureRail::LeftTop;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture", meta = (MakeEditWidget = "true", Units = "cm"))
 	FVector LocalHitLocation = FVector::ZeroVector;
@@ -228,6 +259,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rigging", meta = (ClampMin = "0.0", Units = "cm"))
 	float RailInsetCm = 5.08f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rigging", meta = (Units = "cm"))
+	float YRunMountXAdjustmentCm = -35.56f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Truss", meta = (Units = "ft"))
 	float LastBuiltLengthFt = 0.0f;
 
@@ -239,6 +273,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mounted Fixtures|Editor")
 	ETrussSlingType EditorFixtureSlingType = ETrussSlingType::OverSlung;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mounted Fixtures|Editor")
+	ETrussFixtureSpan EditorFixtureSpan = ETrussFixtureSpan::MainSpan;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mounted Fixtures|Editor")
+	ETrussFixtureRail EditorFixtureRail = ETrussFixtureRail::LeftTop;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mounted Fixtures|Editor", meta = (MakeEditWidget = "true", Units = "cm"))
 	FVector EditorFixtureLocalHitLocation = FVector::ZeroVector;
@@ -313,4 +353,13 @@ private:
 	FBox GetGeneratedBounds() const;
 	void ExpandGeneratedBounds(const FBox& Bounds);
 	void DestroyMountedFixtureActors();
+	bool GetFixtureMountTransformFromDefinition(const FMountedFixtureDefinition& FixtureDefinition, FTransform& OutWorldTransform) const;
+	ETrussFixtureRail GetClosestFixtureRail(const FVector& LocalHitLocation, ETrussSlingType SlingType) const;
+	ETrussFixtureSpan GetClosestFixtureSpan(const FVector& LocalHitLocation) const;
+	TArray<float> GetFixtureRailMinZCandidates() const;
+	bool GetFixtureRailYRange(const FMountedFixtureDefinition& FixtureDefinition, float& OutLeftRailY, float& OutRightRailY) const;
+	bool GetFixtureSpanXRange(const FMountedFixtureDefinition& FixtureDefinition, float& OutMinX, float& OutMaxX) const;
+	bool GetFixtureSpanYRange(const FMountedFixtureDefinition& FixtureDefinition, float& OutMinY, float& OutMaxY) const;
+	FVector GetInitialFixtureLocalLocation(const FMountedFixtureDefinition& FixtureDefinition) const;
+	bool GetFixtureSpanBounds(const FMountedFixtureDefinition& FixtureDefinition, FBox& OutBounds) const;
 };

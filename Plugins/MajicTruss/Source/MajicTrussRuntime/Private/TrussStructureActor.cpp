@@ -1,8 +1,43 @@
 #include "TrussStructureActor.h"
 
+#include "Components/ActorComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "UObject/Field.h"
+#include "UObject/UnrealType.h"
 #include "TrussMathLibrary.h"
+
+namespace
+{
+void InvertClampOffsetProperties(UObject* Object)
+{
+	if (!Object)
+	{
+		return;
+	}
+
+	for (TFieldIterator<FFloatProperty> PropertyIt(Object->GetClass()); PropertyIt; ++PropertyIt)
+	{
+		FFloatProperty* FloatProperty = *PropertyIt;
+		if (!FloatProperty)
+		{
+			continue;
+		}
+
+		const FString PropertyName = FloatProperty->GetName();
+		if (!PropertyName.Contains(TEXT("Clamp")) || !PropertyName.Contains(TEXT("Offset")))
+		{
+			continue;
+		}
+
+		float* ValuePtr = FloatProperty->ContainerPtrToValuePtr<float>(Object);
+		if (ValuePtr)
+		{
+			*ValuePtr *= -1.0f;
+		}
+	}
+}
+}
 
 ATrussStructureActor::ATrussStructureActor()
 {
@@ -584,24 +619,77 @@ bool ATrussStructureActor::GetFixtureMountTransform(const FVector& WorldHitLocat
 
 	const FTransform ActorTransform = GetActorTransform();
 	const FVector LocalHitLocation = ActorTransform.InverseTransformPosition(WorldHitLocation);
+	FMountedFixtureDefinition FixtureDefinition;
+	FixtureDefinition.SlingType = SlingType;
+	FixtureDefinition.bUseExplicitSpan = true;
+	FixtureDefinition.FixtureSpan = GetClosestFixtureSpan(LocalHitLocation);
+	FixtureDefinition.bUseExplicitRail = true;
+	FixtureDefinition.FixtureRail = GetClosestFixtureRail(LocalHitLocation, SlingType);
+	FixtureDefinition.LocalHitLocation = LocalHitLocation;
+	return GetFixtureMountTransformFromDefinition(FixtureDefinition, OutWorldTransform);
+}
+
+bool ATrussStructureActor::GetFixtureMountTransformFromDefinition(const FMountedFixtureDefinition& FixtureDefinition, FTransform& OutWorldTransform) const
+{
+	FBox Bounds = GetGeneratedBounds();
+	if (!Bounds.IsValid)
+	{
+		return false;
+	}
+
+	GetFixtureSpanBounds(FixtureDefinition, Bounds);
+
 	const FVector Min = Bounds.Min;
 	const FVector Max = Bounds.Max;
-	const FVector Extent = Bounds.GetExtent();
+	const float TopRailZ = Max.Z - RailInsetCm;
+	const float BottomRailZ = Min.Z + RailInsetCm;
+	const ETrussFixtureRail Rail = FixtureDefinition.bUseExplicitRail
+		? FixtureDefinition.FixtureRail
+		: GetClosestFixtureRail(FixtureDefinition.LocalHitLocation, FixtureDefinition.SlingType);
+	const ETrussFixtureSpan Span = FixtureDefinition.bUseExplicitSpan
+		? FixtureDefinition.FixtureSpan
+		: GetClosestFixtureSpan(FixtureDefinition.LocalHitLocation);
+	const bool bIsYRun = Span == ETrussFixtureSpan::LeftYRun || Span == ETrussFixtureSpan::RightYRun;
 
-	const float RailY = FMath::Max(0.0f, Extent.Y - RailInsetCm);
-	const float MountY = LocalHitLocation.Y >= Bounds.GetCenter().Y ? RailY : -RailY;
-	const float DesiredZ = LocalHitLocation.Z + (SlingType == ETrussSlingType::OverSlung ? RailInsetCm : -RailInsetCm);
-	const float RailZ = FMath::Clamp(DesiredZ, Min.Z + RailInsetCm, Max.Z - RailInsetCm);
-	const float MountX = FMath::Clamp(LocalHitLocation.X, Min.X, Max.X);
+	float MountX = FMath::Clamp(FixtureDefinition.LocalHitLocation.X, Min.X, Max.X);
+	float MountY = FMath::Clamp(FixtureDefinition.LocalHitLocation.Y, Min.Y, Max.Y);
+	float RailZ = TopRailZ;
+
+	if (bIsYRun)
+	{
+		const float LeftRailX = Min.X + RailInsetCm;
+		const float RightRailX = Max.X - RailInsetCm;
+		MountX = (Rail == ETrussFixtureRail::RightTop || Rail == ETrussFixtureRail::RightBottom)
+			? RightRailX
+			: LeftRailX;
+		MountX += YRunMountXAdjustmentCm;
+	}
+	else
+	{
+		const float LeftRailY = Min.Y + RailInsetCm;
+		const float RightRailY = Max.Y - RailInsetCm;
+		MountY = (Rail == ETrussFixtureRail::RightTop || Rail == ETrussFixtureRail::RightBottom)
+			? RightRailY
+			: LeftRailY;
+	}
+
+	if (Rail == ETrussFixtureRail::LeftBottom || Rail == ETrussFixtureRail::RightBottom)
+	{
+		RailZ = BottomRailZ;
+	}
+
 	const FVector LocalMountLocation(MountX, MountY, RailZ);
-
 	FRotator WorldRotation = GetActorRotation();
-	if (SlingType == ETrussSlingType::UnderSlung)
+	if (bIsYRun)
+	{
+		WorldRotation.Yaw += 90.0f;
+	}
+	if (Rail == ETrussFixtureRail::LeftBottom || Rail == ETrussFixtureRail::RightBottom)
 	{
 		WorldRotation.Roll += 180.0f;
 	}
 
-	OutWorldTransform = FTransform(WorldRotation, ActorTransform.TransformPosition(LocalMountLocation), FVector::OneVector);
+	OutWorldTransform = FTransform(WorldRotation, GetActorTransform().TransformPosition(LocalMountLocation), FVector::OneVector);
 	return true;
 }
 
@@ -616,6 +704,10 @@ bool ATrussStructureActor::AddMountedFixtureDefinition(TSubclassOf<AActor> Fixtu
 	NewFixture.FixtureClass = FixtureClass;
 	NewFixture.SlingType = SlingType;
 	NewFixture.LocalHitLocation = GetActorTransform().InverseTransformPosition(WorldHitLocation);
+	NewFixture.bUseExplicitSpan = true;
+	NewFixture.FixtureSpan = GetClosestFixtureSpan(NewFixture.LocalHitLocation);
+	NewFixture.bUseExplicitRail = true;
+	NewFixture.FixtureRail = GetClosestFixtureRail(NewFixture.LocalHitLocation, SlingType);
 
 	if (bRespawnFixtures)
 	{
@@ -643,8 +735,7 @@ void ATrussStructureActor::RebuildMountedFixtures()
 		}
 
 		FTransform MountTransform;
-		const FVector WorldHitLocation = GetActorTransform().TransformPosition(FixtureDefinition.LocalHitLocation);
-		if (!GetFixtureMountTransform(WorldHitLocation, FixtureDefinition.SlingType, MountTransform))
+		if (!GetFixtureMountTransformFromDefinition(FixtureDefinition, MountTransform))
 		{
 			continue;
 		}
@@ -658,6 +749,12 @@ void ATrussStructureActor::RebuildMountedFixtures()
 		if (!FixtureActor)
 		{
 			continue;
+		}
+
+		InvertClampOffsetProperties(FixtureActor);
+		for (UActorComponent* Component : FixtureActor->GetComponents())
+		{
+			InvertClampOffsetProperties(Component);
 		}
 
 		FixtureActor->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
@@ -675,7 +772,12 @@ void ATrussStructureActor::AddEditorMountedFixture()
 	FMountedFixtureDefinition& NewFixture = MountedFixtures.AddDefaulted_GetRef();
 	NewFixture.FixtureClass = EditorFixtureClass;
 	NewFixture.SlingType = EditorFixtureSlingType;
+	NewFixture.bUseExplicitSpan = true;
+	NewFixture.FixtureSpan = EditorFixtureSpan;
+	NewFixture.bUseExplicitRail = true;
+	NewFixture.FixtureRail = EditorFixtureRail;
 	NewFixture.LocalHitLocation = EditorFixtureLocalHitLocation;
+	NewFixture.LocalHitLocation = GetInitialFixtureLocalLocation(NewFixture);
 	RebuildMountedFixtures();
 }
 
@@ -895,4 +997,788 @@ void ATrussStructureActor::DestroyMountedFixtureActors()
 	}
 
 	SpawnedMountedFixtureActors.Reset();
+}
+
+ETrussFixtureRail ATrussStructureActor::GetClosestFixtureRail(const FVector& LocalHitLocation, ETrussSlingType SlingType) const
+{
+	const FBox Bounds = GetGeneratedBounds();
+	if (!Bounds.IsValid)
+	{
+		return SlingType == ETrussSlingType::UnderSlung ? ETrussFixtureRail::LeftBottom : ETrussFixtureRail::LeftTop;
+	}
+
+	FMountedFixtureDefinition FixtureDefinition;
+	FixtureDefinition.LocalHitLocation = LocalHitLocation;
+	FixtureDefinition.SlingType = SlingType;
+	FixtureDefinition.bUseExplicitSpan = true;
+	FixtureDefinition.FixtureSpan = GetClosestFixtureSpan(LocalHitLocation);
+
+	const bool bIsYRun = FixtureDefinition.FixtureSpan == ETrussFixtureSpan::LeftYRun || FixtureDefinition.FixtureSpan == ETrussFixtureSpan::RightYRun;
+	bool bUseRightRail = false;
+
+	if (bIsYRun)
+	{
+		float LeftRailX = Bounds.Min.X + RailInsetCm;
+		float RightRailX = Bounds.Max.X - RailInsetCm;
+		GetFixtureSpanXRange(FixtureDefinition, LeftRailX, RightRailX);
+		bUseRightRail = FMath::Abs(LocalHitLocation.X - RightRailX) < FMath::Abs(LocalHitLocation.X - LeftRailX);
+	}
+	else
+	{
+		float LeftRailY = Bounds.Min.Y + RailInsetCm;
+		float RightRailY = Bounds.Max.Y - RailInsetCm;
+		GetFixtureRailYRange(FixtureDefinition, LeftRailY, RightRailY);
+		bUseRightRail = FMath::Abs(LocalHitLocation.Y - RightRailY) < FMath::Abs(LocalHitLocation.Y - LeftRailY);
+	}
+
+	if (SlingType == ETrussSlingType::UnderSlung)
+	{
+		return bUseRightRail ? ETrussFixtureRail::RightBottom : ETrussFixtureRail::LeftBottom;
+	}
+
+	return bUseRightRail ? ETrussFixtureRail::RightTop : ETrussFixtureRail::LeftTop;
+}
+
+ETrussFixtureSpan ATrussStructureActor::GetClosestFixtureSpan(const FVector& LocalHitLocation) const
+{
+	switch (BuildMode)
+	{
+	case ETrussBuildMode::Rectangle:
+	case ETrussBuildMode::Cube:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			return ETrussFixtureSpan::MainSpan;
+		}
+
+		const bool bIsRectangle = BuildMode == ETrussBuildMode::Rectangle;
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const float InnerLengthCm = UTrussMathLibrary::FeetToCentimeters(bIsRectangle ? RectangleLengthFt : CubeLengthFt) - (2.0f * CornerExtent.X);
+		const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(bIsRectangle ? RectangleWidthFt : CubeWidthFt) - (2.0f * CornerExtent.Y);
+		if (InnerLengthCm <= 0.0f || InnerWidthCm <= 0.0f)
+		{
+			return ETrussFixtureSpan::MainSpan;
+		}
+
+		const FTrussCombinationResult LengthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerLengthCm);
+		const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+		const float FrontY = bIsRectangle ? 0.0f : ArchSpanYOffsetCm;
+		const float BackY = (bIsRectangle ? 0.0f : ArchSpanYOffsetCm) + CornerExtent.Y + WidthCombination.ActualLengthCm;
+		const float LeftX = bIsRectangle ? RectangleYRunXOffsetCm : CubeYRunXOffsetCm;
+		const float RightX = (bIsRectangle ? RectangleYRunXOffsetCm : CubeYRunXOffsetCm) + CornerExtent.X + LengthCombination.ActualLengthCm;
+
+		float BestDistance = TNumericLimits<float>::Max();
+		ETrussFixtureSpan BestSpan = ETrussFixtureSpan::FrontXRun;
+		const TArray<TPair<ETrussFixtureSpan, float>> Candidates = {
+			TPair<ETrussFixtureSpan, float>(ETrussFixtureSpan::FrontXRun, FMath::Abs(LocalHitLocation.Y - FrontY)),
+			TPair<ETrussFixtureSpan, float>(ETrussFixtureSpan::BackXRun, FMath::Abs(LocalHitLocation.Y - BackY)),
+			TPair<ETrussFixtureSpan, float>(ETrussFixtureSpan::LeftYRun, FMath::Abs(LocalHitLocation.X - LeftX)),
+			TPair<ETrussFixtureSpan, float>(ETrussFixtureSpan::RightYRun, FMath::Abs(LocalHitLocation.X - RightX))
+		};
+
+		for (const TPair<ETrussFixtureSpan, float>& Candidate : Candidates)
+		{
+			if (Candidate.Value < BestDistance)
+			{
+				BestDistance = Candidate.Value;
+				BestSpan = Candidate.Key;
+			}
+		}
+
+		return BestSpan;
+	}
+
+	default:
+		return ETrussFixtureSpan::MainSpan;
+	}
+}
+
+TArray<float> ATrussStructureActor::GetFixtureRailMinZCandidates() const
+{
+	TArray<float> Candidates;
+
+	switch (BuildMode)
+	{
+	case ETrussBuildMode::StraightRun:
+		Candidates.Add(UTrussMathLibrary::FeetToCentimeters(StraightRunHeightFt));
+		break;
+
+	case ETrussBuildMode::Rectangle:
+		Candidates.Add(UTrussMathLibrary::FeetToCentimeters(RectangleHeightFt));
+		break;
+
+	case ETrussBuildMode::Arch:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		FTrussPieceDefinition BaseDefinition;
+		UStaticMesh* BaseMesh = nullptr;
+		if (GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh)
+			&& GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+		{
+			const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+			const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+			const float CornerWidthCm = CornerExtent.X;
+			const float CornerHeightCm = CornerExtent.Z;
+			const float BaseHeightCm = BaseExtent.Z;
+			const float TargetHeightCm = UTrussMathLibrary::FeetToCentimeters(ArchHeightFt);
+			const float TargetWidthCm = UTrussMathLibrary::FeetToCentimeters(ArchWidthFt);
+			const float LegTargetCm = TargetHeightCm - CornerHeightCm;
+			const float SpanTargetCm = TargetWidthCm - (2.0f * CornerWidthCm);
+			if (LegTargetCm > 0.0f && SpanTargetCm > 0.0f)
+			{
+				const FTrussCombinationResult LegCombination = UTrussMathLibrary::FindBestTrussCombination(LegTargetCm);
+				if (!LegCombination.Pieces.IsEmpty())
+				{
+					const float TopCornerZ = BaseHeightCm + LegCombination.ActualLengthCm;
+					const float SpanZ = TopCornerZ + (CornerHeightCm * 0.5f) - ArchCornerConnectionOffsetCm;
+					Candidates.Add(SpanZ);
+				}
+			}
+		}
+		break;
+	}
+
+	case ETrussBuildMode::Cube:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		FTrussPieceDefinition BaseDefinition;
+		UStaticMesh* BaseMesh = nullptr;
+		if (GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh)
+			&& GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+		{
+			const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+			const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+			const float CornerX = CornerExtent.X;
+			const float CornerY = CornerExtent.Y;
+			const float CornerHeightCm = CornerExtent.Z;
+			const float BaseHeightCm = BaseExtent.Z;
+			const float InnerLengthCm = UTrussMathLibrary::FeetToCentimeters(CubeLengthFt) - (2.0f * CornerX);
+			const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(CubeWidthFt) - (2.0f * CornerY);
+			const float LegTargetCm = UTrussMathLibrary::FeetToCentimeters(CubeHeightFt) - CornerHeightCm;
+			if (InnerLengthCm > 0.0f && InnerWidthCm > 0.0f && LegTargetCm > 0.0f)
+			{
+				const FTrussCombinationResult LegCombination = UTrussMathLibrary::FindBestTrussCombination(LegTargetCm);
+				if (!LegCombination.Pieces.IsEmpty())
+				{
+					const float TopZ = BaseHeightCm + LegCombination.ActualLengthCm;
+					const float SpanZ = TopZ + (CornerHeightCm * 0.5f) - CubeCornerConnectionOffsetCm;
+					Candidates.Add(SpanZ);
+				}
+			}
+		}
+		break;
+	}
+
+	case ETrussBuildMode::CubeArch:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		FTrussPieceDefinition BaseDefinition;
+		UStaticMesh* BaseMesh = nullptr;
+		if (GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh)
+			&& GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+		{
+			const auto GetValidSpacingPiece = [](ETrussPieceType PieceType)
+			{
+				return UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType) > 0.0f ? PieceType : ETrussPieceType::FourFoot;
+			};
+
+			const ETrussPieceType SidePiece = GetValidSpacingPiece(CubeArchSideSpacingPiece);
+			const float SideSpacingCm = UTrussMathLibrary::GetDefaultPieceLengthCm(SidePiece);
+			const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+			const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+			const float CornerX = CornerExtent.X;
+			const float CornerHeightCm = CornerExtent.Z;
+			const float BaseHeightCm = BaseExtent.Z;
+			const float SideClusterWidthCm = SideSpacingCm + CornerX;
+			const float SpanTargetCm = UTrussMathLibrary::FeetToCentimeters(CubeArchWidthFt) - (2.0f * SideClusterWidthCm);
+			const float LowerLegTargetCm = UTrussMathLibrary::FeetToCentimeters(CubeArchHeightFt) - CornerHeightCm - SideSpacingCm - CornerHeightCm;
+			if (SpanTargetCm > 0.0f && LowerLegTargetCm > 0.0f)
+			{
+				const FTrussCombinationResult LowerLegCombination = UTrussMathLibrary::FindBestTrussCombination(LowerLegTargetCm);
+				if (!LowerLegCombination.Pieces.IsEmpty())
+				{
+					const float LowerCornerZ = BaseHeightCm + LowerLegCombination.ActualLengthCm;
+					const float UpperCornerZ = LowerCornerZ + CornerHeightCm + SideSpacingCm;
+					const float LowerConnectorZ = LowerCornerZ + (CornerHeightCm * 0.5f) - CubeCornerConnectionOffsetCm;
+					const float UpperConnectorZ = UpperCornerZ + (CornerHeightCm * 0.5f) - CubeCornerConnectionOffsetCm;
+					Candidates.Add(LowerConnectorZ);
+					Candidates.Add(UpperConnectorZ);
+				}
+			}
+		}
+		break;
+	}
+	}
+
+	if (Candidates.Num() == 0)
+	{
+		Candidates.Add(GetGeneratedBounds().Min.Z);
+	}
+
+	return Candidates;
+}
+
+bool ATrussStructureActor::GetFixtureRailYRange(const FMountedFixtureDefinition& FixtureDefinition, float& OutLeftRailY, float& OutRightRailY) const
+{
+	float RailThicknessY = DebugCrossSectionCm;
+	for (ETrussPieceType PieceType : {ETrussPieceType::TenFoot, ETrussPieceType::EightFoot, ETrussPieceType::FiveFoot, ETrussPieceType::FourFoot, ETrussPieceType::TwoFoot})
+	{
+		FTrussPieceDefinition PieceDefinition;
+		UStaticMesh* PieceMesh = nullptr;
+		if (GetPieceDefinition(PieceType, PieceDefinition, PieceMesh) && PieceMesh)
+		{
+			RailThicknessY = GetScaledRotatedMeshExtent(PieceMesh, FRotator::ZeroRotator).Y;
+			break;
+		}
+	}
+
+	TArray<float> CandidateMinYValues;
+	switch (BuildMode)
+	{
+	case ETrussBuildMode::StraightRun:
+		CandidateMinYValues.Add(0.0f);
+		break;
+
+	case ETrussBuildMode::Arch:
+		CandidateMinYValues.Add(ArchSpanYOffsetCm);
+		break;
+
+	case ETrussBuildMode::Rectangle:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+			const float TargetLengthCm = UTrussMathLibrary::FeetToCentimeters(RectangleLengthFt);
+			const float TargetWidthCm = UTrussMathLibrary::FeetToCentimeters(RectangleWidthFt);
+			const float InnerLengthCm = TargetLengthCm - (2.0f * CornerExtent.X);
+			const float InnerWidthCm = TargetWidthCm - (2.0f * CornerExtent.Y);
+			if (InnerLengthCm > 0.0f && InnerWidthCm > 0.0f)
+			{
+				const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+				const float BackY = CornerExtent.Y + WidthCombination.ActualLengthCm;
+				CandidateMinYValues.Add(0.0f);
+				CandidateMinYValues.Add(BackY);
+			}
+		}
+		break;
+	}
+
+	case ETrussBuildMode::Cube:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+			const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(CubeWidthFt) - (2.0f * CornerExtent.Y);
+			if (InnerWidthCm > 0.0f)
+			{
+				const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+				const float BackY = CornerExtent.Y + WidthCombination.ActualLengthCm;
+				CandidateMinYValues.Add(ArchSpanYOffsetCm);
+				CandidateMinYValues.Add(BackY + ArchSpanYOffsetCm);
+			}
+		}
+		break;
+	}
+
+	case ETrussBuildMode::CubeArch:
+	{
+		const auto GetValidSpacingPiece = [](ETrussPieceType PieceType)
+		{
+			return UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType) > 0.0f ? PieceType : ETrussPieceType::FourFoot;
+		};
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			const ETrussPieceType DepthPiece = GetValidSpacingPiece(CubeArchDepthSpacingPiece);
+			const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+			const float DepthSpacingCm = UTrussMathLibrary::GetDefaultPieceLengthCm(DepthPiece);
+			const float SideClusterDepthCm = DepthSpacingCm + CornerExtent.Y;
+			CandidateMinYValues.Add(ArchSpanYOffsetCm);
+			CandidateMinYValues.Add(SideClusterDepthCm + ArchSpanYOffsetCm);
+		}
+		break;
+	}
+	}
+
+	if (CandidateMinYValues.Num() == 0)
+	{
+		const FBox Bounds = GetGeneratedBounds();
+		if (!Bounds.IsValid)
+		{
+			return false;
+		}
+
+		OutLeftRailY = Bounds.Min.Y + RailInsetCm;
+		OutRightRailY = Bounds.Max.Y - RailInsetCm;
+		return true;
+	}
+
+	float SelectedMinY = CandidateMinYValues[0];
+	const ETrussFixtureSpan Span = FixtureDefinition.bUseExplicitSpan
+		? FixtureDefinition.FixtureSpan
+		: GetClosestFixtureSpan(FixtureDefinition.LocalHitLocation);
+
+	if (Span == ETrussFixtureSpan::FrontXRun)
+	{
+		SelectedMinY = CandidateMinYValues[0];
+	}
+	else if (Span == ETrussFixtureSpan::BackXRun && CandidateMinYValues.Num() > 1)
+	{
+		SelectedMinY = CandidateMinYValues.Last();
+	}
+	else
+	{
+		float BestDistance = TNumericLimits<float>::Max();
+		for (const float CandidateMinY : CandidateMinYValues)
+		{
+			const float CandidateCenterY = CandidateMinY + (RailThicknessY * 0.5f);
+			const float Distance = FMath::Abs(FixtureDefinition.LocalHitLocation.Y - CandidateCenterY);
+			if (Distance < BestDistance)
+			{
+				BestDistance = Distance;
+				SelectedMinY = CandidateMinY;
+			}
+		}
+	}
+
+	OutLeftRailY = SelectedMinY + RailInsetCm;
+	OutRightRailY = FMath::Max(OutLeftRailY, SelectedMinY + RailThicknessY - RailInsetCm);
+	return true;
+}
+
+bool ATrussStructureActor::GetFixtureSpanXRange(const FMountedFixtureDefinition& FixtureDefinition, float& OutMinX, float& OutMaxX) const
+{
+	const FBox Bounds = GetGeneratedBounds();
+	if (!Bounds.IsValid)
+	{
+		return false;
+	}
+
+	OutMinX = Bounds.Min.X;
+	OutMaxX = Bounds.Max.X;
+
+	const ETrussFixtureSpan Span = FixtureDefinition.bUseExplicitSpan
+		? FixtureDefinition.FixtureSpan
+		: GetClosestFixtureSpan(FixtureDefinition.LocalHitLocation);
+
+	switch (BuildMode)
+	{
+	case ETrussBuildMode::Rectangle:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			return true;
+		}
+
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const float InnerLengthCm = UTrussMathLibrary::FeetToCentimeters(RectangleLengthFt) - (2.0f * CornerExtent.X);
+		if (InnerLengthCm <= 0.0f)
+		{
+			return true;
+		}
+
+		const FTrussCombinationResult LengthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerLengthCm);
+		if (Span == ETrussFixtureSpan::FrontXRun || Span == ETrussFixtureSpan::BackXRun)
+		{
+			OutMinX = CornerExtent.X;
+			OutMaxX = CornerExtent.X + LengthCombination.ActualLengthCm;
+		}
+		else
+		{
+			float YRunThicknessX = DebugCrossSectionCm;
+			for (ETrussPieceType PieceType : {ETrussPieceType::TenFoot, ETrussPieceType::EightFoot, ETrussPieceType::FiveFoot, ETrussPieceType::FourFoot, ETrussPieceType::TwoFoot})
+			{
+				FTrussPieceDefinition PieceDefinition;
+				UStaticMesh* PieceMesh = nullptr;
+				if (GetPieceDefinition(PieceType, PieceDefinition, PieceMesh) && PieceMesh)
+				{
+					YRunThicknessX = GetScaledRotatedMeshExtent(PieceMesh, FRotator(0.0f, 90.0f, 0.0f)).X;
+					break;
+				}
+			}
+
+			const float LeftRunX = RectangleYRunXOffsetCm;
+			const float RightRunX = RectangleYRunXOffsetCm + CornerExtent.X + LengthCombination.ActualLengthCm;
+			const float RunMinX = Span == ETrussFixtureSpan::RightYRun ? RightRunX : LeftRunX;
+			OutMinX = RunMinX + RailInsetCm;
+			OutMaxX = FMath::Max(OutMinX, RunMinX + YRunThicknessX - RailInsetCm);
+		}
+		break;
+	}
+
+	case ETrussBuildMode::Cube:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			return true;
+		}
+
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const float InnerLengthCm = UTrussMathLibrary::FeetToCentimeters(CubeLengthFt) - (2.0f * CornerExtent.X);
+		if (InnerLengthCm <= 0.0f)
+		{
+			return true;
+		}
+
+		const FTrussCombinationResult LengthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerLengthCm);
+		if (Span == ETrussFixtureSpan::FrontXRun || Span == ETrussFixtureSpan::BackXRun)
+		{
+			OutMinX = CornerExtent.X + CubeCornerConnectionOffsetCm;
+			OutMaxX = OutMinX + LengthCombination.ActualLengthCm;
+		}
+		else
+		{
+			float YRunThicknessX = DebugCrossSectionCm;
+			for (ETrussPieceType PieceType : {ETrussPieceType::TenFoot, ETrussPieceType::EightFoot, ETrussPieceType::FiveFoot, ETrussPieceType::FourFoot, ETrussPieceType::TwoFoot})
+			{
+				FTrussPieceDefinition PieceDefinition;
+				UStaticMesh* PieceMesh = nullptr;
+				if (GetPieceDefinition(PieceType, PieceDefinition, PieceMesh) && PieceMesh)
+				{
+					YRunThicknessX = GetScaledRotatedMeshExtent(PieceMesh, FRotator(0.0f, 90.0f, 0.0f)).X;
+					break;
+				}
+			}
+
+			const float LeftRunX = CubeYRunXOffsetCm;
+			const float RightRunX = CubeYRunXOffsetCm + CornerExtent.X + LengthCombination.ActualLengthCm;
+			const float RunMinX = Span == ETrussFixtureSpan::RightYRun ? RightRunX : LeftRunX;
+			OutMinX = RunMinX + RailInsetCm;
+			OutMaxX = FMath::Max(OutMinX, RunMinX + YRunThicknessX - RailInsetCm);
+		}
+		break;
+	}
+
+	default:
+		break;
+	}
+
+	return true;
+}
+
+bool ATrussStructureActor::GetFixtureSpanYRange(const FMountedFixtureDefinition& FixtureDefinition, float& OutMinY, float& OutMaxY) const
+{
+	const FBox Bounds = GetGeneratedBounds();
+	if (!Bounds.IsValid)
+	{
+		return false;
+	}
+
+	OutMinY = Bounds.Min.Y;
+	OutMaxY = Bounds.Max.Y;
+
+	const ETrussFixtureSpan Span = FixtureDefinition.bUseExplicitSpan
+		? FixtureDefinition.FixtureSpan
+		: GetClosestFixtureSpan(FixtureDefinition.LocalHitLocation);
+
+	switch (BuildMode)
+	{
+	case ETrussBuildMode::Rectangle:
+	{
+		if (Span != ETrussFixtureSpan::LeftYRun && Span != ETrussFixtureSpan::RightYRun)
+		{
+			return true;
+		}
+
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			return true;
+		}
+
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(RectangleWidthFt) - (2.0f * CornerExtent.Y);
+		if (InnerWidthCm <= 0.0f)
+		{
+			return true;
+		}
+
+		const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+		OutMinY = CornerExtent.Y;
+		OutMaxY = CornerExtent.Y + WidthCombination.ActualLengthCm;
+		break;
+	}
+
+	case ETrussBuildMode::Cube:
+	{
+		if (Span != ETrussFixtureSpan::LeftYRun && Span != ETrussFixtureSpan::RightYRun)
+		{
+			return true;
+		}
+
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			return true;
+		}
+
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(CubeWidthFt) - (2.0f * CornerExtent.Y);
+		if (InnerWidthCm <= 0.0f)
+		{
+			return true;
+		}
+
+		const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+		OutMinY = CornerExtent.Y + ArchSpanYOffsetCm;
+		OutMaxY = OutMinY + WidthCombination.ActualLengthCm;
+		break;
+	}
+
+	default:
+		break;
+	}
+
+	return true;
+}
+
+FVector ATrussStructureActor::GetInitialFixtureLocalLocation(const FMountedFixtureDefinition& FixtureDefinition) const
+{
+	FBox Bounds = GetGeneratedBounds();
+	if (!Bounds.IsValid)
+	{
+		return FixtureDefinition.LocalHitLocation;
+	}
+
+	GetFixtureSpanBounds(FixtureDefinition, Bounds);
+
+	FVector InitialLocation = FixtureDefinition.LocalHitLocation;
+	const ETrussFixtureSpan Span = FixtureDefinition.bUseExplicitSpan
+		? FixtureDefinition.FixtureSpan
+		: GetClosestFixtureSpan(FixtureDefinition.LocalHitLocation);
+	const bool bIsYRun = Span == ETrussFixtureSpan::LeftYRun || Span == ETrussFixtureSpan::RightYRun;
+
+	if (bIsYRun)
+	{
+		const float LeftRailX = Bounds.Min.X + RailInsetCm;
+		const float RightRailX = Bounds.Max.X - RailInsetCm;
+		InitialLocation.X = (FixtureDefinition.FixtureRail == ETrussFixtureRail::RightTop || FixtureDefinition.FixtureRail == ETrussFixtureRail::RightBottom)
+			? RightRailX
+			: LeftRailX;
+		InitialLocation.X += YRunMountXAdjustmentCm;
+	}
+	else
+	{
+		const float LeftRailY = Bounds.Min.Y + RailInsetCm;
+		const float RightRailY = Bounds.Max.Y - RailInsetCm;
+		InitialLocation.Y = (FixtureDefinition.FixtureRail == ETrussFixtureRail::RightTop || FixtureDefinition.FixtureRail == ETrussFixtureRail::RightBottom)
+			? RightRailY
+			: LeftRailY;
+	}
+
+	return InitialLocation;
+}
+
+bool ATrussStructureActor::GetFixtureSpanBounds(const FMountedFixtureDefinition& FixtureDefinition, FBox& OutBounds) const
+{
+	FTrussPieceDefinition StraightPieceDefinition;
+	UStaticMesh* StraightPieceMesh = nullptr;
+	GetPieceDefinition(ETrussPieceType::TenFoot, StraightPieceDefinition, StraightPieceMesh);
+	if (!StraightPieceMesh)
+	{
+		GetPieceDefinition(ETrussPieceType::EightFoot, StraightPieceDefinition, StraightPieceMesh);
+	}
+	if (!StraightPieceMesh)
+	{
+		GetPieceDefinition(ETrussPieceType::FiveFoot, StraightPieceDefinition, StraightPieceMesh);
+	}
+	if (!StraightPieceMesh)
+	{
+		GetPieceDefinition(ETrussPieceType::FourFoot, StraightPieceDefinition, StraightPieceMesh);
+	}
+	if (!StraightPieceMesh)
+	{
+		GetPieceDefinition(ETrussPieceType::TwoFoot, StraightPieceDefinition, StraightPieceMesh);
+	}
+
+	const auto GetRunThickness = [&](const FRotator& Rotation)
+	{
+		if (StraightPieceMesh)
+		{
+			return GetScaledRotatedMeshExtent(StraightPieceMesh, Rotation);
+		}
+
+		if (Rotation.Yaw == 90.0f)
+		{
+			return FVector(DebugCrossSectionCm, DebugCrossSectionCm, DebugCrossSectionCm);
+		}
+
+		return FVector(DebugCrossSectionCm, DebugCrossSectionCm, DebugCrossSectionCm);
+	};
+
+	const ETrussFixtureSpan Span = FixtureDefinition.bUseExplicitSpan
+		? FixtureDefinition.FixtureSpan
+		: GetClosestFixtureSpan(FixtureDefinition.LocalHitLocation);
+
+	switch (BuildMode)
+	{
+	case ETrussBuildMode::StraightRun:
+	{
+		const float HeightCm = UTrussMathLibrary::FeetToCentimeters(StraightRunHeightFt);
+		const FTrussCombinationResult Combination = UTrussMathLibrary::FindBestTrussCombination(UTrussMathLibrary::FeetToCentimeters(LengthFt));
+		const FVector Extent = GetRunThickness(FRotator::ZeroRotator);
+		OutBounds = FBox(FVector(0.0f, 0.0f, HeightCm), FVector(Combination.ActualLengthCm, Extent.Y, HeightCm + Extent.Z));
+		return true;
+	}
+
+	case ETrussBuildMode::Arch:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		FTrussPieceDefinition BaseDefinition;
+		UStaticMesh* BaseMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh)
+			|| !GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+		{
+			return false;
+		}
+
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+		const float LegTargetCm = UTrussMathLibrary::FeetToCentimeters(ArchHeightFt) - CornerExtent.Z;
+		const float SpanTargetCm = UTrussMathLibrary::FeetToCentimeters(ArchWidthFt) - (2.0f * CornerExtent.X);
+		if (LegTargetCm <= 0.0f || SpanTargetCm <= 0.0f)
+		{
+			return false;
+		}
+
+		const FTrussCombinationResult LegCombination = UTrussMathLibrary::FindBestTrussCombination(LegTargetCm);
+		const FTrussCombinationResult SpanCombination = UTrussMathLibrary::FindBestTrussCombination(SpanTargetCm);
+		if (LegCombination.Pieces.IsEmpty() || SpanCombination.Pieces.IsEmpty())
+		{
+			return false;
+		}
+
+		const float TopCornerZ = BaseExtent.Z + LegCombination.ActualLengthCm;
+		const float SpanZ = TopCornerZ + (CornerExtent.Z * 0.5f) - ArchCornerConnectionOffsetCm;
+		const FVector Extent = GetRunThickness(FRotator::ZeroRotator);
+		OutBounds = FBox(
+			FVector(CornerExtent.X + ArchCornerConnectionOffsetCm, ArchSpanYOffsetCm, SpanZ),
+			FVector(CornerExtent.X + ArchCornerConnectionOffsetCm + SpanCombination.ActualLengthCm, ArchSpanYOffsetCm + Extent.Y, SpanZ + Extent.Z)
+		);
+		return true;
+	}
+
+	case ETrussBuildMode::Rectangle:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh))
+		{
+			return false;
+		}
+
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const float HeightCm = UTrussMathLibrary::FeetToCentimeters(RectangleHeightFt);
+		const float InnerLengthCm = UTrussMathLibrary::FeetToCentimeters(RectangleLengthFt) - (2.0f * CornerExtent.X);
+		const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(RectangleWidthFt) - (2.0f * CornerExtent.Y);
+		if (InnerLengthCm <= 0.0f || InnerWidthCm <= 0.0f)
+		{
+			return false;
+		}
+
+		const FTrussCombinationResult LengthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerLengthCm);
+		const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+		const FVector XRunExtent = GetRunThickness(FRotator::ZeroRotator);
+		const FVector YRunExtent = GetRunThickness(FRotator(0.0f, 90.0f, 0.0f));
+		const float BackY = CornerExtent.Y + WidthCombination.ActualLengthCm;
+		const float RightX = CornerExtent.X + LengthCombination.ActualLengthCm;
+
+		switch (Span)
+		{
+		case ETrussFixtureSpan::BackXRun:
+			OutBounds = FBox(FVector(CornerExtent.X, BackY, HeightCm), FVector(CornerExtent.X + LengthCombination.ActualLengthCm, BackY + XRunExtent.Y, HeightCm + XRunExtent.Z));
+			return true;
+		case ETrussFixtureSpan::LeftYRun:
+			OutBounds = FBox(FVector(RectangleYRunXOffsetCm, CornerExtent.Y, HeightCm), FVector(RectangleYRunXOffsetCm + YRunExtent.X, CornerExtent.Y + WidthCombination.ActualLengthCm, HeightCm + YRunExtent.Z));
+			return true;
+		case ETrussFixtureSpan::RightYRun:
+			OutBounds = FBox(FVector(RightX + RectangleYRunXOffsetCm, CornerExtent.Y, HeightCm), FVector(RightX + RectangleYRunXOffsetCm + YRunExtent.X, CornerExtent.Y + WidthCombination.ActualLengthCm, HeightCm + YRunExtent.Z));
+			return true;
+		case ETrussFixtureSpan::FrontXRun:
+		case ETrussFixtureSpan::MainSpan:
+		default:
+			OutBounds = FBox(FVector(CornerExtent.X, 0.0f, HeightCm), FVector(CornerExtent.X + LengthCombination.ActualLengthCm, XRunExtent.Y, HeightCm + XRunExtent.Z));
+			return true;
+		}
+	}
+
+	case ETrussBuildMode::Cube:
+	{
+		FTrussPieceDefinition CornerDefinition;
+		UStaticMesh* CornerMesh = nullptr;
+		FTrussPieceDefinition BaseDefinition;
+		UStaticMesh* BaseMesh = nullptr;
+		if (!GetPieceDefinition(ETrussPieceType::CornerBlock, CornerDefinition, CornerMesh)
+			|| !GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+		{
+			return false;
+		}
+
+		const FVector CornerExtent = GetScaledRotatedMeshExtent(CornerMesh, FRotator::ZeroRotator);
+		const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+		const float InnerLengthCm = UTrussMathLibrary::FeetToCentimeters(CubeLengthFt) - (2.0f * CornerExtent.X);
+		const float InnerWidthCm = UTrussMathLibrary::FeetToCentimeters(CubeWidthFt) - (2.0f * CornerExtent.Y);
+		const float LegTargetCm = UTrussMathLibrary::FeetToCentimeters(CubeHeightFt) - CornerExtent.Z;
+		if (InnerLengthCm <= 0.0f || InnerWidthCm <= 0.0f || LegTargetCm <= 0.0f)
+		{
+			return false;
+		}
+
+		const FTrussCombinationResult LengthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerLengthCm);
+		const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
+		const FTrussCombinationResult LegCombination = UTrussMathLibrary::FindBestTrussCombination(LegTargetCm);
+		if (LengthCombination.Pieces.IsEmpty() || WidthCombination.Pieces.IsEmpty() || LegCombination.Pieces.IsEmpty())
+		{
+			return false;
+		}
+
+		const float TopZ = BaseExtent.Z + LegCombination.ActualLengthCm;
+		const float SpanZ = TopZ + (CornerExtent.Z * 0.5f) - CubeCornerConnectionOffsetCm;
+		const FVector XRunExtent = GetRunThickness(FRotator::ZeroRotator);
+		const FVector YRunExtent = GetRunThickness(FRotator(0.0f, 90.0f, 0.0f));
+		const float BackY = CornerExtent.Y + WidthCombination.ActualLengthCm + ArchSpanYOffsetCm;
+		const float RightX = CornerExtent.X + LengthCombination.ActualLengthCm + CubeCornerConnectionOffsetCm;
+		const float FrontXStart = CornerExtent.X + CubeCornerConnectionOffsetCm;
+
+		switch (Span)
+		{
+		case ETrussFixtureSpan::BackXRun:
+			OutBounds = FBox(FVector(FrontXStart, BackY, SpanZ), FVector(FrontXStart + LengthCombination.ActualLengthCm, BackY + XRunExtent.Y, SpanZ + XRunExtent.Z));
+			return true;
+		case ETrussFixtureSpan::LeftYRun:
+			OutBounds = FBox(FVector(CubeYRunXOffsetCm, CornerExtent.Y + ArchSpanYOffsetCm, SpanZ), FVector(CubeYRunXOffsetCm + YRunExtent.X, CornerExtent.Y + ArchSpanYOffsetCm + WidthCombination.ActualLengthCm, SpanZ + YRunExtent.Z));
+			return true;
+		case ETrussFixtureSpan::RightYRun:
+			OutBounds = FBox(FVector(RightX + (CubeYRunXOffsetCm - CubeCornerConnectionOffsetCm), CornerExtent.Y + ArchSpanYOffsetCm, SpanZ), FVector(RightX + (CubeYRunXOffsetCm - CubeCornerConnectionOffsetCm) + YRunExtent.X, CornerExtent.Y + ArchSpanYOffsetCm + WidthCombination.ActualLengthCm, SpanZ + YRunExtent.Z));
+			return true;
+		case ETrussFixtureSpan::FrontXRun:
+		case ETrussFixtureSpan::MainSpan:
+		default:
+			OutBounds = FBox(FVector(FrontXStart, ArchSpanYOffsetCm, SpanZ), FVector(FrontXStart + LengthCombination.ActualLengthCm, ArchSpanYOffsetCm + XRunExtent.Y, SpanZ + XRunExtent.Z));
+			return true;
+		}
+	}
+
+	default:
+		break;
+	}
+
+	return false;
 }

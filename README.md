@@ -6,6 +6,73 @@ The first milestone is a straight truss run. The plugin keeps the truss math in 
 
 ## Project Log
 
+### 2026-04-29
+
+Current direction:
+
+- Keep pushing toward a reusable event-build tool instead of a truss-only prototype.
+- Keep generation/runtime logic in the runtime plugin so editor, desktop runtime, and later VR can share the same core systems.
+- Build MBP as the next major modular system, starting editor-first but keeping the data model runtime-ready.
+
+What has been done:
+
+- Expanded editor-mounted truss fixture workflow beyond the original single-span assumption.
+- Added named rail selection for editor-mounted fixtures:
+  - `Left Top`
+  - `Right Top`
+  - `Left Bottom`
+  - `Right Bottom`
+- Added explicit horizontal span selection for multi-run structures:
+  - `Main Span`
+  - `Front X Run`
+  - `Back X Run`
+  - `Left Y Run`
+  - `Right Y Run`
+- Updated mounted fixture rebuild behavior so top/bottom fixture height follows the current truss span height instead of full-structure floor bounds.
+- Improved rectangle/cube light placement logic to distinguish X runs and Y runs rather than treating the whole structure as one horizontal mount area.
+- Added a pragmatic Y-run mount correction field on the truss actor:
+  - `Y Run Mount X Adjustment Cm`
+- Added first-pass MBP wall builder actor in the runtime plugin:
+  - `AMBPWallActor`
+  - mixed per-slot styles
+  - per-slot shimmer material variant
+  - per-slot depth offset
+  - instanced rendering by style/material bucket
+- Wired the first MBP styles from migrated Majic Gear content:
+  - `Acrylic`
+  - `Drift`
+  - `Geo`
+  - `Shimmer`
+  - `Hive`
+  - `Platinum`
+- Confirmed the current MBP wall assumption is a 3 ft x 3 ft panel grid with future support needed for deeper pattern tooling and runtime placement.
+- Confirmed the current architecture should support later VR work without rewriting truss/MBP generation, as long as VR is added as a new input/targeting/UI layer.
+
+Immediate next steps:
+
+- Validate the final Y-run truss fixture alignment on rectangle and cube using the editable correction field.
+- Improve `AMBPWallActor` editor workflow:
+  - easier slot editing
+  - pattern helpers
+  - better default authoring flow for mixed-style walls
+- Add MBP as a runtime buildable item using the same runtime build framework used by truss.
+- Extend MBP later with:
+  - per-panel forward/back offsets
+  - faster pattern editing
+  - mixed-style wall presets
+- Revisit stage deck building after MBP is stable.
+- Keep VR as a later integration target:
+  - new VR pawn/controller
+  - controller-ray targeting
+  - world-space UI
+  - reuse existing build actors/data definitions
+
+Notes for future sessions:
+
+- `GeneratedBounds` is still fine for selection/highlight, but truss fixture placement on complex structures may need span-specific bounds or explicit corrections instead of whole-structure assumptions.
+- MBP should stay data-driven from day one so editor authoring, desktop runtime placement, and later VR can all hit the same wall definition.
+- Do not bury too much wall-authoring logic in one-off editor utilities if the same wall data will later be placed at runtime.
+
 ### 2026-04-27
 
 Current direction:
