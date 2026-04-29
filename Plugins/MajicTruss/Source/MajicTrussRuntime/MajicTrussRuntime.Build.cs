@@ -11,7 +11,8 @@ public class MajicTrussRuntime : ModuleRules
 		{
 			"Core",
 			"CoreUObject",
-			"Engine"
+			"Engine",
+			"AssetRegistry"
 		});
 	}
 }

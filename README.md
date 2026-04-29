@@ -35,31 +35,48 @@ What has been done:
 - Added first-pass MBP wall builder actor in the runtime plugin:
   - `AMBPWallActor`
   - mixed per-slot styles
-  - per-slot shimmer material variant
-  - per-slot depth offset
-  - instanced rendering by style/material bucket
-- Wired the first MBP styles from migrated Majic Gear content:
+  - blank slots
+  - custom mesh slots for signs or one-off centerpieces
+  - per-slot depth offset snapped in 12-inch steps
+  - row/column batch editing
+  - instanced rendering by mesh/material bucket
+- Reworked MBP content integration to use the newer assembled segment folders instead of the original single-mesh segment assets:
   - `Acrylic`
   - `Drift`
   - `Geo`
   - `Shimmer`
   - `Hive`
   - `Platinum`
+- Added automatic `Extra_Frame` segment support when an MBP panel has non-zero depth offset.
+- Reworked shimmer so it is material-driven per slot:
+  - direct `Shimmer Material` asset reference on the slot
+  - generated `30 x 30` plane array for the shimmer face
+  - retained frame structure from the imported shimmer segment kit
+- Added shimmer face tuning controls and locked in the current aligned defaults:
+  - `Shimmer Face Offset X Cm = -1.902981`
+  - `Shimmer Face Offset Y Cm = -0.104`
+  - `Shimmer Face Offset Z Cm = -4.650027`
+- Fixed editor rebuild stability for MBP by reusing generated instanced mesh components instead of destroying/recreating them on every reconstruction.
 - Confirmed the current MBP wall assumption is a 3 ft x 3 ft panel grid with future support needed for deeper pattern tooling and runtime placement.
 - Confirmed the current architecture should support later VR work without rewriting truss/MBP generation, as long as VR is added as a new input/targeting/UI layer.
 
 Immediate next steps:
 
 - Validate the final Y-run truss fixture alignment on rectangle and cube using the editable correction field.
-- Improve `AMBPWallActor` editor workflow:
+- Keep `AMBPWallActor` as the shared wall definition actor and begin exposing it through the same runtime build framework used by truss.
+- Add MBP as a runtime buildable item:
+  - runtime preview actor
+  - runtime placement flow
+  - reuse of the same slot/grid data model
+- Improve `AMBPWallActor` editor workflow further:
   - easier slot editing
   - pattern helpers
   - better default authoring flow for mixed-style walls
-- Add MBP as a runtime buildable item using the same runtime build framework used by truss.
 - Extend MBP later with:
   - per-panel forward/back offsets
   - faster pattern editing
   - mixed-style wall presets
+- Decide whether row/column edits should remain one-shot batch actions or become persistent row/column override layers.
 - Revisit stage deck building after MBP is stable.
 - Keep VR as a later integration target:
   - new VR pawn/controller
