@@ -1,10 +1,88 @@
-# Unreal Truss
+<p align="center">
+  <img src="docs/assets/unreal-truss-hero.png" alt="Architectural watercolor concept of a live event build environment with truss, stage, decor, bars, tables, scenic walls, and lighting" width="100%">
+</p>
 
-Unreal Truss is a runtime-first Unreal Engine 5.6 plugin for building event-production truss structures from real inventory lengths.
+<h1 align="center">Unreal Truss</h1>
 
-The first milestone is a straight truss run. The plugin keeps the truss math in runtime C++ so the same system can be used later by editor tools, Blueprint gameplay, and in-game UI.
+<p align="center">
+  Runtime-first Unreal Engine tools for building live-event environments: truss, stages, lighting, scenic walls, decor, bars, tables, and the workflows that tie them together.
+</p>
+
+<p align="center">
+  <strong>Unreal Engine 5.6</strong> | <strong>Runtime C++ Plugin</strong> | <strong>Blueprint-ready</strong> | <strong>Live Event Previsualization</strong>
+</p>
+
+---
+
+## Project Vision
+
+Unreal Truss started as a runtime-first Unreal Engine 5.6 plugin for building event-production truss structures from real inventory lengths. The larger direction is a reusable live-event build toolkit: a shared runtime foundation for truss, stages, decor items, bars, tables, MBP scenic walls, lighting fixtures, and future VR placement/editing workflows.
+
+The first milestone is a straight truss run. The plugin keeps the truss math in runtime C++ so the same system can be used later by editor tools, Blueprint gameplay, in-game UI, and immersive event layout tools.
+
+## Visual Direction
+
+The project page uses an architectural sketch and watercolor concept style for now. Real Unreal Engine screenshots can be added beside these concept banners as the tools mature.
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/assets/event-system-overview.png" alt="Architectural planning sketch showing the event build system as modular truss, stage, decor, lighting, bars, tables, and scenic wall components" width="100%">
+      <br>
+      <strong>Event build system</strong>
+      <br>
+      Shared runtime foundations for every buildable event element.
+    </td>
+    <td width="50%">
+      <img src="docs/assets/truss-build-modes.png" alt="Architectural sketch strip showing straight, rectangle, arch, and cube truss build modes" width="100%">
+      <br>
+      <strong>Truss build modes</strong>
+      <br>
+      Straight runs, rectangles, arches, cubes, and cube arch structures.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/assets/fixture-placement.png" alt="Architectural watercolor concept of a targeting pointer placing a lighting fixture on a truss rail" width="100%">
+      <br>
+      <strong>Fixture placement</strong>
+      <br>
+      Runtime and editor-mounted fixtures using truss-owned placement data.
+    </td>
+    <td width="50%">
+      <img src="docs/assets/mbp-decor-wall.png" alt="Architectural watercolor concept of a modular scenic wall with decor, bars, tables, and live event lighting" width="100%">
+      <br>
+      <strong>Scenic and decor systems</strong>
+      <br>
+      MBP walls today, with stage pieces, decor, bars, and tables as natural next systems.
+    </td>
+  </tr>
+</table>
+
+## Core Ideas
+
+| Area | Direction |
+| --- | --- |
+| Runtime-first architecture | Keep generation and placement logic in `MajicTrussRuntime` so editor tools, gameplay UI, desktop runtime, and future VR can share the same systems. |
+| Real event inventory | Build from real truss lengths and imported event gear instead of abstract placeholder dimensions. |
+| Unified placement | Use shared build definitions, preview actors, targeting pointers, and update paths for creating and editing placed items. |
+| Low-overhead output | Favor instanced mesh components and data-driven actors so generated event layouts stay practical. |
+| Expandable live-event scope | Treat truss as the first buildable item, then grow into stages, walls, lighting, decor, bars, tables, and complete event setups. |
+
+## Repository Map
+
+| Path | Purpose |
+| --- | --- |
+| `Plugins/MajicTruss/Source/MajicTrussRuntime` | Runtime plugin with truss generation, build placement support, fixture mounting, and MBP wall generation. |
+| `Source/UnrealTruss` | Code-first playable test path, build menu widget, light placement menu, targeting pointer, pawn, and game mode. |
+| `Content/Build` | Build item data assets used by the runtime placement workflow. |
+| `Content/Majic_Gear` | Imported truss, MBP, lighting, and event-gear assets used by the current tool pass. |
+| `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details>
+<summary><strong>2026-04-29: MBP, mounted fixtures, and reusable event-build direction</strong></summary>
 
 ### 2026-04-29
 
@@ -90,6 +168,11 @@ Notes for future sessions:
 - MBP should stay data-driven from day one so editor authoring, desktop runtime placement, and later VR can all hit the same wall definition.
 - Do not bury too much wall-authoring logic in one-off editor utilities if the same wall data will later be placed at runtime.
 
+</details>
+
+<details>
+<summary><strong>2026-04-27: Runtime build framework and first truss workflow</strong></summary>
+
 ### 2026-04-27
 
 Current direction:
@@ -152,6 +235,8 @@ Notes for future sessions:
 - Keep actor counts low and favor instanced mesh output where possible.
 - Avoid full inventory/crafting complexity until placement and UI feel solid.
 
+</details>
+
 ## Current Scope
 
 - Runtime plugin module: `MajicTrussRuntime`
@@ -172,6 +257,14 @@ Notes for future sessions:
   - `UBuildItemDataAsset`
   - `UBuildManagerComponent`
   - `ABuildPreviewActor`
+
+## Planned Expansion
+
+- Stage deck building with grid/cell-style placement and per-section height support.
+- Decor placement for event objects that need quick layout iteration.
+- Bars, tables, lounge pieces, and other venue-ready build items.
+- MBP runtime placement using the same grid/slot wall definition already started in `AMBPWallActor`.
+- VR controller targeting and world-space UI as a new input layer over the shared runtime systems.
 
 ## Testing
 
