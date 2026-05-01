@@ -5,61 +5,137 @@
 <h1 align="center">Unreal Truss</h1>
 
 <p align="center">
-  Runtime-first Unreal Engine tools for building live-event environments: truss, stages, lighting, scenic walls, decor, bars, tables, and the workflows that tie them together.
+  <strong>Live-event build tools for Unreal Engine</strong><br>
+  A runtime-first toolkit for designing truss, stages, lighting, scenic walls, decor, bars, tables, and complete event setups.
 </p>
 
 <p align="center">
-  <strong>Unreal Engine 5.6</strong> | <strong>Runtime C++ Plugin</strong> | <strong>Blueprint-ready</strong> | <strong>Live Event Previsualization</strong>
+  <a href="#mission"><img alt="Mission" src="https://img.shields.io/badge/mission-live%20event%20previs-black"></a>
+  <a href="#system-direction"><img alt="Platform" src="https://img.shields.io/badge/platform-Unreal%20Engine%205.6-blue"></a>
+  <a href="#what-it-builds"><img alt="Runtime" src="https://img.shields.io/badge/core-runtime%20C%2B%2B-black"></a>
+  <a href="#roadmap"><img alt="Roadmap" src="https://img.shields.io/badge/roadmap-stage%20%2B%20decor%20tools-blue"></a>
 </p>
 
 ---
 
-## Project Vision
+<table>
+  <tr>
+    <td width="50%">
+      <h2>Build The Room Before The Doors Open</h2>
+      <p>
+        Unreal Truss is growing into a live-event layout and previsualization toolkit:
+        a way to place the physical pieces of an event inside Unreal before the crew is on site.
+      </p>
+      <p>
+        The first foundation is truss built from real inventory lengths. From there, the same runtime
+        placement system can expand into stages, scenic walls, lighting fixtures, decor, bars, tables,
+        and future VR editing workflows.
+      </p>
+    </td>
+    <td width="50%">
+      <img src="docs/assets/event-system-overview.png" alt="Architectural planning sketch showing the event build system as modular truss, stage, decor, lighting, bars, tables, and scenic wall components" width="100%">
+    </td>
+  </tr>
+</table>
+
+## Mission
 
 Unreal Truss started as a runtime-first Unreal Engine 5.6 plugin for building event-production truss structures from real inventory lengths. The larger direction is a reusable live-event build toolkit: a shared runtime foundation for truss, stages, decor items, bars, tables, MBP scenic walls, lighting fixtures, and future VR placement/editing workflows.
 
 The first milestone is a straight truss run. The plugin keeps the truss math in runtime C++ so the same system can be used later by editor tools, Blueprint gameplay, in-game UI, and immersive event layout tools.
 
-## Visual Direction
+Core goals:
 
-The project page uses an architectural sketch and watercolor concept style for now. Real Unreal Engine screenshots can be added beside these concept banners as the tools mature.
+- Build event structures from real inventory sizes and reusable data.
+- Keep generation logic in runtime C++ so editor, desktop runtime, Blueprint UI, and VR can share it.
+- Make placement and editing feel fast enough for real event-design iteration.
+- Use instanced mesh output where repeated gear would otherwise become expensive.
+- Grow from truss into complete live-event environments.
+
+## What It Builds
+
+<table>
+  <tr>
+    <th>System</th>
+    <th>Current Direction</th>
+    <th>Status</th>
+  </tr>
+  <tr>
+    <td><strong>Truss</strong></td>
+    <td>Straight runs, rectangles, arches, cubes, cube arches, real inventory lengths, mounted fixtures.</td>
+    <td>Runtime actor and editor/runtime workflows started.</td>
+  </tr>
+  <tr>
+    <td><strong>Lighting</strong></td>
+    <td>Fixture selection, over/under-slung placement, truss-owned mounted fixture definitions.</td>
+    <td>First runtime and editor placement pass started.</td>
+  </tr>
+  <tr>
+    <td><strong>MBP Walls</strong></td>
+    <td>3 ft x 3 ft modular panel grids, mixed styles, shimmer materials, custom slots, depth offsets.</td>
+    <td>Editor-first wall actor started in the runtime plugin.</td>
+  </tr>
+  <tr>
+    <td><strong>Stages</strong></td>
+    <td>Deck/cell-based stage layout with per-section heights and later runtime placement.</td>
+    <td>Planned after MBP stabilizes.</td>
+  </tr>
+  <tr>
+    <td><strong>Decor, Bars, Tables</strong></td>
+    <td>Venue-ready build items that use the same preview, placement, editing, and save/load direction.</td>
+    <td>Planned expansion.</td>
+  </tr>
+</table>
+
+## System Direction
+
+<table>
+  <tr>
+    <td align="center"><strong>1. Select</strong><br>Choose a build item such as truss, wall, stage, bar, table, or decor.</td>
+    <td align="center"><strong>2. Preview</strong><br>Use a lightweight actor and shared targeting pointer to place it in the world.</td>
+    <td align="center"><strong>3. Configure</strong><br>Adjust dimensions, modes, inventory pieces, panel styles, or fixture options.</td>
+    <td align="center"><strong>4. Place</strong><br>Commit the item into the Unreal scene using runtime build definitions.</td>
+    <td align="center"><strong>5. Edit</strong><br>Reload the same data model and rebuild in place as the design changes.</td>
+  </tr>
+</table>
+
+## Truss Modes
+
+<p align="center">
+  <img src="docs/assets/truss-build-modes.png" alt="Architectural sketch strip showing straight, rectangle, arch, and cube truss build modes" width="100%">
+</p>
+
+The first buildable system covers straight truss runs, rectangle structures, arches, cubes, and cube arch structures. Truss pieces are selected from inventory lengths and rendered through instanced static mesh components when meshes are assigned.
+
+## Fixture Placement
 
 <table>
   <tr>
     <td width="50%">
-      <img src="docs/assets/event-system-overview.png" alt="Architectural planning sketch showing the event build system as modular truss, stage, decor, lighting, bars, tables, and scenic wall components" width="100%">
-      <br>
-      <strong>Event build system</strong>
-      <br>
-      Shared runtime foundations for every buildable event element.
-    </td>
-    <td width="50%">
-      <img src="docs/assets/truss-build-modes.png" alt="Architectural sketch strip showing straight, rectangle, arch, and cube truss build modes" width="100%">
-      <br>
-      <strong>Truss build modes</strong>
-      <br>
-      Straight runs, rectangles, arches, cubes, and cube arch structures.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
       <img src="docs/assets/fixture-placement.png" alt="Architectural watercolor concept of a targeting pointer placing a lighting fixture on a truss rail" width="100%">
-      <br>
-      <strong>Fixture placement</strong>
-      <br>
-      Runtime and editor-mounted fixtures using truss-owned placement data.
     </td>
     <td width="50%">
-      <img src="docs/assets/mbp-decor-wall.png" alt="Architectural watercolor concept of a modular scenic wall with decor, bars, tables, and live event lighting" width="100%">
-      <br>
-      <strong>Scenic and decor systems</strong>
-      <br>
-      MBP walls today, with stage pieces, decor, bars, and tables as natural next systems.
+      <h2>Target The Rail, Keep The Data</h2>
+      <p>
+        Runtime light placement writes back to <code>ATrussStructureActor</code> mounted-fixture definitions instead of leaving loose actors behind.
+        Editor-placed and runtime-placed lights can share the same truss-owned data model.
+      </p>
+      <p>
+        The current pass supports over-slung and under-slung fixture placement with named rails and span-aware mounting for more complex structures.
+      </p>
     </td>
   </tr>
 </table>
 
-## Core Ideas
+## Scenic And Decor Systems
+
+<p align="center">
+  <img src="docs/assets/mbp-decor-wall.png" alt="Architectural watercolor concept of a modular scenic wall with decor, bars, tables, and live event lighting" width="100%">
+</p>
+
+MBP wall generation is the first scenic system beyond truss. It uses mixed per-slot styles, blank slots, custom mesh slots, shimmer materials, depth offsets snapped in 12-inch steps, and instanced rendering by mesh/material bucket. Stage decks, decor placement, bars, tables, and other live-event items can follow the same runtime build framework.
+
+## Runtime Principles
 
 | Area | Direction |
 | --- | --- |
@@ -68,6 +144,16 @@ The project page uses an architectural sketch and watercolor concept style for n
 | Unified placement | Use shared build definitions, preview actors, targeting pointers, and update paths for creating and editing placed items. |
 | Low-overhead output | Favor instanced mesh components and data-driven actors so generated event layouts stay practical. |
 | Expandable live-event scope | Treat truss as the first buildable item, then grow into stages, walls, lighting, decor, bars, tables, and complete event setups. |
+
+## Roadmap
+
+1. Validate final Y-run truss fixture alignment on rectangle and cube structures.
+2. Bring `AMBPWallActor` into the shared runtime buildable item flow.
+3. Add runtime MBP preview, placement, and editing using the same slot/grid data model.
+4. Improve MBP authoring with easier slot editing, pattern helpers, and mixed-style presets.
+5. Revisit stage deck building as a separate grid/cell-based system.
+6. Add decor, bars, tables, and venue-ready build items.
+7. Add VR as a new input layer with controller-ray targeting and world-space UI.
 
 ## Repository Map
 
@@ -257,14 +343,6 @@ Notes for future sessions:
   - `UBuildItemDataAsset`
   - `UBuildManagerComponent`
   - `ABuildPreviewActor`
-
-## Planned Expansion
-
-- Stage deck building with grid/cell-style placement and per-section height support.
-- Decor placement for event objects that need quick layout iteration.
-- Bars, tables, lounge pieces, and other venue-ready build items.
-- MBP runtime placement using the same grid/slot wall definition already started in `AMBPWallActor`.
-- VR controller targeting and world-space UI as a new input layer over the shared runtime systems.
 
 ## Testing
 
