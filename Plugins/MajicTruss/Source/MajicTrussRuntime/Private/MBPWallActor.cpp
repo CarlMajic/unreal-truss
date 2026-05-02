@@ -9,6 +9,10 @@
 
 namespace
 {
+constexpr float DefaultShimmerFaceOffsetXCm = -1.902981f;
+constexpr float DefaultShimmerFaceOffsetYCm = -0.104f;
+constexpr float DefaultShimmerFaceOffsetZCm = -4.650027f;
+
 FString GetStyleAssetFolder(EMBPPanelStyle Style)
 {
 	switch (Style)
@@ -79,6 +83,15 @@ AMBPWallActor::AMBPWallActor()
 void AMBPWallActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+
+	if (FMath::IsNearlyZero(ShimmerFaceOffsetXCm) &&
+		FMath::IsNearlyZero(ShimmerFaceOffsetYCm) &&
+		FMath::IsNearlyZero(ShimmerFaceOffsetZCm))
+	{
+		ShimmerFaceOffsetXCm = DefaultShimmerFaceOffsetXCm;
+		ShimmerFaceOffsetYCm = DefaultShimmerFaceOffsetYCm;
+		ShimmerFaceOffsetZCm = DefaultShimmerFaceOffsetZCm;
+	}
 
 	EnsureSlotCount(false);
 	SyncSlotsToDefaultStyleIfNeeded();
@@ -556,7 +569,7 @@ UInstancedStaticMeshComponent* AMBPWallActor::FindOrCreateComponentBucket(
 	MeshComponent->SetHiddenInGame(false);
 	MeshComponent->SetVisibility(true);
 
-	if (Slot.Style == EMBPPanelStyle::Shimmer)
+	if (Slot.Style == EMBPPanelStyle::Shimmer && StaticMesh->GetName().Equals(TEXT("Plane")))
 	{
 		if (UMaterialInterface* OverrideMaterial = ResolveShimmerMaterial(Slot))
 		{
