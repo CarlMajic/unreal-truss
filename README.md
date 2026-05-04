@@ -77,8 +77,8 @@ Core goals:
   </tr>
   <tr>
     <td><strong>Stages</strong></td>
-    <td>Deck/cell-based stage layout with per-section heights and later runtime placement.</td>
-    <td>Planned after MBP stabilizes.</td>
+    <td>Deck/cell-based stage layout with per-section heights, automatic skirt generation, podium support, and later runtime placement.</td>
+    <td>Editor-first stage actor started.</td>
   </tr>
   <tr>
     <td><strong>Decor, Bars, Tables</strong></td>
@@ -151,7 +151,7 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 2. Bring `AMBPWallActor` into the shared runtime buildable item flow.
 3. Add runtime MBP preview, placement, and editing using the same slot/grid data model.
 4. Improve MBP authoring with easier slot editing, pattern helpers, and mixed-style presets.
-5. Revisit stage deck building as a separate grid/cell-based system.
+5. Improve stage deck authoring, podium integration, and runtime placement/editing.
 6. Add decor, bars, tables, and venue-ready build items.
 7. Add VR as a new input layer with controller-ray targeting and world-space UI.
 
@@ -159,13 +159,98 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 
 | Path | Purpose |
 | --- | --- |
-| `Plugins/MajicTruss/Source/MajicTrussRuntime` | Runtime plugin with truss generation, build placement support, fixture mounting, and MBP wall generation. |
+| `Plugins/MajicTruss/Source/MajicTrussRuntime` | Runtime plugin with truss generation, build placement support, fixture mounting, MBP wall generation, and stage deck generation. |
 | `Source/UnrealTruss` | Code-first playable test path, build menu widget, light placement menu, targeting pointer, pawn, and game mode. |
 | `Content/Build` | Build item data assets used by the runtime placement workflow. |
 | `Content/Majic_Gear` | Imported truss, MBP, lighting, and event-gear assets used by the current tool pass. |
 | `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details>
+<summary><strong>2026-05-04: Stage deck actor, single-deck kits, and calibrated stage skirt pass</strong></summary>
+
+### 2026-05-04
+
+Current direction:
+
+- Keep the stage system following the same pattern as MBP:
+  - editor-first authoring
+  - runtime-plugin core actor
+  - data model that can later be reused in the runtime build menu
+- Treat stage decks as a cell/grid system instead of a rectangle-only array so irregular shapes, peninsulas, and mixed deck heights remain possible.
+- Keep the current stage pass focused on practical editor layout first, then wire it into runtime after the authoring workflow is less manual.
+
+What has been done:
+
+- Added first-pass `AStageDeckActor` in the runtime plugin.
+- Stage actor now supports:
+  - `Rows`
+  - `Columns`
+  - per-cell enabled/disabled state
+  - per-cell deck height presets:
+    - `8 inch`
+    - `12 inch`
+    - `24 inch`
+    - `27 inch`
+  - per-cell surface style
+  - row/column batch editing
+  - optional podium selection with offsets
+- Confirmed the original deck imports were not a good long-term base because they required correction scaling/rotation.
+- Switched the stage system to the new assembled `Single_Decks` content:
+  - `Single_8_inch_Stage_Deck`
+  - `Single_12_inch_Stage_Deck`
+  - `Single_24_inch_Stage_Deck`
+  - `Single_27_inch_Stage_Deck`
+- Updated deck generation so each stage cell now spawns the whole static-mesh kit from the chosen `Single_Decks/.../StaticMeshes` folder at a shared anchor instead of trying to normalize each part from its own bounds.
+- Moved stage surface handling toward the same pattern used for shimmer panels:
+  - keep the full deck kit
+  - treat the `Carpet` mesh as the surface target
+  - allow material override there instead of deleting pieces to fake style
+- Added debug deck placement controls:
+  - `Deck Placement Offset Cm`
+  - `Deck Placement Rotation`
+- Confirmed podium assets need to be re-authored before they are worth spending more placement time on because the current podium imports are still coming in at an undesirable scale.
+- Replaced the stage skirt experiment that used skeletal drape logic with the top-level static mesh `StageDrape` asset.
+- Built a debug single-skirt calibration path on the stage actor, then used it to dial in stage skirt placement against the front-right reference edge.
+- Locked in the current debug skirt defaults:
+  - `Debug Skirt Offset Cm = (123.166338, -65.886528, 5.024358)`
+  - `Debug Skirt Scale = (1.05, 0.25, 1.0)`
+  - `Skirt Height Scale 27 Inch = 1.185277`
+- Reapplied that calibrated debug skirt setup back into automatic perimeter skirt generation.
+- Added per-edge automatic skirt adjustment controls:
+  - `AutoSkirtFrontAdjustmentCm`
+  - `AutoSkirtBackAdjustmentCm`
+  - `AutoSkirtLeftAdjustmentCm`
+  - `AutoSkirtRightAdjustmentCm`
+- Locked in the latest known-good left/right defaults from the current tuning pass:
+  - `AutoSkirtLeftAdjustmentCm = (0.0, 124.419191, 0.0)`
+  - `AutoSkirtRightAdjustmentCm = (-125.676275, 3.194805, 0.0)`
+- Added editor-facing cell labels so the actor can show the same linear indexing used in the `Deck Cells` array:
+  - `Index 0`
+  - `Index 1`
+  - etc.
+- Added cell-label controls:
+  - `Show Cell Labels`
+  - `Cell Label Height Cm`
+- Cell labels now show for enabled and disabled cells, with disabled cells rendered in red to make shape editing less blind.
+
+Immediate next steps:
+
+- Validate the current automatic skirt pass with the latest left/right per-edge defaults.
+- Improve stage cell authoring so irregular shapes are faster to create than editing the raw `Deck Cells` array one item at a time.
+- Rebuild podium assets so they can be used without scale hacks.
+- After podium assets are corrected, finish podium placement/options on the stage actor.
+- Once the editor workflow feels solid, bring `AStageDeckActor` into the shared runtime build menu flow the same way truss and MBP were integrated.
+
+Notes for tomorrow:
+
+- The stage system is in a usable editor-first state, but still in calibration mode for skirt edges and deck authoring ergonomics.
+- The new `Single_Decks` assets are the right base going forward; do not fall back to the older corrected one-mesh deck setup.
+- Podiums should wait for the new asset versions instead of adding more code-side scale workarounds now.
+- The next quality-of-life gain is better cell toggling and editing, not more rendering refactors.
+
+</details>
 
 <details>
 <summary><strong>2026-04-29: MBP, mounted fixtures, and reusable event-build direction</strong></summary>
