@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "MBPWallActor.h"
 #include "TrussStructureActor.h"
 #include "BuildItemDataAsset.generated.h"
 
@@ -11,7 +12,8 @@ UENUM(BlueprintType)
 enum class EBuildItemType : uint8
 {
 	ActorClass UMETA(DisplayName = "Actor Class"),
-	TrussStructure UMETA(DisplayName = "Truss Structure")
+	TrussStructure UMETA(DisplayName = "Truss Structure"),
+	MBPWall UMETA(DisplayName = "MBP Wall")
 };
 
 UCLASS(BlueprintType)
@@ -55,4 +57,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Truss")
 	FTrussBuildDefinition DefaultTrussDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|MBP")
+	FMBPWallDefinition DefaultMBPWallDefinition;
 };

@@ -22,6 +22,8 @@ FString GetStyleAssetFolder(EMBPPanelStyle Style)
 		return FString();
 	case EMBPPanelStyle::Acrylic:
 		return TEXT("/Game/Majic_Gear/MBP/Acrylic_Segment/StaticMeshes");
+	case EMBPPanelStyle::Boxwood:
+		return TEXT("/Game/Majic_Gear/MBP/Boxwood_Segment/StaticMeshes");
 	case EMBPPanelStyle::Drift:
 		return TEXT("/Game/Majic_Gear/MBP/Drift_Segment/StaticMeshes");
 	case EMBPPanelStyle::Geo:
@@ -76,8 +78,14 @@ AMBPWallActor::AMBPWallActor()
 
 	SelectionBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("SelectionBounds"));
 	SelectionBounds->SetupAttachment(SceneRoot);
-	SelectionBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SelectionBounds->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	SelectionBounds->SetCollisionObjectType(ECC_WorldDynamic);
+	SelectionBounds->SetCollisionResponseToAllChannels(ECR_Ignore);
+	SelectionBounds->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	SelectionBounds->SetGenerateOverlapEvents(false);
 	SelectionBounds->SetHiddenInGame(true);
+	SelectionBounds->SetLineThickness(2.0f);
+	SelectionBounds->ShapeColor = FColor::Yellow;
 }
 
 void AMBPWallActor::OnConstruction(const FTransform& Transform)
@@ -235,6 +243,133 @@ void AMBPWallActor::RebuildWall()
 	UpdateSelectionBounds(Bounds);
 }
 
+void AMBPWallActor::ApplyWallDefinition(const FMBPWallDefinition& Definition, bool bResetSlotsToDefault)
+{
+	Columns = FMath::Max(1, Definition.Columns);
+	Rows = FMath::Max(1, Definition.Rows);
+	DefaultStyle = Definition.DefaultStyle;
+	DefaultShimmerVariant = Definition.DefaultShimmerVariant;
+	DefaultShimmerMaterial = Definition.DefaultShimmerMaterial;
+	ShimmerFaceOffsetXCm = Definition.ShimmerFaceOffsetXCm;
+	ShimmerFaceOffsetYCm = Definition.ShimmerFaceOffsetYCm;
+	ShimmerFaceOffsetZCm = Definition.ShimmerFaceOffsetZCm;
+	PanelWidthCm = Definition.PanelWidthCm;
+	PanelHeightCm = Definition.PanelHeightCm;
+	HorizontalSpacingCm = Definition.HorizontalSpacingCm;
+	VerticalSpacingCm = Definition.VerticalSpacingCm;
+	DepthOffsetStepCm = Definition.DepthOffsetStepCm;
+	bCenterOnActor = Definition.bCenterOnActor;
+
+	if (bResetSlotsToDefault)
+	{
+		ResetSlotsToDefault();
+	}
+	else
+	{
+		EnsureSlotCount(false);
+		RebuildWall();
+	}
+}
+
+FMBPWallDefinition AMBPWallActor::GetWallDefinition() const
+{
+	FMBPWallDefinition Definition;
+	Definition.Columns = Columns;
+	Definition.Rows = Rows;
+	Definition.DefaultStyle = DefaultStyle;
+	Definition.DefaultShimmerVariant = DefaultShimmerVariant;
+	Definition.DefaultShimmerMaterial = DefaultShimmerMaterial;
+	Definition.ShimmerFaceOffsetXCm = ShimmerFaceOffsetXCm;
+	Definition.ShimmerFaceOffsetYCm = ShimmerFaceOffsetYCm;
+	Definition.ShimmerFaceOffsetZCm = ShimmerFaceOffsetZCm;
+	Definition.PanelWidthCm = PanelWidthCm;
+	Definition.PanelHeightCm = PanelHeightCm;
+	Definition.HorizontalSpacingCm = HorizontalSpacingCm;
+	Definition.VerticalSpacingCm = VerticalSpacingCm;
+	Definition.DepthOffsetStepCm = DepthOffsetStepCm;
+	Definition.bCenterOnActor = bCenterOnActor;
+	return Definition;
+}
+
+bool AMBPWallActor::GetSlotIndicesFromWorldLocation(const FVector& WorldLocation, int32& OutRow, int32& OutColumn) const
+{
+	const float StepX = PanelWidthCm + HorizontalSpacingCm;
+	const float StepZ = PanelHeightCm + VerticalSpacingCm;
+	if (StepX <= KINDA_SMALL_NUMBER || StepZ <= KINDA_SMALL_NUMBER || Columns <= 0 || Rows <= 0)
+	{
+		return false;
+	}
+
+	const float OriginX = bCenterOnActor ? (-0.5f * (Columns - 1) * StepX) : 0.0f;
+	const float OriginZ = bCenterOnActor ? (-0.5f * (Rows - 1) * StepZ) : 0.0f;
+	const FVector LocalHitLocation = GetActorTransform().InverseTransformPosition(WorldLocation);
+
+	OutColumn = FMath::Clamp(FMath::RoundToInt((LocalHitLocation.X - OriginX) / StepX), 0, Columns - 1);
+	OutRow = FMath::Clamp(FMath::RoundToInt((LocalHitLocation.Z - OriginZ) / StepZ), 0, Rows - 1);
+	return IsValidSlotIndexPair(OutRow, OutColumn);
+}
+
+bool AMBPWallActor::GetPanelSlot(int32 RowIndex, int32 ColumnIndex, FMBPPanelSlot& OutSlot) const
+{
+	if (!IsValidSlotIndexPair(RowIndex, ColumnIndex))
+	{
+		return false;
+	}
+
+	OutSlot = PanelSlots[GetSlotLinearIndex(RowIndex, ColumnIndex)];
+	return true;
+}
+
+bool AMBPWallActor::ApplyPanelEdit(int32 RowIndex, int32 ColumnIndex, EMBPPanelStyle Style, float DepthOffsetCm)
+{
+	if (!IsValidSlotIndexPair(RowIndex, ColumnIndex))
+	{
+		return false;
+	}
+
+	return ApplyEditToSlotIndices({ GetSlotLinearIndex(RowIndex, ColumnIndex) }, Style, DepthOffsetCm);
+}
+
+bool AMBPWallActor::ApplyRowEditByIndex(int32 RowIndex, EMBPPanelStyle Style, float DepthOffsetCm)
+{
+	if (RowIndex < 0 || RowIndex >= Rows)
+	{
+		return false;
+	}
+
+	TArray<int32> SlotIndices;
+	for (int32 ColumnIndex = 0; ColumnIndex < Columns; ++ColumnIndex)
+	{
+		SlotIndices.Add(GetSlotLinearIndex(RowIndex, ColumnIndex));
+	}
+
+	return ApplyEditToSlotIndices(SlotIndices, Style, DepthOffsetCm);
+}
+
+bool AMBPWallActor::ApplyColumnEditByIndex(int32 ColumnIndex, EMBPPanelStyle Style, float DepthOffsetCm)
+{
+	if (ColumnIndex < 0 || ColumnIndex >= Columns)
+	{
+		return false;
+	}
+
+	TArray<int32> SlotIndices;
+	for (int32 RowIndex = 0; RowIndex < Rows; ++RowIndex)
+	{
+		SlotIndices.Add(GetSlotLinearIndex(RowIndex, ColumnIndex));
+	}
+
+	return ApplyEditToSlotIndices(SlotIndices, Style, DepthOffsetCm);
+}
+
+void AMBPWallActor::SetSelectionHighlighted(bool bHighlighted)
+{
+	if (SelectionBounds)
+	{
+		SelectionBounds->SetHiddenInGame(!bHighlighted);
+	}
+}
+
 void AMBPWallActor::ResetSlotsToDefault()
 {
 	EnsureSlotCount(true);
@@ -389,6 +524,58 @@ TArray<int32> AMBPWallActor::GetBatchSlotIndices() const
 	}
 
 	return SlotIndices;
+}
+
+bool AMBPWallActor::IsValidSlotIndexPair(int32 RowIndex, int32 ColumnIndex) const
+{
+	return RowIndex >= 0 && RowIndex < Rows && ColumnIndex >= 0 && ColumnIndex < Columns && PanelSlots.IsValidIndex(GetSlotLinearIndex(RowIndex, ColumnIndex));
+}
+
+int32 AMBPWallActor::GetSlotLinearIndex(int32 RowIndex, int32 ColumnIndex) const
+{
+	return (RowIndex * Columns) + ColumnIndex;
+}
+
+void AMBPWallActor::ApplyStyleAndDepthToSlot(FMBPPanelSlot& Slot, EMBPPanelStyle Style, float DepthOffsetCm)
+{
+	Slot.Style = Style;
+	Slot.DepthOffsetCm = DepthOffsetCm;
+
+	if (Style == EMBPPanelStyle::Shimmer)
+	{
+		Slot.ShimmerVariant = DefaultShimmerVariant;
+		if (Slot.ShimmerMaterial.IsNull())
+		{
+			Slot.ShimmerMaterial = DefaultShimmerMaterial;
+		}
+	}
+
+	if (Style != EMBPPanelStyle::Custom)
+	{
+		Slot.CustomStaticMeshes.Reset();
+	}
+}
+
+bool AMBPWallActor::ApplyEditToSlotIndices(const TArray<int32>& SlotIndices, EMBPPanelStyle Style, float DepthOffsetCm)
+{
+	bool bChanged = false;
+	for (const int32 SlotIndex : SlotIndices)
+	{
+		if (!PanelSlots.IsValidIndex(SlotIndex))
+		{
+			continue;
+		}
+
+		ApplyStyleAndDepthToSlot(PanelSlots[SlotIndex], Style, DepthOffsetCm);
+		bChanged = true;
+	}
+
+	if (bChanged)
+	{
+		RebuildWall();
+	}
+
+	return bChanged;
 }
 
 float AMBPWallActor::GetSnappedDepthOffsetCm(float RawDepthOffsetCm) const
@@ -584,6 +771,20 @@ UInstancedStaticMeshComponent* AMBPWallActor::FindOrCreateComponentBucket(
 
 void AMBPWallActor::ClearGeneratedComponents()
 {
+	TInlineComponentArray<UInstancedStaticMeshComponent*> TrackedInstanceComponents(this);
+	for (UInstancedStaticMeshComponent* MeshComponent : TrackedInstanceComponents)
+	{
+		if (!MeshComponent)
+		{
+			continue;
+		}
+
+		if (MeshComponent->GetName().StartsWith(TEXT("MBP_")) && !GeneratedInstanceComponents.Contains(MeshComponent))
+		{
+			GeneratedInstanceComponents.Add(MeshComponent);
+		}
+	}
+
 	for (UInstancedStaticMeshComponent* MeshComponent : GeneratedInstanceComponents)
 	{
 		if (!MeshComponent)

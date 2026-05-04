@@ -5,12 +5,17 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/SpinBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "TrussMathLibrary.h"
 #include "TrussStructureActor.h"
+#include "WhiteComboBoxString.h"
 #include "Blueprint/WidgetTree.h"
 
 namespace
@@ -70,6 +75,10 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 	if (SelectedBuildItem)
 	{
 		CurrentTrussDefinition = SelectedBuildItem->DefaultTrussDefinition;
+		CurrentMBPWallDefinition = SelectedBuildItem->DefaultMBPWallDefinition;
+		ActiveMenuTab = SelectedBuildItem->ItemType == EBuildItemType::MBPWall
+			? EBuildItemType::MBPWall
+			: EBuildItemType::TrussStructure;
 	}
 
 	RefreshMenu();
@@ -82,12 +91,17 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 	if (InSelectedItem && bSelectionChanged)
 	{
 		CurrentTrussDefinition = InSelectedItem->DefaultTrussDefinition;
+		CurrentMBPWallDefinition = InSelectedItem->DefaultMBPWallDefinition;
+		ActiveMenuTab = InSelectedItem->ItemType == EBuildItemType::MBPWall
+			? EBuildItemType::MBPWall
+			: EBuildItemType::TrussStructure;
 	}
 
 	if (BuildManager && InSelectedItem)
 	{
 		BuildManager->SetSelectedBuildItem(InSelectedItem);
 		ApplyTrussDefinitionToBuildManager();
+		ApplyMBPDefinitionToBuildManager();
 	}
 
 	RefreshMenu();
@@ -116,6 +130,8 @@ void UBuildMenuWidget::RefreshMenu()
 	}
 
 	RefreshTrussControls();
+	RefreshMBPControls();
+	RefreshTabButtons();
 	RebuildItemButtons();
 }
 
@@ -129,9 +145,15 @@ FTrussBuildDefinition UBuildMenuWidget::GetCurrentTrussDefinition() const
 	return CurrentTrussDefinition;
 }
 
+FMBPWallDefinition UBuildMenuWidget::GetCurrentMBPWallDefinition() const
+{
+	return CurrentMBPWallDefinition;
+}
+
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 {
 	EditingTarget = InEditingTarget;
+	EditingMBPTarget = nullptr;
 
 	if (EditingTarget)
 	{
@@ -150,6 +172,71 @@ ATrussStructureActor* UBuildMenuWidget::GetEditingTarget() const
 	return EditingTarget;
 }
 
+void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32 InTargetRow, int32 InTargetColumn)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = InEditingTarget;
+
+	if (EditingMBPTarget)
+	{
+		ActiveMenuTab = EBuildItemType::MBPWall;
+		CurrentMBPWallDefinition = EditingMBPTarget->GetWallDefinition();
+		CurrentMBPEditTargetRow = FMath::Clamp(InTargetRow, 0, FMath::Max(EditingMBPTarget->Rows - 1, 0));
+		CurrentMBPEditTargetColumn = FMath::Clamp(InTargetColumn, 0, FMath::Max(EditingMBPTarget->Columns - 1, 0));
+		CurrentMBPEditScope = EMBPRuntimeEditScope::Panel;
+
+		FMBPPanelSlot TargetSlot;
+		if (EditingMBPTarget->GetPanelSlot(CurrentMBPEditTargetRow, CurrentMBPEditTargetColumn, TargetSlot))
+		{
+			CurrentMBPWallDefinition.DefaultStyle = TargetSlot.Style;
+			CurrentMBPEditDepthOffsetCm = TargetSlot.DepthOffsetCm;
+		}
+
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (BuildItem && BuildItem->ItemType == EBuildItemType::MBPWall)
+			{
+				SelectedBuildItem = BuildItem;
+				break;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
+AMBPWallActor* UBuildMenuWidget::GetEditingMBPTarget() const
+{
+	return EditingMBPTarget;
+}
+
+void UBuildMenuWidget::SetEditingMBPPanelTarget(int32 InTargetRow, int32 InTargetColumn)
+{
+	if (!EditingMBPTarget)
+	{
+		return;
+	}
+
+	const int32 ClampedRow = FMath::Clamp(InTargetRow, 0, FMath::Max(EditingMBPTarget->Rows - 1, 0));
+	const int32 ClampedColumn = FMath::Clamp(InTargetColumn, 0, FMath::Max(EditingMBPTarget->Columns - 1, 0));
+	if (CurrentMBPEditTargetRow == ClampedRow && CurrentMBPEditTargetColumn == ClampedColumn)
+	{
+		return;
+	}
+
+	CurrentMBPEditTargetRow = ClampedRow;
+	CurrentMBPEditTargetColumn = ClampedColumn;
+
+	FMBPPanelSlot TargetSlot;
+	if (EditingMBPTarget->GetPanelSlot(CurrentMBPEditTargetRow, CurrentMBPEditTargetColumn, TargetSlot))
+	{
+		CurrentMBPWallDefinition.DefaultStyle = TargetSlot.Style;
+		CurrentMBPEditDepthOffsetCm = TargetSlot.DepthOffsetCm;
+	}
+
+	RefreshMenu();
+}
+
 TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 {
 	WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"));
@@ -159,8 +246,36 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	RootBorder->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.03f, 0.92f));
 	WidgetTree->RootWidget = RootBorder;
 
+	RootScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("RootScrollBox"));
+	RootBorder->SetContent(RootScrollBox);
+
 	UVerticalBox* RootBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("RootBox"));
-	RootBorder->SetContent(RootBox);
+	RootScrollBox->AddChild(RootBox);
+
+	TabButtonBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("TabButtonBox"));
+	if (UVerticalBoxSlot* TabSlot = RootBox->AddChildToVerticalBox(TabButtonBox))
+	{
+		TabSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
+	TrussTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("TrussTabButton"));
+	TrussTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleTrussTabClicked);
+	UTextBlock* TrussTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TrussTabText"));
+	TrussTabText->SetText(FText::FromString(TEXT("Truss")));
+	TrussTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	TrussTabButton->AddChild(TrussTabText);
+	if (UHorizontalBoxSlot* TrussTabSlot = TabButtonBox->AddChildToHorizontalBox(TrussTabButton))
+	{
+		TrussTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	MBPTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MBPTabButton"));
+	MBPTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleMBPTabClicked);
+	UTextBlock* MBPTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MBPTabText"));
+	MBPTabText->SetText(FText::FromString(TEXT("MBP")));
+	MBPTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	MBPTabButton->AddChild(MBPTabText);
+	TabButtonBox->AddChildToHorizontalBox(MBPTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -183,7 +298,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 		ModeLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
 	}
 
-	ModeComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("ModeComboBox"));
+	ModeComboBox = WidgetTree->ConstructWidget<UWhiteComboBoxString>(UWhiteComboBoxString::StaticClass(), TEXT("ModeComboBox"));
 	ModeComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::StraightRun));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Rectangle));
@@ -268,7 +383,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 		SidePieceLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
 	}
 
-	SidePieceComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("SidePieceComboBox"));
+	SidePieceComboBox = WidgetTree->ConstructWidget<UWhiteComboBoxString>(UWhiteComboBoxString::StaticClass(), TEXT("SidePieceComboBox"));
 	SidePieceComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
 	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TwoFoot));
 	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FourFoot));
@@ -289,7 +404,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 		DepthPieceLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
 	}
 
-	DepthPieceComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("DepthPieceComboBox"));
+	DepthPieceComboBox = WidgetTree->ConstructWidget<UWhiteComboBoxString>(UWhiteComboBoxString::StaticClass(), TEXT("DepthPieceComboBox"));
 	DepthPieceComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
 	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TwoFoot));
 	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FourFoot));
@@ -300,6 +415,65 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	if (UVerticalBoxSlot* DepthPieceComboSlot = RootBox->AddChildToVerticalBox(DepthPieceComboBox))
 	{
 		DepthPieceComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
+	MBPRowsLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MBPRowsLabelText"));
+	MBPRowsLabelText->SetText(FText::FromString(TEXT("Rows")));
+	MBPRowsLabelText->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+	if (UVerticalBoxSlot* MBPRowsLabelSlot = RootBox->AddChildToVerticalBox(MBPRowsLabelText))
+	{
+		MBPRowsLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+	}
+
+	MBPRowsSpinBox = WidgetTree->ConstructWidget<USpinBox>(USpinBox::StaticClass(), TEXT("MBPRowsSpinBox"));
+	MBPRowsSpinBox->SetDelta(1.0f);
+	MBPRowsSpinBox->SetAlwaysUsesDeltaSnap(true);
+	MBPRowsSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPRowsChanged);
+	if (UVerticalBoxSlot* MBPRowsSpinSlot = RootBox->AddChildToVerticalBox(MBPRowsSpinBox))
+	{
+		MBPRowsSpinSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
+	MBPColumnsLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MBPColumnsLabelText"));
+	MBPColumnsLabelText->SetText(FText::FromString(TEXT("Columns")));
+	MBPColumnsLabelText->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+	if (UVerticalBoxSlot* MBPColumnsLabelSlot = RootBox->AddChildToVerticalBox(MBPColumnsLabelText))
+	{
+		MBPColumnsLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+	}
+
+	MBPColumnsSpinBox = WidgetTree->ConstructWidget<USpinBox>(USpinBox::StaticClass(), TEXT("MBPColumnsSpinBox"));
+	MBPColumnsSpinBox->SetDelta(1.0f);
+	MBPColumnsSpinBox->SetAlwaysUsesDeltaSnap(true);
+	MBPColumnsSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPColumnsChanged);
+	if (UVerticalBoxSlot* MBPColumnsSpinSlot = RootBox->AddChildToVerticalBox(MBPColumnsSpinBox))
+	{
+		MBPColumnsSpinSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
+	MBPStyleLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MBPStyleLabelText"));
+	MBPStyleLabelText->SetText(FText::FromString(TEXT("Default Style")));
+	MBPStyleLabelText->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+	if (UVerticalBoxSlot* MBPStyleLabelSlot = RootBox->AddChildToVerticalBox(MBPStyleLabelText))
+	{
+		MBPStyleLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+	}
+
+	MBPStyleComboBox = WidgetTree->ConstructWidget<UWhiteComboBoxString>(UWhiteComboBoxString::StaticClass(), TEXT("MBPStyleComboBox"));
+	MBPStyleComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Empty));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Acrylic));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Boxwood));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Drift));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Geo));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Shimmer));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Hive));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Platinum));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Custom));
+	MBPStyleComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPStyleChanged);
+	if (UVerticalBoxSlot* MBPStyleComboSlot = RootBox->AddChildToVerticalBox(MBPStyleComboBox))
+	{
+		MBPStyleComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 	}
 
 	ActionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ActionButton"));
@@ -333,7 +507,16 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ItemListBox->ClearChildren();
 
 	const bool bShowBuildItemButtons = !EditingTarget && BuildItems.Num() > 1;
-	ItemListBox->SetVisibility(bShowBuildItemButtons ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	int32 VisibleItemCount = 0;
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && ItemBelongsToActiveTab(BuildItem))
+		{
+			++VisibleItemCount;
+		}
+	}
+
+	ItemListBox->SetVisibility(bShowBuildItemButtons && VisibleItemCount > 1 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (!bShowBuildItemButtons)
 	{
 		return;
@@ -341,7 +524,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
-		if (!BuildItem)
+		if (!BuildItem || !ItemBelongsToActiveTab(BuildItem))
 		{
 			continue;
 		}
@@ -370,24 +553,26 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem)
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
 
-	const FText Name = SelectedBuildItem->DisplayName.IsEmpty()
-		? FText::FromName(SelectedBuildItem->ItemId)
-		: SelectedBuildItem->DisplayName;
+	const FText Name = SelectedBuildItem
+		? (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName)
+		: FText::FromString(TEXT("MBP Wall"));
 
 	FString Detail = FString::Printf(
 		TEXT("Category: %s\nType: %s\nGrid Snap: %.2f cm\nRotation Step: %.1f deg"),
-		*SelectedBuildItem->Category.ToString(),
-		SelectedBuildItem->ItemType == EBuildItemType::TrussStructure ? TEXT("Truss Structure") : TEXT("Actor Class"),
-		SelectedBuildItem->GridSnapSizeCm,
-		SelectedBuildItem->RotationStepDegrees
+		SelectedBuildItem ? *SelectedBuildItem->Category.ToString() : TEXT("Backdrop"),
+		ActiveMenuTab == EBuildItemType::TrussStructure
+			? TEXT("Truss Structure")
+			: TEXT("MBP Wall"),
+		SelectedBuildItem ? SelectedBuildItem->GridSnapSizeCm : 30.48f,
+		SelectedBuildItem ? SelectedBuildItem->RotationStepDegrees : 15.0f
 	);
 
-	if (SelectedBuildItem->ItemType == EBuildItemType::TrussStructure)
+	if (ActiveMenuTab == EBuildItemType::TrussStructure && SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::TrussStructure)
 	{
 		const FTrussBuildDefinition& Definition = CurrentTrussDefinition;
 		switch (Definition.BuildMode)
@@ -410,29 +595,64 @@ FText UBuildMenuWidget::BuildDetailText() const
 			break;
 		}
 	}
+	else if (ActiveMenuTab == EBuildItemType::MBPWall)
+	{
+		const FMBPWallDefinition& Definition = CurrentMBPWallDefinition;
+		Detail += FString::Printf(
+			TEXT("\nRows: %d\nColumns: %d\nDefault Style: %s\nPanel Size: %.1f cm x %.1f cm"),
+			Definition.Rows,
+			Definition.Columns,
+			*MBPStyleToOption(Definition.DefaultStyle),
+			Definition.PanelWidthCm,
+			Definition.PanelHeightCm
+		);
+
+		if (IsEditingMBP())
+		{
+			Detail += FString::Printf(
+				TEXT("\nEdit Scope: %s\nTarget Row: %d\nTarget Column: %d\nDepth Offset: %.2f cm"),
+				*MBPEditScopeToOption(CurrentMBPEditScope),
+				CurrentMBPEditTargetRow + 1,
+				CurrentMBPEditTargetColumn + 1,
+				CurrentMBPEditDepthOffsetCm);
+		}
+	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
 }
 
 FText UBuildMenuWidget::BuildHeaderText() const
 {
-	return EditingTarget
-		? FText::FromString(TEXT("Edit Truss"))
-		: FText::FromString(TEXT("Build Menu"));
+	if (EditingTarget)
+	{
+		return FText::FromString(TEXT("Edit Truss"));
+	}
+
+	if (IsEditingMBP())
+	{
+		return FText::FromString(TEXT("Edit MBP"));
+	}
+
+	return FText::FromString(TEXT("Build Menu"));
 }
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return EditingTarget
-		? FText::FromString(TEXT("Edit"))
+	return (EditingTarget || IsEditingMBP())
+		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
+}
+
+bool UBuildMenuWidget::IsEditingMBP() const
+{
+	return EditingMBPTarget != nullptr;
 }
 
 void UBuildMenuWidget::RefreshTrussControls()
 {
 	bRefreshingControls = true;
 
-	const bool bIsTrussItem = SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::TrussStructure;
+	const bool bIsTrussItem = ActiveMenuTab == EBuildItemType::TrussStructure;
 	const ESlateVisibility VisibleState = bIsTrussItem ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
 
 	if (ModeLabelText)
@@ -555,6 +775,158 @@ void UBuildMenuWidget::RefreshTrussControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshTabButtons()
+{
+	auto GetButtonColor = [this](EBuildItemType TabType)
+	{
+		return ActiveMenuTab == TabType
+			? FLinearColor(0.18f, 0.45f, 0.70f, 1.0f)
+			: FLinearColor(0.10f, 0.10f, 0.12f, 1.0f);
+	};
+
+	if (TrussTabButton)
+	{
+		TrussTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::TrussStructure));
+	}
+
+	if (MBPTabButton)
+	{
+		MBPTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::MBPWall));
+	}
+}
+
+void UBuildMenuWidget::RefreshMBPControls()
+{
+	bRefreshingControls = true;
+
+	const bool bIsMBPItem = ActiveMenuTab == EBuildItemType::MBPWall;
+	const ESlateVisibility VisibleState = bIsMBPItem ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+	const bool bEditingMBP = IsEditingMBP();
+
+	if (ModeLabelText)
+	{
+		ModeLabelText->SetVisibility(bEditingMBP ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (bEditingMBP)
+		{
+			ModeLabelText->SetText(FText::FromString(TEXT("Edit Scope")));
+		}
+	}
+
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(bEditingMBP ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (bEditingMBP)
+		{
+			ModeComboBox->ClearOptions();
+			ModeComboBox->AddOption(MBPEditScopeToOption(EMBPRuntimeEditScope::Panel));
+			ModeComboBox->AddOption(MBPEditScopeToOption(EMBPRuntimeEditScope::Row));
+			ModeComboBox->AddOption(MBPEditScopeToOption(EMBPRuntimeEditScope::Column));
+			ModeComboBox->SetSelectedOption(MBPEditScopeToOption(CurrentMBPEditScope));
+		}
+	}
+
+	auto SetEditNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, bool bShow)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(MaxValue);
+			if (bShow)
+			{
+				SpinBox->SetValue(Value);
+			}
+		}
+	};
+
+	if (bEditingMBP)
+	{
+		SetEditNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Target Row"), CurrentMBPEditTargetRow + 1, 1.0f, FMath::Max(CurrentMBPWallDefinition.Rows, 1), true);
+		SetEditNumericControl(
+			SecondaryValueLabelText,
+			SecondaryValueSpinBox,
+			TEXT("Target Column"),
+			CurrentMBPEditTargetColumn + 1,
+			1.0f,
+			FMath::Max(CurrentMBPWallDefinition.Columns, 1),
+			CurrentMBPEditScope == EMBPRuntimeEditScope::Panel);
+		SetEditNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT("Depth Offset (cm)"), CurrentMBPEditDepthOffsetCm, -304.8f, 304.8f, true);
+		SetEditNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+		if (SidePieceLabelText) SidePieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+		if (SidePieceComboBox) SidePieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+		if (DepthPieceLabelText) DepthPieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+		if (DepthPieceComboBox) DepthPieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (MBPRowsLabelText)
+	{
+		MBPRowsLabelText->SetVisibility(bEditingMBP ? ESlateVisibility::Collapsed : VisibleState);
+	}
+
+	if (MBPRowsSpinBox)
+	{
+		MBPRowsSpinBox->SetVisibility(bEditingMBP ? ESlateVisibility::Collapsed : VisibleState);
+		MBPRowsSpinBox->SetMinValue(1.0f);
+		MBPRowsSpinBox->SetMaxValue(100.0f);
+		MBPRowsSpinBox->SetMinSliderValue(1.0f);
+		MBPRowsSpinBox->SetMaxSliderValue(24.0f);
+		if (bIsMBPItem)
+		{
+			MBPRowsSpinBox->SetValue(CurrentMBPWallDefinition.Rows);
+		}
+	}
+
+	if (MBPColumnsLabelText)
+	{
+		MBPColumnsLabelText->SetVisibility(bEditingMBP ? ESlateVisibility::Collapsed : VisibleState);
+	}
+
+	if (MBPColumnsSpinBox)
+	{
+		MBPColumnsSpinBox->SetVisibility(bEditingMBP ? ESlateVisibility::Collapsed : VisibleState);
+		MBPColumnsSpinBox->SetMinValue(1.0f);
+		MBPColumnsSpinBox->SetMaxValue(100.0f);
+		MBPColumnsSpinBox->SetMinSliderValue(1.0f);
+		MBPColumnsSpinBox->SetMaxSliderValue(24.0f);
+		if (bIsMBPItem)
+		{
+			MBPColumnsSpinBox->SetValue(CurrentMBPWallDefinition.Columns);
+		}
+	}
+
+	if (MBPStyleLabelText)
+	{
+		MBPStyleLabelText->SetVisibility(VisibleState);
+		if (bEditingMBP)
+		{
+			MBPStyleLabelText->SetText(FText::FromString(TEXT("Edit Style")));
+		}
+		else
+		{
+			MBPStyleLabelText->SetText(FText::FromString(TEXT("Default Style")));
+		}
+	}
+
+	if (MBPStyleComboBox)
+	{
+		MBPStyleComboBox->SetVisibility(VisibleState);
+		if (bIsMBPItem)
+		{
+			MBPStyleComboBox->SetSelectedOption(MBPStyleToOption(CurrentMBPWallDefinition.DefaultStyle));
+		}
+	}
+
+	bRefreshingControls = false;
+}
+
 void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
@@ -563,6 +935,53 @@ void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 	}
 
 	BuildManager->SetActiveTrussDefinition(CurrentTrussDefinition);
+}
+
+void UBuildMenuWidget::ApplyMBPDefinitionToBuildManager()
+{
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::MBPWall)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveMBPWallDefinition(CurrentMBPWallDefinition);
+}
+
+void UBuildMenuWidget::ApplyMBPEditToTarget()
+{
+	if (!EditingMBPTarget)
+	{
+		return;
+	}
+
+	switch (CurrentMBPEditScope)
+	{
+	case EMBPRuntimeEditScope::Row:
+		EditingMBPTarget->ApplyRowEditByIndex(CurrentMBPEditTargetRow, CurrentMBPWallDefinition.DefaultStyle, CurrentMBPEditDepthOffsetCm);
+		break;
+	case EMBPRuntimeEditScope::Column:
+		EditingMBPTarget->ApplyColumnEditByIndex(CurrentMBPEditTargetColumn, CurrentMBPWallDefinition.DefaultStyle, CurrentMBPEditDepthOffsetCm);
+		break;
+	case EMBPRuntimeEditScope::Panel:
+	default:
+		EditingMBPTarget->ApplyPanelEdit(CurrentMBPEditTargetRow, CurrentMBPEditTargetColumn, CurrentMBPWallDefinition.DefaultStyle, CurrentMBPEditDepthOffsetCm);
+		break;
+	}
+}
+
+bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildItem) const
+{
+	if (!BuildItem)
+	{
+		return false;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::MBPWall)
+	{
+		return BuildItem->ItemType == EBuildItemType::MBPWall;
+	}
+
+	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
 }
 
 FString UBuildMenuWidget::BuildModeToOption(ETrussBuildMode BuildMode)
@@ -644,6 +1063,97 @@ ETrussPieceType UBuildMenuWidget::OptionToPieceType(const FString& Option)
 	return ETrussPieceType::FourFoot;
 }
 
+FString UBuildMenuWidget::MBPStyleToOption(EMBPPanelStyle Style)
+{
+	switch (Style)
+	{
+	case EMBPPanelStyle::Empty:
+		return TEXT("Empty");
+	case EMBPPanelStyle::Acrylic:
+		return TEXT("Acrylic");
+	case EMBPPanelStyle::Boxwood:
+		return TEXT("Boxwood");
+	case EMBPPanelStyle::Drift:
+		return TEXT("Drift");
+	case EMBPPanelStyle::Geo:
+		return TEXT("Geo");
+	case EMBPPanelStyle::Shimmer:
+		return TEXT("Shimmer");
+	case EMBPPanelStyle::Hive:
+		return TEXT("Hive");
+	case EMBPPanelStyle::Platinum:
+		return TEXT("Platinum");
+	case EMBPPanelStyle::Custom:
+		return TEXT("Custom");
+	default:
+		return TEXT("Geo");
+	}
+}
+
+EMBPPanelStyle UBuildMenuWidget::OptionToMBPStyle(const FString& Option)
+{
+	if (Option == TEXT("Empty"))
+	{
+		return EMBPPanelStyle::Empty;
+	}
+	if (Option == TEXT("Acrylic"))
+	{
+		return EMBPPanelStyle::Acrylic;
+	}
+	if (Option == TEXT("Boxwood"))
+	{
+		return EMBPPanelStyle::Boxwood;
+	}
+	if (Option == TEXT("Drift"))
+	{
+		return EMBPPanelStyle::Drift;
+	}
+	if (Option == TEXT("Shimmer"))
+	{
+		return EMBPPanelStyle::Shimmer;
+	}
+	if (Option == TEXT("Hive"))
+	{
+		return EMBPPanelStyle::Hive;
+	}
+	if (Option == TEXT("Platinum"))
+	{
+		return EMBPPanelStyle::Platinum;
+	}
+	if (Option == TEXT("Custom"))
+	{
+		return EMBPPanelStyle::Custom;
+	}
+	return EMBPPanelStyle::Geo;
+}
+
+FString UBuildMenuWidget::MBPEditScopeToOption(EMBPRuntimeEditScope Scope)
+{
+	switch (Scope)
+	{
+	case EMBPRuntimeEditScope::Row:
+		return TEXT("Row");
+	case EMBPRuntimeEditScope::Column:
+		return TEXT("Column");
+	case EMBPRuntimeEditScope::Panel:
+	default:
+		return TEXT("Panel");
+	}
+}
+
+EMBPRuntimeEditScope UBuildMenuWidget::OptionToMBPEditScope(const FString& Option)
+{
+	if (Option == TEXT("Row"))
+	{
+		return EMBPRuntimeEditScope::Row;
+	}
+	if (Option == TEXT("Column"))
+	{
+		return EMBPRuntimeEditScope::Column;
+	}
+	return EMBPRuntimeEditScope::Panel;
+}
+
 UWidget* UBuildMenuWidget::GenerateComboItemWidget(FString Item)
 {
 	UTextBlock* ItemText = WidgetTree ? WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass()) : NewObject<UTextBlock>(this);
@@ -656,10 +1166,56 @@ UWidget* UBuildMenuWidget::GenerateComboItemWidget(FString Item)
 	return ItemText;
 }
 
+void UBuildMenuWidget::HandleTrussTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::TrussStructure;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
+void UBuildMenuWidget::HandleMBPTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::MBPWall;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+
+	if (IsEditingMBP())
+	{
+		CurrentMBPEditScope = OptionToMBPEditScope(SelectedItemOption);
+		ApplyMBPEditToTarget();
+		RefreshMenu();
 		return;
 	}
 
@@ -677,6 +1233,17 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+
+	if (IsEditingMBP())
+	{
+		CurrentMBPEditTargetRow = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+		ApplyMBPEditToTarget();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
 		return;
 	}
 
@@ -719,6 +1286,17 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 		return;
 	}
 
+	if (IsEditingMBP())
+	{
+		CurrentMBPEditTargetColumn = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+		ApplyMBPEditToTarget();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
 	{
 		return;
@@ -756,6 +1334,17 @@ void UBuildMenuWidget::HandleTertiaryValueChanged(float NewValue)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+
+	if (IsEditingMBP())
+	{
+		CurrentMBPEditDepthOffsetCm = NewValue;
+		ApplyMBPEditToTarget();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
 		return;
 	}
 
@@ -812,6 +1401,58 @@ void UBuildMenuWidget::HandleDepthPieceChanged(FString SelectedItemOption, ESele
 
 	CurrentTrussDefinition.CubeArchDepthSpacingPiece = OptionToPieceType(SelectedItemOption);
 	ApplyTrussDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleMBPRowsChanged(float NewValue)
+{
+	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::MBPWall)
+	{
+		return;
+	}
+
+	CurrentMBPWallDefinition.Rows = FMath::Max(1, FMath::RoundToInt(NewValue));
+	ApplyMBPDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleMBPColumnsChanged(float NewValue)
+{
+	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::MBPWall)
+	{
+		return;
+	}
+
+	CurrentMBPWallDefinition.Columns = FMath::Max(1, FMath::RoundToInt(NewValue));
+	ApplyMBPDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleMBPStyleChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
+{
+	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::MBPWall)
+	{
+		return;
+	}
+
+	CurrentMBPWallDefinition.DefaultStyle = OptionToMBPStyle(SelectedItemOption);
+	if (IsEditingMBP())
+	{
+		ApplyMBPEditToTarget();
+	}
+	else
+	{
+		ApplyMBPDefinitionToBuildManager();
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());

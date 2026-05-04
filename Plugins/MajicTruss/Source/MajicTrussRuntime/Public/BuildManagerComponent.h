@@ -6,6 +6,7 @@
 #include "BuildManagerComponent.generated.h"
 
 class ABuildPreviewActor;
+class AMBPWallActor;
 class APlayerController;
 class ATrussStructureActor;
 
@@ -51,6 +52,9 @@ public:
 	FTrussBuildDefinition ActiveTrussDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FMBPWallDefinition ActiveMBPWallDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -64,6 +68,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveTrussDefinition(const FTrussBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveMBPWallDefinition(const FMBPWallDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);

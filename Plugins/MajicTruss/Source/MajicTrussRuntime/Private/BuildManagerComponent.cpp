@@ -3,6 +3,7 @@
 #include "BuildPreviewActor.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "MBPWallActor.h"
 #include "TrussStructureActor.h"
 
 UBuildManagerComponent::UBuildManagerComponent()
@@ -27,6 +28,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 {
 	SelectedBuildItem = BuildItem;
 	ActiveTrussDefinition = BuildItem ? BuildItem->DefaultTrussDefinition : FTrussBuildDefinition();
+	ActiveMBPWallDefinition = BuildItem ? BuildItem->DefaultMBPWallDefinition : FMBPWallDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -51,6 +53,16 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 void UBuildManagerComponent::SetActiveTrussDefinition(const FTrussBuildDefinition& Definition)
 {
 	ActiveTrussDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveMBPWallDefinition(const FMBPWallDefinition& Definition)
+{
+	ActiveMBPWallDefinition = Definition;
 
 	if (ActivePreviewActor)
 	{
@@ -241,6 +253,16 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 		{
 			TrussActor->bBuildOnConstruction = false;
 			TrussActor->ApplyBuildDefinition(ActiveTrussDefinition, true);
+		}
+		return;
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::MBPWall)
+	{
+		if (AMBPWallActor* MBPWallActor = Cast<AMBPWallActor>(Actor))
+		{
+			MBPWallActor->bBuildOnConstruction = false;
+			MBPWallActor->ApplyWallDefinition(ActiveMBPWallDefinition, true);
 		}
 	}
 }

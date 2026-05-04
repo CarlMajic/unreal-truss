@@ -10,6 +10,7 @@ class UBuildManagerComponent;
 class UBuildMenuWidget;
 class ULightPlacementMenuWidget;
 class UTargetingPointerComponent;
+class AMBPWallActor;
 class ABuildPreviewActor;
 class UCameraComponent;
 class UFloatingPawnMovement;
@@ -68,6 +69,9 @@ private:
 	TObjectPtr<ULightPlacementMenuWidget> LightPlacementMenuWidget;
 
 	UPROPERTY(Transient)
+	TObjectPtr<AMBPWallActor> PendingMBPEditWall;
+
+	UPROPERTY(Transient)
 	TObjectPtr<ATrussStructureActor> HoveredTrussActor;
 
 	UPROPERTY(Transient)
@@ -104,6 +108,7 @@ private:
 	TArray<TSubclassOf<AActor>> AvailableLightingClasses;
 
 	bool bLightPlacementModeActive = false;
+	bool bMBPEditSelectionModeActive = false;
 	float MoveForwardValue = 0.0f;
 	float MoveRightValue = 0.0f;
 	float MoveUpValue = 0.0f;
@@ -144,4 +149,5 @@ private:
 	UFUNCTION()
 	void HandleLightPlacementCanceled();
 	ATrussStructureActor* TraceForTrussActor() const;
+	bool TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor) const;
 };

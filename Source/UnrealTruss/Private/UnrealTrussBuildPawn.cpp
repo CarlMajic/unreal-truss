@@ -7,6 +7,7 @@
 #include "BuildMenuWidget.h"
 #include "BuildPreviewActor.h"
 #include "LightPlacementMenuWidget.h"
+#include "MBPWallActor.h"
 #include "TargetingPointerComponent.h"
 #include "InputCoreTypes.h"
 #include "Camera/CameraComponent.h"
@@ -19,6 +20,43 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "TrussStructureActor.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+
+namespace
+{
+static UBuildItemDataAsset* CreateFallbackMBPBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("MBPWallDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("MBP Wall"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime MBP wall builder."));
+	BuildItem->Category = TEXT("Backdrop");
+	BuildItem->ItemType = EBuildItemType::MBPWall;
+	BuildItem->BuildActorClass = AMBPWallActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	return BuildItem;
+}
+
+static bool HasBuildItemType(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, EBuildItemType ItemType)
+{
+	for (const UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && BuildItem->ItemType == ItemType)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+}
 
 AUnrealTrussBuildPawn::AUnrealTrussBuildPawn()
 {
@@ -108,6 +146,7 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 		AActor* PreviewChildToIgnore = BuildManagerComponent && BuildManagerComponent->ActivePreviewActor
 			? BuildManagerComponent->ActivePreviewActor->GetPreviewActor()
 			: nullptr;
+		const bool bEditingMBP = BuildMenuWidget && BuildMenuWidget->GetEditingMBPTarget() != nullptr;
 
 		if (!bBuildMenuVisible && !bLightMenuVisible && BuildManagerComponent && BuildManagerComponent->bBuildModeActive)
 		{
@@ -117,9 +156,36 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 		{
 			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::TrussSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
+		else if (!bBuildMenuVisible && !bLightMenuVisible && bMBPEditSelectionModeActive)
+		{
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+		}
+		else if (bBuildMenuVisible && bEditingMBP)
+		{
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+		}
 		else
 		{
 			TargetingPointerComponent->HidePointer();
+		}
+	}
+
+	if (bBuildMenuVisible && BuildMenuWidget)
+	{
+		if (AMBPWallActor* EditingMBPWall = BuildMenuWidget->GetEditingMBPTarget())
+		{
+			FHitResult HitResult;
+			ATrussStructureActor* HitTrussActor = nullptr;
+			AMBPWallActor* HitMBPWallActor = nullptr;
+			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor) && HitMBPWallActor == EditingMBPWall)
+			{
+				int32 TargetRow = 0;
+				int32 TargetColumn = 0;
+				if (EditingMBPWall->GetSlotIndicesFromWorldLocation(HitResult.ImpactPoint, TargetRow, TargetColumn))
+				{
+					BuildMenuWidget->SetEditingMBPPanelTarget(TargetRow, TargetColumn);
+				}
+			}
 		}
 	}
 
@@ -214,7 +280,18 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	BuildManagerComponent->ClearEditingTrussActor();
 	if (BuildMenuWidget)
 	{
+		if (AMBPWallActor* EditingMBPWall = BuildMenuWidget->GetEditingMBPTarget())
+		{
+			EditingMBPWall->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
+		BuildMenuWidget->SetEditingMBPTarget(nullptr);
+	}
+	bMBPEditSelectionModeActive = false;
+	if (PendingMBPEditWall)
+	{
+		PendingMBPEditWall->SetSelectionHighlighted(false);
+		PendingMBPEditWall = nullptr;
 	}
 
 	EnsureBuildMenuWidget();
@@ -237,6 +314,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	{
 		BuildManagerComponent->SetActiveTrussDefinition(BuildMenuWidget->GetCurrentTrussDefinition());
 	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::MBPWall)
+	{
+		BuildManagerComponent->SetActiveMBPWallDefinition(BuildMenuWidget->GetCurrentMBPWallDefinition());
+	}
 	BuildManagerComponent->EnterBuildMode();
 }
 
@@ -257,6 +338,30 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 	if (bLightPlacementModeActive)
 	{
 		HandleLightPlacementActionRequested();
+		return;
+	}
+
+	if (bMBPEditSelectionModeActive)
+	{
+		FHitResult HitResult;
+		ATrussStructureActor* HitTrussActor = nullptr;
+		AMBPWallActor* HitMBPWallActor = nullptr;
+		if (PendingMBPEditWall &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor) &&
+			HitMBPWallActor == PendingMBPEditWall)
+		{
+			int32 TargetRow = 0;
+			int32 TargetColumn = 0;
+			HitMBPWallActor->GetSlotIndicesFromWorldLocation(HitResult.ImpactPoint, TargetRow, TargetColumn);
+			EnsureBuildMenuWidget();
+			if (BuildMenuWidget)
+			{
+				BuildMenuWidget->SetEditingMBPTarget(HitMBPWallActor, TargetRow, TargetColumn);
+			}
+			SetBuildMenuVisible(true);
+		}
+
+		bMBPEditSelectionModeActive = false;
 		return;
 	}
 
@@ -285,7 +390,12 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 
 	if (BuildMenuWidget)
 	{
+		if (AMBPWallActor* EditingMBPWall = BuildMenuWidget->GetEditingMBPTarget())
+		{
+			EditingMBPWall->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
+		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 	}
 
 	bLightPlacementModeActive = false;
@@ -299,27 +409,41 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 
 void AUnrealTrussBuildPawn::EditLookedAtTruss()
 {
-	ATrussStructureActor* TrussActor = HoveredTrussActor.Get();
-	if (!TrussActor)
-	{
-		TrussActor = TraceForTrussActor();
-	}
-	if (!TrussActor || !BuildManagerComponent)
+	FHitResult HitResult;
+	ATrussStructureActor* TrussActor = nullptr;
+	AMBPWallActor* MBPWallActor = nullptr;
+	if (!TraceForEditableActorHit(HitResult, TrussActor, MBPWallActor) || !BuildManagerComponent)
 	{
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No truss actor found under the view."));
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No editable truss or MBP wall found under the view."));
 		}
 		return;
 	}
 
 	EnsureBuildMenuWidget();
-	BuildManagerComponent->SetEditingTrussActor(TrussActor);
-	BuildManagerComponent->EnterBuildMode();
-
-	if (BuildMenuWidget)
+	if (TrussActor)
 	{
-		BuildMenuWidget->SetEditingTarget(TrussActor);
+		BuildManagerComponent->SetEditingTrussActor(TrussActor);
+		BuildManagerComponent->EnterBuildMode();
+
+		if (BuildMenuWidget)
+		{
+			BuildMenuWidget->SetEditingTarget(TrussActor);
+		}
+	}
+	else if (MBPWallActor)
+	{
+		BuildManagerComponent->ExitBuildMode();
+		BuildManagerComponent->ClearEditingTrussActor();
+		MBPWallActor->SetSelectionHighlighted(true);
+		PendingMBPEditWall = MBPWallActor;
+		bMBPEditSelectionModeActive = true;
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Cyan, TEXT("Aim at an MBP panel and left click to open edit controls."));
+		}
+		return;
 	}
 
 	SetBuildMenuVisible(true);
@@ -356,7 +480,12 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 
 	if (BuildMenuWidget)
 	{
+		if (AMBPWallActor* EditingMBPWall = BuildMenuWidget->GetEditingMBPTarget())
+		{
+			EditingMBPWall->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
+		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 	}
 
 	SetBuildMenuVisible(false);
@@ -400,7 +529,7 @@ void AUnrealTrussBuildPawn::ShowControlsMessage() const
 		-1,
 		10.0f,
 		FColor::Cyan,
-		TEXT("Controls: WASD move, Space/Ctrl up-down, Mouse look, Tab truss menu, B create mode, E edit looked-at truss, L light mode, Left Mouse place/click rail, R/F rotate, Q cancel")
+		TEXT("Controls: WASD move, Space/Ctrl up-down, Mouse look, Tab truss menu, B create mode, E edit looked-at truss or arm MBP segment edit, L light mode, Left Mouse place/click rail/select MBP panel, R/F rotate, Q cancel")
 	);
 }
 
@@ -442,6 +571,14 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 		if (UBuildItemDataAsset* BuildItem = Cast<UBuildItemDataAsset>(AssetData.GetAsset()))
 		{
 			AvailableBuildItems.Add(BuildItem);
+		}
+	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::MBPWall))
+	{
+		if (UBuildItemDataAsset* FallbackMBPItem = CreateFallbackMBPBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackMBPItem);
 		}
 	}
 }
@@ -689,6 +826,10 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 	{
 		BuildManagerComponent->SetActiveTrussDefinition(BuildMenuWidget->GetCurrentTrussDefinition());
 	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::MBPWall)
+	{
+		BuildManagerComponent->SetActiveMBPWallDefinition(BuildMenuWidget->GetCurrentMBPWallDefinition());
+	}
 	else
 	{
 		BuildManagerComponent->SetActiveTrussDefinition(SelectedItem->DefaultTrussDefinition);
@@ -698,6 +839,18 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 
 void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
 {
+	if (BuildMenuWidget)
+	{
+		if (AMBPWallActor* EditingMBPWall = BuildMenuWidget->GetEditingMBPTarget())
+		{
+			EditingMBPWall->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingMBPTarget(nullptr);
+			PendingMBPEditWall = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
+	}
+
 	ConfirmBuildPlacement();
 	SetBuildMenuVisible(false);
 }
@@ -919,4 +1072,70 @@ ATrussStructureActor* AUnrealTrussBuildPawn::TraceForTrussActor() const
 	FHitResult HitResult;
 	ATrussStructureActor* TrussActor = nullptr;
 	return TraceForTrussHit(HitResult, TrussActor) ? TrussActor : nullptr;
+}
+
+bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor) const
+{
+	OutHitResult = FHitResult();
+	OutTrussActor = nullptr;
+	OutMBPWallActor = nullptr;
+
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	UWorld* World = GetWorld();
+	if (!PlayerController || !World)
+	{
+		return false;
+	}
+
+	FVector ViewLocation = FVector::ZeroVector;
+	FRotator ViewRotation = FRotator::ZeroRotator;
+	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+
+	const FVector TraceEnd = ViewLocation + (ViewRotation.Vector() * 50000.0f);
+	TArray<FHitResult> HitResults;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(EditBuildActorTrace), true, this);
+	FCollisionObjectQueryParams ObjectQueryParams;
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+	if (!World->LineTraceMultiByObjectType(HitResults, ViewLocation, TraceEnd, ObjectQueryParams, QueryParams))
+	{
+		return false;
+	}
+
+	for (const FHitResult& HitResult : HitResults)
+	{
+		if (ATrussStructureActor* HitTrussActor = Cast<ATrussStructureActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutTrussActor = HitTrussActor;
+			return true;
+		}
+
+		if (AMBPWallActor* HitMBPWallActor = Cast<AMBPWallActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutMBPWallActor = HitMBPWallActor;
+			return true;
+		}
+
+		if (const UActorComponent* HitComponent = HitResult.GetComponent())
+		{
+			if (ATrussStructureActor* OwnerTrussActor = Cast<ATrussStructureActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutTrussActor = OwnerTrussActor;
+				return true;
+			}
+
+			if (AMBPWallActor* OwnerMBPWallActor = Cast<AMBPWallActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutMBPWallActor = OwnerMBPWallActor;
+				return true;
+			}
+		}
+	}
+
+	return false;
 }

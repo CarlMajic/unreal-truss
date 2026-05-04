@@ -14,6 +14,7 @@ enum class EMBPPanelStyle : uint8
 {
 	Empty UMETA(DisplayName = "Empty"),
 	Acrylic UMETA(DisplayName = "Acrylic"),
+	Boxwood UMETA(DisplayName = "Boxwood"),
 	Drift UMETA(DisplayName = "Drift"),
 	Geo UMETA(DisplayName = "Geo"),
 	Shimmer UMETA(DisplayName = "Shimmer"),
@@ -57,6 +58,54 @@ struct FMBPPanelSlot
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panel", meta = (EditCondition = "Style == EMBPPanelStyle::Custom"))
 	TArray<TSoftObjectPtr<UStaticMesh>> CustomStaticMeshes;
+};
+
+USTRUCT(BlueprintType)
+struct FMBPWallDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall", meta = (ClampMin = "1"))
+	int32 Columns = 4;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall", meta = (ClampMin = "1"))
+	int32 Rows = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall")
+	EMBPPanelStyle DefaultStyle = EMBPPanelStyle::Geo;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall")
+	EMBPShimmerVariant DefaultShimmerVariant = EMBPShimmerVariant::Gold;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall")
+	TSoftObjectPtr<UMaterialInterface> DefaultShimmerMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Shimmer", meta = (Units = "cm"))
+	float ShimmerFaceOffsetXCm = -1.902981f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Shimmer", meta = (Units = "cm"))
+	float ShimmerFaceOffsetYCm = -0.104f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Shimmer", meta = (Units = "cm"))
+	float ShimmerFaceOffsetZCm = -4.650027f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall", meta = (Units = "cm"))
+	float PanelWidthCm = 91.44f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall", meta = (Units = "cm"))
+	float PanelHeightCm = 91.44f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall", meta = (Units = "cm"))
+	float HorizontalSpacingCm = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall", meta = (Units = "cm"))
+	float VerticalSpacingCm = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall", meta = (Units = "cm", ClampMin = "0.0"))
+	float DepthOffsetStepCm = 30.48f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall")
+	bool bCenterOnActor = false;
 };
 
 UCLASS(BlueprintType)
@@ -142,6 +191,30 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Wall")
 	void RebuildWall();
 
+	UFUNCTION(BlueprintCallable, Category = "Wall")
+	void ApplyWallDefinition(const FMBPWallDefinition& Definition, bool bResetSlotsToDefault = true);
+
+	UFUNCTION(BlueprintPure, Category = "Wall")
+	FMBPWallDefinition GetWallDefinition() const;
+
+	UFUNCTION(BlueprintPure, Category = "Wall")
+	bool GetSlotIndicesFromWorldLocation(const FVector& WorldLocation, int32& OutRow, int32& OutColumn) const;
+
+	UFUNCTION(BlueprintPure, Category = "Wall")
+	bool GetPanelSlot(int32 RowIndex, int32 ColumnIndex, FMBPPanelSlot& OutSlot) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Wall")
+	bool ApplyPanelEdit(int32 RowIndex, int32 ColumnIndex, EMBPPanelStyle Style, float DepthOffsetCm);
+
+	UFUNCTION(BlueprintCallable, Category = "Wall")
+	bool ApplyRowEditByIndex(int32 RowIndex, EMBPPanelStyle Style, float DepthOffsetCm);
+
+	UFUNCTION(BlueprintCallable, Category = "Wall")
+	bool ApplyColumnEditByIndex(int32 ColumnIndex, EMBPPanelStyle Style, float DepthOffsetCm);
+
+	UFUNCTION(BlueprintCallable, Category = "Wall")
+	void SetSelectionHighlighted(bool bHighlighted);
+
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Wall")
 	void ResetSlotsToDefault();
 
@@ -178,6 +251,10 @@ private:
 	void SyncSlotsToDefaultStyleIfNeeded();
 	void ApplyDefaultStyleToAllSlots();
 	TArray<int32> GetBatchSlotIndices() const;
+	bool IsValidSlotIndexPair(int32 RowIndex, int32 ColumnIndex) const;
+	int32 GetSlotLinearIndex(int32 RowIndex, int32 ColumnIndex) const;
+	void ApplyStyleAndDepthToSlot(FMBPPanelSlot& Slot, EMBPPanelStyle Style, float DepthOffsetCm);
+	bool ApplyEditToSlotIndices(const TArray<int32>& SlotIndices, EMBPPanelStyle Style, float DepthOffsetCm);
 	float GetSnappedDepthOffsetCm(float RawDepthOffsetCm) const;
 	TArray<FSoftObjectPath> GetMeshPathsForFolder(const FString& AssetFolderPath) const;
 	TArray<FSoftObjectPath> GetMeshPathsForStyle(EMBPPanelStyle Style) const;
