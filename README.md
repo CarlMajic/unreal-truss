@@ -168,6 +168,62 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 ## Project Log
 
 <details>
+<summary><strong>2026-05-05: Stage railing pass and updated podium integration</strong></summary>
+
+### 2026-05-05
+
+Current direction:
+
+- Keep pushing the stage actor toward the same runtime-ready pattern as truss and MBP.
+- Use the corrected `Single_Decks`, `Updated_Podiums`, and now `Railing` kits as the real asset base instead of old scale-corrected imports.
+- Keep stage runtime integration as the next major task once the current editor-side placement defaults are stable enough.
+
+What has been done:
+
+- Switched podium lookup from the older `Stage/Podiums` content to the new assembled `Stage/Updated_Podiums` folders.
+- Updated podium placement to use the same shared-anchor kit logic as the new deck assets instead of re-centering each mesh part from its own bounds.
+- Added first-pass stage railing support to `AStageDeckActor`.
+- Added side toggles for railing generation:
+  - `Enable Front Railing`
+  - `Enable Back Railing`
+  - `Enable Left Railing`
+  - `Enable Right Railing`
+- Added perimeter run detection for railing using the same exposed-edge concept as stage skirt.
+- Added span packing for railing runs:
+  - use as many `94 inch` rail spans as possible
+  - fill remaining valid run length with `46 inch` spans
+- Added shared railing transform controls:
+  - `Railing Placement Offset Cm`
+  - `Railing Placement Rotation`
+- Added span-specific adjustment controls for later packing calibration:
+  - `Railing94SpanAdjustmentCm`
+  - `Railing46SpanAdjustmentCm`
+- Reworked railing placement to use explicit raw per-edge offsets instead of hidden relative conversion fields.
+- Added real per-edge fields that match the measured alignment values:
+  - `Front Railing Offset Cm = (249.338089, -61.650452, 32.453884)`
+  - `Back Railing Offset Cm = (-254.180094, 122.288509, 0.0)`
+  - `Left Railing Offset Cm = (-66.068067, 182.906141, 0.0)`
+  - `Right Railing Offset Cm = (-189.954972, -60.607935, 0.0)`
+- Added construction-time migration logic so existing placed stage actors can pick up the new explicit railing fields instead of staying on older serialized defaults.
+
+Immediate next steps:
+
+- Validate that the migrated raw railing offsets now appear correctly on existing stage actors after reload/Live Coding refresh.
+- Finish left/right railing packing calibration by tuning the `46 inch` span behavior without breaking the front/back rails.
+- Once railings are stable, move the stage actor into the runtime `Tab` build menu flow.
+
+Notes for the next session:
+
+- The stage actor now has three major perimeter systems in flight:
+  - skirt
+  - railing
+  - future steps
+- The biggest remaining stage problem is now editor/runtime workflow polish rather than raw mesh generation.
+- Runtime stage placement in the `Tab` menu is the next planned feature once the current defaults are confirmed stable.
+
+</details>
+
+<details>
 <summary><strong>2026-05-04: Stage deck actor, single-deck kits, and calibrated stage skirt pass</strong></summary>
 
 ### 2026-05-04
