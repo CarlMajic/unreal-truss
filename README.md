@@ -246,11 +246,33 @@ What has been done:
   - front/back/left/right railing toggles
   - left/right step toggles
 - Added `AStageDeckActor::ApplyBuildDefinition(...)` so runtime preview and final placement use the same stage-grid setup path.
+- Added first-pass runtime stage editing using the same `E` -> point -> click-to-edit pattern as MBP:
+  - look at a stage actor and press `E`
+  - click a specific stage cell
+  - open the `Stage` tab in edit mode
+- Added runtime stage edit scopes:
+  - `Whole Stage`
+  - `Cell`
+- Added first-pass stage edit operations:
+  - whole-stage rows and columns
+  - whole-stage default height and surface
+  - whole-stage railings, steps, and automatic skirt toggles
+  - per-cell enabled state
+  - per-cell height preset
+  - per-cell surface style
+- Added direct stage runtime edit helpers on `AStageDeckActor`:
+  - `GetCellDefinition(...)`
+  - `ApplyCellDefinition(...)`
+- Fixed a PIE/runtime stage bug where transient default-cache state could cause serialized per-cell stage edits to get replaced by defaults on first reconstruction.
+- Fixed a stage rebuild cleanup bug where old railing and step instance buckets were not being cleared, which caused duplicate railings and duplicated back steps after live stage edits.
 
 Immediate next steps:
 
-- Test the new runtime `Stage` tab in-editor and tune any menu defaults or placement behavior.
-- Keep stage editing as a later pass after first runtime stage placement is stable.
+- Start a first-pass drape runtime system.
+- Evaluate whether the existing drape assets are good enough as-is or whether they should be rebuilt like today’s stage assets.
+- Decide whether cloth behavior should be:
+  - a lightweight optional effect for hero drape only
+  - or a static/non-cloth default for most runtime drape runs
 
 Notes for the next session:
 
@@ -262,7 +284,8 @@ Notes for the next session:
   - side alignment offsets
   - preset height adjustments
   - side steps that shorten railing runs
-- Runtime stage placement now has a first-pass menu path; runtime stage editing is the next planned feature.
+- Runtime stage placement and first-pass runtime stage editing are both now in the shared build menu flow.
+- Drape is the next likely runtime scenic system. The likely target model is a run-based system using bases, uprights, crossbars, and optional cloth behavior for the drape itself.
 
 </details>
 

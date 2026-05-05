@@ -44,6 +44,29 @@ static UBuildItemDataAsset* FindMatchingBuildItemForActor(const TArray<TObjectPt
 
 	return nullptr;
 }
+
+static UBuildItemDataAsset* FindMatchingBuildItemForStageActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const AStageDeckActor* StageActor)
+{
+	if (!StageActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (!BuildItem || BuildItem->ItemType != EBuildItemType::StageDeck)
+		{
+			continue;
+		}
+
+		if (BuildItem->BuildActorClass && StageActor->IsA(BuildItem->BuildActorClass))
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
 }
 
 void UBuildMenuItemButtonProxy::Initialize(UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem)
@@ -165,6 +188,7 @@ void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 {
 	EditingTarget = InEditingTarget;
 	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
 
 	if (EditingTarget)
 	{
@@ -187,6 +211,7 @@ void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32
 {
 	EditingTarget = nullptr;
 	EditingMBPTarget = InEditingTarget;
+	EditingStageTarget = nullptr;
 
 	if (EditingMBPTarget)
 	{
@@ -245,6 +270,65 @@ void UBuildMenuWidget::SetEditingMBPPanelTarget(int32 InTargetRow, int32 InTarge
 		CurrentMBPEditDepthOffsetCm = TargetSlot.DepthOffsetCm;
 	}
 
+	RefreshMenu();
+}
+
+void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, int32 InTargetRow, int32 InTargetColumn)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = InEditingTarget;
+
+	if (EditingStageTarget)
+	{
+		ActiveMenuTab = EBuildItemType::StageDeck;
+		CurrentStageDeckDefinition.Columns = EditingStageTarget->Columns;
+		CurrentStageDeckDefinition.Rows = EditingStageTarget->Rows;
+		CurrentStageDeckDefinition.DefaultHeightPreset = EditingStageTarget->DefaultHeightPreset;
+		CurrentStageDeckDefinition.DefaultSurfaceStyle = EditingStageTarget->DefaultSurfaceStyle;
+		CurrentStageDeckDefinition.bEnableFrontRailing = EditingStageTarget->bEnableFrontRailing;
+		CurrentStageDeckDefinition.bEnableBackRailing = EditingStageTarget->bEnableBackRailing;
+		CurrentStageDeckDefinition.bEnableLeftRailing = EditingStageTarget->bEnableLeftRailing;
+		CurrentStageDeckDefinition.bEnableRightRailing = EditingStageTarget->bEnableRightRailing;
+		CurrentStageDeckDefinition.bEnableLeftStep = EditingStageTarget->bEnableLeftStep;
+		CurrentStageDeckDefinition.bEnableRightStep = EditingStageTarget->bEnableRightStep;
+		CurrentStageDeckDefinition.bEnableAutomaticSkirt = EditingStageTarget->bEnableAutomaticSkirt;
+		CurrentStageEditScope = EStageRuntimeEditScope::Cell;
+		CurrentStageEditTargetRow = FMath::Clamp(InTargetRow, 0, FMath::Max(EditingStageTarget->Rows - 1, 0));
+		CurrentStageEditTargetColumn = FMath::Clamp(InTargetColumn, 0, FMath::Max(EditingStageTarget->Columns - 1, 0));
+		SyncCurrentStageCellFromTarget();
+
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForStageActor(BuildItems, EditingStageTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+AStageDeckActor* UBuildMenuWidget::GetEditingStageTarget() const
+{
+	return EditingStageTarget;
+}
+
+void UBuildMenuWidget::SetEditingStageCellTarget(int32 InTargetRow, int32 InTargetColumn)
+{
+	if (!EditingStageTarget)
+	{
+		return;
+	}
+
+	const int32 ClampedRow = FMath::Clamp(InTargetRow, 0, FMath::Max(EditingStageTarget->Rows - 1, 0));
+	const int32 ClampedColumn = FMath::Clamp(InTargetColumn, 0, FMath::Max(EditingStageTarget->Columns - 1, 0));
+	if (CurrentStageEditTargetRow == ClampedRow && CurrentStageEditTargetColumn == ClampedColumn)
+	{
+		return;
+	}
+
+	CurrentStageEditTargetRow = ClampedRow;
+	CurrentStageEditTargetColumn = ClampedColumn;
+	SyncCurrentStageCellFromTarget();
 	RefreshMenu();
 }
 
@@ -573,6 +657,10 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	StageLeftStepCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageLeftStepChanged);
 	AddStageCheckBoxRow(TEXT("StageRightStepLabelText"), TEXT("StageRightStepCheckBox"), TEXT("Right Step"), StageRightStepLabelText, StageRightStepCheckBox);
 	StageRightStepCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageRightStepChanged);
+	AddStageCheckBoxRow(TEXT("StageAutomaticSkirtLabelText"), TEXT("StageAutomaticSkirtCheckBox"), TEXT("Automatic Skirt"), StageAutomaticSkirtLabelText, StageAutomaticSkirtCheckBox);
+	StageAutomaticSkirtCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageAutomaticSkirtChanged);
+	AddStageCheckBoxRow(TEXT("StageCellEnabledLabelText"), TEXT("StageCellEnabledCheckBox"), TEXT("Cell Enabled"), StageCellEnabledLabelText, StageCellEnabledCheckBox);
+	StageCellEnabledCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageCellEnabledChanged);
 
 	ActionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ActionButton"));
 	ActionButton->SetBackgroundColor(FLinearColor(0.18f, 0.45f, 0.70f, 1.0f));
@@ -604,7 +692,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ButtonProxies.Reset();
 	ItemListBox->ClearChildren();
 
-	const bool bShowBuildItemButtons = !EditingTarget && BuildItems.Num() > 1;
+	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && BuildItems.Num() > 1;
 	int32 VisibleItemCount = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
@@ -719,7 +807,7 @@ FText UBuildMenuWidget::BuildDetailText() const
 	{
 		const FStageDeckBuildDefinition& Definition = CurrentStageDeckDefinition;
 		Detail += FString::Printf(
-			TEXT("\nRows: %d\nColumns: %d\nHeight: %s\nSurface: %s\nRailings: F:%s B:%s L:%s R:%s\nSteps: Left:%s Right:%s"),
+			TEXT("\nRows: %d\nColumns: %d\nHeight: %s\nSurface: %s\nRailings: F:%s B:%s L:%s R:%s\nSteps: Left:%s Right:%s\nSkirt: %s"),
 			Definition.Rows,
 			Definition.Columns,
 			*StageHeightPresetToOption(Definition.DefaultHeightPreset),
@@ -729,7 +817,18 @@ FText UBuildMenuWidget::BuildDetailText() const
 			Definition.bEnableLeftRailing ? TEXT("On") : TEXT("Off"),
 			Definition.bEnableRightRailing ? TEXT("On") : TEXT("Off"),
 			Definition.bEnableLeftStep ? TEXT("On") : TEXT("Off"),
-			Definition.bEnableRightStep ? TEXT("On") : TEXT("Off"));
+			Definition.bEnableRightStep ? TEXT("On") : TEXT("Off"),
+			Definition.bEnableAutomaticSkirt ? TEXT("On") : TEXT("Off"));
+
+		if (IsEditingStage())
+		{
+			Detail += FString::Printf(
+				TEXT("\nEdit Scope: %s\nTarget Row: %d\nTarget Column: %d\nCell Enabled: %s"),
+				*StageEditScopeToOption(CurrentStageEditScope),
+				CurrentStageEditTargetRow + 1,
+				CurrentStageEditTargetColumn + 1,
+				bCurrentStageCellEnabled ? TEXT("Yes") : TEXT("No"));
+		}
 	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
@@ -747,12 +846,17 @@ FText UBuildMenuWidget::BuildHeaderText() const
 		return FText::FromString(TEXT("Edit MBP"));
 	}
 
+	if (IsEditingStage())
+	{
+		return FText::FromString(TEXT("Edit Stage"));
+	}
+
 	return FText::FromString(TEXT("Build Menu"));
 }
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return (EditingTarget || IsEditingMBP())
+	return (EditingTarget || IsEditingMBP() || IsEditingStage())
 		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
 }
@@ -760,6 +864,11 @@ FText UBuildMenuWidget::BuildActionButtonText() const
 bool UBuildMenuWidget::IsEditingMBP() const
 {
 	return EditingMBPTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingStage() const
+{
+	return EditingStageTarget != nullptr;
 }
 
 void UBuildMenuWidget::RefreshTrussControls()
@@ -1051,16 +1160,30 @@ void UBuildMenuWidget::RefreshStageControls()
 	bRefreshingControls = true;
 
 	const bool bIsStageItem = ActiveMenuTab == EBuildItemType::StageDeck;
+	const bool bEditingStage = IsEditingStage();
+	const bool bEditingWholeStage = bEditingStage && CurrentStageEditScope == EStageRuntimeEditScope::WholeStage;
+	const bool bEditingCell = bEditingStage && CurrentStageEditScope == EStageRuntimeEditScope::Cell;
 	const ESlateVisibility VisibleState = bIsStageItem ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
 
 	if (ModeLabelText)
 	{
-		ModeLabelText->SetVisibility(ESlateVisibility::Collapsed);
+		ModeLabelText->SetVisibility(bEditingStage ? VisibleState : ESlateVisibility::Collapsed);
+		if (bEditingStage)
+		{
+			ModeLabelText->SetText(FText::FromString(TEXT("Edit Scope")));
+		}
 	}
 
 	if (ModeComboBox)
 	{
-		ModeComboBox->SetVisibility(ESlateVisibility::Collapsed);
+		ModeComboBox->SetVisibility(bEditingStage ? VisibleState : ESlateVisibility::Collapsed);
+		if (bEditingStage)
+		{
+			ModeComboBox->ClearOptions();
+			ModeComboBox->AddOption(StageEditScopeToOption(EStageRuntimeEditScope::WholeStage));
+			ModeComboBox->AddOption(StageEditScopeToOption(EStageRuntimeEditScope::Cell));
+			ModeComboBox->SetSelectedOption(StageEditScopeToOption(CurrentStageEditScope));
+		}
 	}
 
 	auto SetNumericControl = [VisibleState](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, bool bShow)
@@ -1089,8 +1212,16 @@ void UBuildMenuWidget::RefreshStageControls()
 		}
 	};
 
-	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Columns"), CurrentStageDeckDefinition.Columns, 1.0f, 24.0f, bIsStageItem);
-	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Rows"), CurrentStageDeckDefinition.Rows, 1.0f, 24.0f, bIsStageItem);
+	if (bEditingCell)
+	{
+		SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Target Row"), CurrentStageEditTargetRow + 1, 1.0f, FMath::Max(CurrentStageDeckDefinition.Rows, 1), true);
+		SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Target Column"), CurrentStageEditTargetColumn + 1, 1.0f, FMath::Max(CurrentStageDeckDefinition.Columns, 1), true);
+	}
+	else
+	{
+		SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Columns"), CurrentStageDeckDefinition.Columns, 1.0f, 24.0f, bIsStageItem);
+		SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Rows"), CurrentStageDeckDefinition.Rows, 1.0f, 24.0f, bIsStageItem);
+	}
 	SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
 	SetNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
 
@@ -1125,7 +1256,8 @@ void UBuildMenuWidget::RefreshStageControls()
 		StageHeightComboBox->SetVisibility(VisibleState);
 		if (bIsStageItem)
 		{
-			StageHeightComboBox->SetSelectedOption(StageHeightPresetToOption(CurrentStageDeckDefinition.DefaultHeightPreset));
+			StageHeightComboBox->SetSelectedOption(StageHeightPresetToOption(
+				bEditingCell ? CurrentStageCellHeightPreset : CurrentStageDeckDefinition.DefaultHeightPreset));
 		}
 	}
 
@@ -1135,22 +1267,59 @@ void UBuildMenuWidget::RefreshStageControls()
 		StageSurfaceComboBox->SetVisibility(VisibleState);
 		if (bIsStageItem)
 		{
-			StageSurfaceComboBox->SetSelectedOption(StageSurfaceStyleToOption(CurrentStageDeckDefinition.DefaultSurfaceStyle));
+			StageSurfaceComboBox->SetSelectedOption(StageSurfaceStyleToOption(
+				bEditingCell ? CurrentStageCellSurfaceStyle : CurrentStageDeckDefinition.DefaultSurfaceStyle));
 		}
 	}
 
-	SetTextVisibility(StageFrontRailingLabelText);
-	SetCheckBoxValue(StageFrontRailingCheckBox, CurrentStageDeckDefinition.bEnableFrontRailing);
-	SetTextVisibility(StageBackRailingLabelText);
-	SetCheckBoxValue(StageBackRailingCheckBox, CurrentStageDeckDefinition.bEnableBackRailing);
-	SetTextVisibility(StageLeftRailingLabelText);
-	SetCheckBoxValue(StageLeftRailingCheckBox, CurrentStageDeckDefinition.bEnableLeftRailing);
-	SetTextVisibility(StageRightRailingLabelText);
-	SetCheckBoxValue(StageRightRailingCheckBox, CurrentStageDeckDefinition.bEnableRightRailing);
-	SetTextVisibility(StageLeftStepLabelText);
-	SetCheckBoxValue(StageLeftStepCheckBox, CurrentStageDeckDefinition.bEnableLeftStep);
-	SetTextVisibility(StageRightStepLabelText);
-	SetCheckBoxValue(StageRightStepCheckBox, CurrentStageDeckDefinition.bEnableRightStep);
+	const ESlateVisibility WholeStageVisibility = (bIsStageItem && !bEditingCell) ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+	auto SetWholeStageLabelVisibility = [WholeStageVisibility](UTextBlock* Label)
+	{
+		if (Label)
+		{
+			Label->SetVisibility(WholeStageVisibility);
+		}
+	};
+	auto SetWholeStageCheckBoxValue = [WholeStageVisibility](UCheckBox* CheckBox, bool bValue)
+	{
+		if (CheckBox)
+		{
+			CheckBox->SetVisibility(WholeStageVisibility);
+			if (WholeStageVisibility == ESlateVisibility::Visible)
+			{
+				CheckBox->SetIsChecked(bValue);
+			}
+		}
+	};
+
+	SetWholeStageLabelVisibility(StageFrontRailingLabelText);
+	SetWholeStageCheckBoxValue(StageFrontRailingCheckBox, CurrentStageDeckDefinition.bEnableFrontRailing);
+	SetWholeStageLabelVisibility(StageBackRailingLabelText);
+	SetWholeStageCheckBoxValue(StageBackRailingCheckBox, CurrentStageDeckDefinition.bEnableBackRailing);
+	SetWholeStageLabelVisibility(StageLeftRailingLabelText);
+	SetWholeStageCheckBoxValue(StageLeftRailingCheckBox, CurrentStageDeckDefinition.bEnableLeftRailing);
+	SetWholeStageLabelVisibility(StageRightRailingLabelText);
+	SetWholeStageCheckBoxValue(StageRightRailingCheckBox, CurrentStageDeckDefinition.bEnableRightRailing);
+	SetWholeStageLabelVisibility(StageLeftStepLabelText);
+	SetWholeStageCheckBoxValue(StageLeftStepCheckBox, CurrentStageDeckDefinition.bEnableLeftStep);
+	SetWholeStageLabelVisibility(StageRightStepLabelText);
+	SetWholeStageCheckBoxValue(StageRightStepCheckBox, CurrentStageDeckDefinition.bEnableRightStep);
+	SetWholeStageLabelVisibility(StageAutomaticSkirtLabelText);
+	SetWholeStageCheckBoxValue(StageAutomaticSkirtCheckBox, CurrentStageDeckDefinition.bEnableAutomaticSkirt);
+
+	SetTextVisibility(StageCellEnabledLabelText);
+	if (StageCellEnabledLabelText)
+	{
+		StageCellEnabledLabelText->SetVisibility(bEditingCell ? VisibleState : ESlateVisibility::Collapsed);
+	}
+	if (StageCellEnabledCheckBox)
+	{
+		StageCellEnabledCheckBox->SetVisibility(bEditingCell ? VisibleState : ESlateVisibility::Collapsed);
+		if (bEditingCell)
+		{
+			StageCellEnabledCheckBox->SetIsChecked(bCurrentStageCellEnabled);
+		}
+	}
 
 	bRefreshingControls = false;
 }
@@ -1204,6 +1373,45 @@ void UBuildMenuWidget::ApplyMBPEditToTarget()
 	default:
 		EditingMBPTarget->ApplyPanelEdit(CurrentMBPEditTargetRow, CurrentMBPEditTargetColumn, CurrentMBPWallDefinition.DefaultStyle, CurrentMBPEditDepthOffsetCm);
 		break;
+	}
+}
+
+void UBuildMenuWidget::ApplyStageEditToTarget()
+{
+	if (!EditingStageTarget)
+	{
+		return;
+	}
+
+	if (CurrentStageEditScope == EStageRuntimeEditScope::WholeStage)
+	{
+		EditingStageTarget->ApplyBuildDefinition(CurrentStageDeckDefinition, true);
+		CurrentStageEditTargetRow = FMath::Clamp(CurrentStageEditTargetRow, 0, FMath::Max(EditingStageTarget->Rows - 1, 0));
+		CurrentStageEditTargetColumn = FMath::Clamp(CurrentStageEditTargetColumn, 0, FMath::Max(EditingStageTarget->Columns - 1, 0));
+		SyncCurrentStageCellFromTarget();
+		return;
+	}
+
+	FStageDeckCell CellDefinition;
+	CellDefinition.bEnabled = bCurrentStageCellEnabled;
+	CellDefinition.HeightPreset = CurrentStageCellHeightPreset;
+	CellDefinition.SurfaceStyle = CurrentStageCellSurfaceStyle;
+	EditingStageTarget->ApplyCellDefinition(CurrentStageEditTargetRow, CurrentStageEditTargetColumn, CellDefinition, true);
+}
+
+void UBuildMenuWidget::SyncCurrentStageCellFromTarget()
+{
+	if (!EditingStageTarget)
+	{
+		return;
+	}
+
+	FStageDeckCell CellDefinition;
+	if (EditingStageTarget->GetCellDefinition(CurrentStageEditTargetRow, CurrentStageEditTargetColumn, CellDefinition))
+	{
+		bCurrentStageCellEnabled = CellDefinition.bEnabled;
+		CurrentStageCellHeightPreset = CellDefinition.HeightPreset;
+		CurrentStageCellSurfaceStyle = CellDefinition.SurfaceStyle;
 	}
 }
 
@@ -1451,6 +1659,28 @@ EMBPRuntimeEditScope UBuildMenuWidget::OptionToMBPEditScope(const FString& Optio
 	return EMBPRuntimeEditScope::Panel;
 }
 
+FString UBuildMenuWidget::StageEditScopeToOption(EStageRuntimeEditScope Scope)
+{
+	switch (Scope)
+	{
+	case EStageRuntimeEditScope::WholeStage:
+		return TEXT("Whole Stage");
+	case EStageRuntimeEditScope::Cell:
+	default:
+		return TEXT("Cell");
+	}
+}
+
+EStageRuntimeEditScope UBuildMenuWidget::OptionToStageEditScope(const FString& Option)
+{
+	if (Option == TEXT("Whole Stage"))
+	{
+		return EStageRuntimeEditScope::WholeStage;
+	}
+
+	return EStageRuntimeEditScope::Cell;
+}
+
 UWidget* UBuildMenuWidget::GenerateComboItemWidget(FString Item)
 {
 	UTextBlock* ItemText = WidgetTree ? WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass()) : NewObject<UTextBlock>(this);
@@ -1535,6 +1765,17 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 		return;
 	}
 
+	if (IsEditingStage())
+	{
+		CurrentStageEditScope = OptionToStageEditScope(SelectedItemOption);
+		if (CurrentStageEditScope == EStageRuntimeEditScope::Cell)
+		{
+			SyncCurrentStageCellFromTarget();
+		}
+		RefreshMenu();
+		return;
+	}
+
 	if (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
 	{
 		return;
@@ -1565,8 +1806,25 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 
 	if (ActiveMenuTab == EBuildItemType::StageDeck)
 	{
-		CurrentStageDeckDefinition.Columns = FMath::Max(1, FMath::RoundToInt(NewValue));
-		ApplyStageDefinitionToBuildManager();
+		if (IsEditingStage() && CurrentStageEditScope == EStageRuntimeEditScope::Cell)
+		{
+			CurrentStageEditTargetRow = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+			SyncCurrentStageCellFromTarget();
+			RefreshMenu();
+			return;
+		}
+		else
+		{
+			CurrentStageDeckDefinition.Columns = FMath::Max(1, FMath::RoundToInt(NewValue));
+			if (IsEditingStage())
+			{
+				ApplyStageEditToTarget();
+			}
+			else
+			{
+				ApplyStageDefinitionToBuildManager();
+			}
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -1626,8 +1884,25 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 
 	if (ActiveMenuTab == EBuildItemType::StageDeck)
 	{
-		CurrentStageDeckDefinition.Rows = FMath::Max(1, FMath::RoundToInt(NewValue));
-		ApplyStageDefinitionToBuildManager();
+		if (IsEditingStage() && CurrentStageEditScope == EStageRuntimeEditScope::Cell)
+		{
+			CurrentStageEditTargetColumn = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+			SyncCurrentStageCellFromTarget();
+			RefreshMenu();
+			return;
+		}
+		else
+		{
+			CurrentStageDeckDefinition.Rows = FMath::Max(1, FMath::RoundToInt(NewValue));
+			if (IsEditingStage())
+			{
+				ApplyStageEditToTarget();
+			}
+			else
+			{
+				ApplyStageDefinitionToBuildManager();
+			}
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -1804,8 +2079,23 @@ void UBuildMenuWidget::HandleStageHeightChanged(FString SelectedItemOption, ESel
 		return;
 	}
 
-	CurrentStageDeckDefinition.DefaultHeightPreset = OptionToStageHeightPreset(SelectedItemOption);
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage() && CurrentStageEditScope == EStageRuntimeEditScope::Cell)
+	{
+		CurrentStageCellHeightPreset = OptionToStageHeightPreset(SelectedItemOption);
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		CurrentStageDeckDefinition.DefaultHeightPreset = OptionToStageHeightPreset(SelectedItemOption);
+		if (IsEditingStage())
+		{
+			ApplyStageEditToTarget();
+		}
+		else
+		{
+			ApplyStageDefinitionToBuildManager();
+		}
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());
@@ -1819,8 +2109,23 @@ void UBuildMenuWidget::HandleStageSurfaceChanged(FString SelectedItemOption, ESe
 		return;
 	}
 
-	CurrentStageDeckDefinition.DefaultSurfaceStyle = OptionToStageSurfaceStyle(SelectedItemOption);
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage() && CurrentStageEditScope == EStageRuntimeEditScope::Cell)
+	{
+		CurrentStageCellSurfaceStyle = OptionToStageSurfaceStyle(SelectedItemOption);
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		CurrentStageDeckDefinition.DefaultSurfaceStyle = OptionToStageSurfaceStyle(SelectedItemOption);
+		if (IsEditingStage())
+		{
+			ApplyStageEditToTarget();
+		}
+		else
+		{
+			ApplyStageDefinitionToBuildManager();
+		}
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());
@@ -1835,7 +2140,14 @@ void UBuildMenuWidget::HandleStageFrontRailingChanged(bool bIsChecked)
 	}
 
 	CurrentStageDeckDefinition.bEnableFrontRailing = bIsChecked;
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage())
+	{
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		ApplyStageDefinitionToBuildManager();
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());
@@ -1850,7 +2162,14 @@ void UBuildMenuWidget::HandleStageBackRailingChanged(bool bIsChecked)
 	}
 
 	CurrentStageDeckDefinition.bEnableBackRailing = bIsChecked;
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage())
+	{
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		ApplyStageDefinitionToBuildManager();
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());
@@ -1865,7 +2184,14 @@ void UBuildMenuWidget::HandleStageLeftRailingChanged(bool bIsChecked)
 	}
 
 	CurrentStageDeckDefinition.bEnableLeftRailing = bIsChecked;
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage())
+	{
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		ApplyStageDefinitionToBuildManager();
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());
@@ -1880,7 +2206,14 @@ void UBuildMenuWidget::HandleStageRightRailingChanged(bool bIsChecked)
 	}
 
 	CurrentStageDeckDefinition.bEnableRightRailing = bIsChecked;
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage())
+	{
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		ApplyStageDefinitionToBuildManager();
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());
@@ -1895,7 +2228,14 @@ void UBuildMenuWidget::HandleStageLeftStepChanged(bool bIsChecked)
 	}
 
 	CurrentStageDeckDefinition.bEnableLeftStep = bIsChecked;
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage())
+	{
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		ApplyStageDefinitionToBuildManager();
+	}
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());
@@ -1910,7 +2250,51 @@ void UBuildMenuWidget::HandleStageRightStepChanged(bool bIsChecked)
 	}
 
 	CurrentStageDeckDefinition.bEnableRightStep = bIsChecked;
-	ApplyStageDefinitionToBuildManager();
+	if (IsEditingStage())
+	{
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		ApplyStageDefinitionToBuildManager();
+	}
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageAutomaticSkirtChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.bEnableAutomaticSkirt = bIsChecked;
+	if (IsEditingStage())
+	{
+		ApplyStageEditToTarget();
+	}
+	else
+	{
+		ApplyStageDefinitionToBuildManager();
+	}
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageCellEnabledChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || !IsEditingStage() || CurrentStageEditScope != EStageRuntimeEditScope::Cell)
+	{
+		return;
+	}
+
+	bCurrentStageCellEnabled = bIsChecked;
+	ApplyStageEditToTarget();
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());

@@ -53,4 +53,7 @@ struct MAJICTRUSSRUNTIME_API FStageDeckBuildDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Steps")
 	bool bEnableRightStep = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Skirt")
+	bool bEnableAutomaticSkirt = false;
 };

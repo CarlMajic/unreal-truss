@@ -248,6 +248,12 @@ public:
 	void ApplyBuildDefinition(const FStageDeckBuildDefinition& Definition, bool bRebuildNow = true);
 
 	UFUNCTION(BlueprintCallable, Category = "Stage")
+	bool GetCellDefinition(int32 RowIndex, int32 ColumnIndex, FStageDeckCell& OutCell) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Stage")
+	void ApplyCellDefinition(int32 RowIndex, int32 ColumnIndex, const FStageDeckCell& CellDefinition, bool bRebuildNow = true);
+
+	UFUNCTION(BlueprintCallable, Category = "Stage")
 	bool GetCellIndicesFromWorldLocation(const FVector& WorldLocation, int32& OutRow, int32& OutColumn) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Stage")

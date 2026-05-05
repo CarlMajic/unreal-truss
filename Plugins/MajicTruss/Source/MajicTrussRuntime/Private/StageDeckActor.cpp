@@ -340,12 +340,38 @@ void AStageDeckActor::ApplyBuildDefinition(const FStageDeckBuildDefinition& Defi
 	bEnableRightRailing = Definition.bEnableRightRailing;
 	bEnableLeftStep = Definition.bEnableLeftStep;
 	bEnableRightStep = Definition.bEnableRightStep;
+	bEnableAutomaticSkirt = Definition.bEnableAutomaticSkirt;
 
 	EnsureCellCount(true);
 	CachedDefaultHeightPreset = DefaultHeightPreset;
 	CachedDefaultSurfaceStyle = DefaultSurfaceStyle;
 	bHasCachedDefaults = true;
 
+	if (bRebuildNow)
+	{
+		RebuildStage();
+	}
+}
+
+bool AStageDeckActor::GetCellDefinition(int32 RowIndex, int32 ColumnIndex, FStageDeckCell& OutCell) const
+{
+	if (!IsValidCellIndexPair(RowIndex, ColumnIndex))
+	{
+		return false;
+	}
+
+	OutCell = DeckCells[GetCellLinearIndex(RowIndex, ColumnIndex)];
+	return true;
+}
+
+void AStageDeckActor::ApplyCellDefinition(int32 RowIndex, int32 ColumnIndex, const FStageDeckCell& CellDefinition, bool bRebuildNow)
+{
+	if (!IsValidCellIndexPair(RowIndex, ColumnIndex))
+	{
+		return;
+	}
+
+	DeckCells[GetCellLinearIndex(RowIndex, ColumnIndex)] = CellDefinition;
 	if (bRebuildNow)
 	{
 		RebuildStage();
@@ -406,7 +432,6 @@ void AStageDeckActor::SyncCellsToDefaultIfNeeded()
 {
 	if (!bHasCachedDefaults)
 	{
-		ApplyDefaultSettingsToAllCells();
 		bHasCachedDefaults = true;
 		CachedDefaultHeightPreset = DefaultHeightPreset;
 		CachedDefaultSurfaceStyle = DefaultSurfaceStyle;
@@ -697,7 +722,10 @@ void AStageDeckActor::ClearGeneratedComponents()
 			continue;
 		}
 
-		if ((MeshComponent->GetName().StartsWith(StageDeckPrefix) || MeshComponent->GetName().StartsWith(StagePodiumPrefix)) &&
+		if ((MeshComponent->GetName().StartsWith(StageDeckPrefix) ||
+			MeshComponent->GetName().StartsWith(StagePodiumPrefix) ||
+			MeshComponent->GetName().StartsWith(StageRailingPrefix) ||
+			MeshComponent->GetName().StartsWith(StageStepPrefix)) &&
 			!GeneratedMeshComponents.Contains(MeshComponent))
 		{
 			GeneratedMeshComponents.Add(MeshComponent);

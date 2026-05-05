@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "MBPWallActor.h"
+#include "StageDeckActor.h"
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
 #include "BuildMenuWidget.generated.h"
@@ -27,6 +28,12 @@ enum class EMBPRuntimeEditScope : uint8
 	Panel,
 	Row,
 	Column
+};
+
+enum class EStageRuntimeEditScope : uint8
+{
+	WholeStage,
+	Cell
 };
 
 UCLASS()
@@ -95,6 +102,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingMBPPanelTarget(int32 InTargetRow, int32 InTargetColumn);
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingStageTarget(class AStageDeckActor* InEditingTarget, int32 InTargetRow = 0, int32 InTargetColumn = 0);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class AStageDeckActor* GetEditingStageTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingStageCellTarget(int32 InTargetRow, int32 InTargetColumn);
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -257,6 +273,18 @@ private:
 	TObjectPtr<UCheckBox> StageRightStepCheckBox = nullptr;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageAutomaticSkirtLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageAutomaticSkirtCheckBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageCellEnabledLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageCellEnabledCheckBox = nullptr;
+
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<UBuildMenuItemButtonProxy>> ButtonProxies;
 
 	UPROPERTY(Transient)
@@ -265,18 +293,28 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AMBPWallActor> EditingMBPTarget = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<AStageDeckActor> EditingStageTarget = nullptr;
+
 	bool bRefreshingControls = false;
 	EBuildItemType ActiveMenuTab = EBuildItemType::TrussStructure;
 	EMBPRuntimeEditScope CurrentMBPEditScope = EMBPRuntimeEditScope::Panel;
 	int32 CurrentMBPEditTargetRow = 0;
 	int32 CurrentMBPEditTargetColumn = 0;
 	float CurrentMBPEditDepthOffsetCm = 0.0f;
+	EStageRuntimeEditScope CurrentStageEditScope = EStageRuntimeEditScope::Cell;
+	int32 CurrentStageEditTargetRow = 0;
+	int32 CurrentStageEditTargetColumn = 0;
+	bool bCurrentStageCellEnabled = true;
+	EStageDeckHeightPreset CurrentStageCellHeightPreset = EStageDeckHeightPreset::In24;
+	EStageDeckSurfaceStyle CurrentStageCellSurfaceStyle = EStageDeckSurfaceStyle::BlackTop;
 
 	void RebuildItemButtons();
 	FText BuildDetailText() const;
 	FText BuildHeaderText() const;
 	FText BuildActionButtonText() const;
 	bool IsEditingMBP() const;
+	bool IsEditingStage() const;
 	void RefreshTabButtons();
 	void RefreshTrussControls();
 	void RefreshMBPControls();
@@ -285,6 +323,8 @@ private:
 	void ApplyMBPDefinitionToBuildManager();
 	void ApplyStageDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
+	void ApplyStageEditToTarget();
+	void SyncCurrentStageCellFromTarget();
 	bool ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildItem) const;
 	static FString BuildModeToOption(ETrussBuildMode BuildMode);
 	static ETrussBuildMode OptionToBuildMode(const FString& Option);
@@ -298,6 +338,8 @@ private:
 	static EStageDeckSurfaceStyle OptionToStageSurfaceStyle(const FString& Option);
 	static FString MBPEditScopeToOption(EMBPRuntimeEditScope Scope);
 	static EMBPRuntimeEditScope OptionToMBPEditScope(const FString& Option);
+	static FString StageEditScopeToOption(EStageRuntimeEditScope Scope);
+	static EStageRuntimeEditScope OptionToStageEditScope(const FString& Option);
 	UWidget* GenerateComboItemWidget(FString Item);
 
 	UFUNCTION()
@@ -362,6 +404,12 @@ private:
 
 	UFUNCTION()
 	void HandleStageRightStepChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleStageAutomaticSkirtChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleStageCellEnabledChanged(bool bIsChecked);
 
 	UFUNCTION()
 	void HandleActionButtonClicked();
