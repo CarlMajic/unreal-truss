@@ -14,14 +14,20 @@ constexpr TCHAR StageDeckPrefix[] = TEXT("StageDeck");
 constexpr TCHAR StagePodiumPrefix[] = TEXT("StagePodium");
 constexpr TCHAR StageDrapePrefix[] = TEXT("StageDrape");
 constexpr TCHAR StageRailingPrefix[] = TEXT("StageRailing");
+constexpr TCHAR StageStepPrefix[] = TEXT("StageStep");
 constexpr float RailingSpan94Cm = 243.84f;
 constexpr float RailingSpan46Cm = 121.92f;
 const FVector TunedRailingBaseOffset(249.338089f, -61.650452f, 32.453884f);
 const FRotator TunedRailingBaseRotation(0.0f, 180.0f, 0.0f);
-const FVector TunedFrontRailingOffset(249.338089f, -61.650452f, 32.453884f);
-const FVector TunedBackRailingOffset(-254.180094f, 122.288509f, 0.0f);
-const FVector TunedLeftRailingOffset(-66.068067f, 182.906141f, 0.0f);
-const FVector TunedRightRailingOffset(-189.954972f, -60.607935f, 0.0f);
+const FVector TunedFrontRailingOffset(249.338089f, -61.650452f, 0.0f);
+const FVector TunedBackRailingOffset(0.0f, 62.298616f, 0.0f);
+const FVector TunedLeftRailingOffset(189.700066f, 120.653588f, 0.0f);
+const FVector TunedRightRailingOffset(58.727953f, -121.189095f, 0.0f);
+const FVector PreviousFrontRailingOffset(249.338089f, -61.650452f, 32.453884f);
+const FVector PreviousBackRailingOffset(0.0f, 62.298616f, 32.453884f);
+const FVector PreviousLeftRailingOffset(189.700066f, 120.653588f, 32.453884f);
+const FVector PreviousRightRailingOffset(58.727953f, -121.189095f, 32.453884f);
+const FVector Tuned46SpanAdjustment(-61.084781f, 0.0f, 0.0f);
 
 bool IsStaticMeshAsset(const FAssetData& AssetData)
 {
@@ -37,6 +43,18 @@ FString GetDrapeMeshPath()
 AStageDeckActor::AStageDeckActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	RailingPlacementOffsetCm = TunedRailingBaseOffset;
+	RailingPlacementRotation = TunedRailingBaseRotation;
+	FrontRailingOffsetCm = TunedFrontRailingOffset;
+	BackRailingOffsetCm = TunedBackRailingOffset;
+	LeftRailingOffsetCm = TunedLeftRailingOffset;
+	RightRailingOffsetCm = TunedRightRailingOffset;
+	Railing46SpanAdjustmentCm = Tuned46SpanAdjustment;
+	RailingHeightAdjust8Cm = 0.0f;
+	RailingHeightAdjust12Cm = 11.0f;
+	RailingHeightAdjust24Cm = 32.0f;
+	RailingHeightAdjust27Cm = 55.5f;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
@@ -63,17 +81,20 @@ void AStageDeckActor::OnConstruction(const FTransform& Transform)
 		FrontRailingOffsetCm.IsNearlyZero() &&
 		BackRailingOffsetCm.IsNearlyZero() &&
 		LeftRailingOffsetCm.IsNearlyZero() &&
-		RightRailingOffsetCm.IsNearlyZero();
+		RightRailingOffsetCm.IsNearlyZero() &&
+		Railing46SpanAdjustmentCm.IsNearlyZero() &&
+		FMath::IsNearlyZero(RailingHeightAdjust8Cm) &&
+		FMath::IsNearlyZero(RailingHeightAdjust12Cm) &&
+		FMath::IsNearlyZero(RailingHeightAdjust24Cm) &&
+		FMath::IsNearlyZero(RailingHeightAdjust27Cm);
 
-	const bool bUsingPreviousBakedRailingSetup =
-		RailingPlacementOffsetCm.Equals(TunedRailingBaseOffset, 0.01f) &&
-		RailingPlacementRotation.Equals(TunedRailingBaseRotation, 0.01f) &&
-		FrontRailingOffsetCm.Equals(TunedFrontRailingOffset, 0.01f) &&
-		BackRailingOffsetCm.Equals(TunedBackRailingOffset, 0.01f) &&
-		LeftRailingOffsetCm.Equals(TunedLeftRailingOffset, 0.01f) &&
-		RightRailingOffsetCm.Equals(TunedRightRailingOffset, 0.01f);
+	const bool bUsingPreviousBakedRailingHeightSetup =
+		FrontRailingOffsetCm.Equals(PreviousFrontRailingOffset, 0.01f) &&
+		BackRailingOffsetCm.Equals(PreviousBackRailingOffset, 0.01f) &&
+		LeftRailingOffsetCm.Equals(PreviousLeftRailingOffset, 0.01f) &&
+		RightRailingOffsetCm.Equals(PreviousRightRailingOffset, 0.01f);
 
-	if (bUsingOldZeroedRailingSetup || bUsingPreviousBakedRailingSetup)
+	if (bUsingOldZeroedRailingSetup || bUsingPreviousBakedRailingHeightSetup)
 	{
 		RailingPlacementOffsetCm = TunedRailingBaseOffset;
 		RailingPlacementRotation = TunedRailingBaseRotation;
@@ -81,6 +102,11 @@ void AStageDeckActor::OnConstruction(const FTransform& Transform)
 		BackRailingOffsetCm = TunedBackRailingOffset;
 		LeftRailingOffsetCm = TunedLeftRailingOffset;
 		RightRailingOffsetCm = TunedRightRailingOffset;
+		Railing46SpanAdjustmentCm = Tuned46SpanAdjustment;
+		RailingHeightAdjust8Cm = 0.0f;
+		RailingHeightAdjust12Cm = 11.0f;
+		RailingHeightAdjust24Cm = 32.0f;
+		RailingHeightAdjust27Cm = 55.5f;
 	}
 
 	EnsureCellCount(false);
@@ -97,6 +123,17 @@ void AStageDeckActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(AStageDeckActor, DefaultHeightPreset) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(AStageDeckActor, DefaultSurfaceStyle))
+	{
+		ApplyDefaultSettingsToAllCells();
+		CachedDefaultHeightPreset = DefaultHeightPreset;
+		CachedDefaultSurfaceStyle = DefaultSurfaceStyle;
+		bHasCachedDefaults = true;
+		RebuildStage();
+		return;
+	}
+
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AStageDeckActor, BatchTargetIndex) ||
 		PropertyName == GET_MEMBER_NAME_CHECKED(AStageDeckActor, BatchEditAxis) ||
 		PropertyName == GET_MEMBER_NAME_CHECKED(AStageDeckActor, bBatchEnabled) ||
@@ -249,6 +286,7 @@ void AStageDeckActor::RebuildStage()
 		AddPodiumInstances(BucketMap, Bounds);
 	}
 
+	AddStepInstances(BucketMap, Bounds);
 	UpdateSelectionBounds(Bounds);
 }
 
@@ -443,6 +481,22 @@ float AStageDeckActor::GetDeckHeightCm(EStageDeckHeightPreset HeightPreset) cons
 	}
 }
 
+float AStageDeckActor::GetRailingHeightDeltaZCm(EStageDeckHeightPreset HeightPreset) const
+{
+	switch (HeightPreset)
+	{
+	case EStageDeckHeightPreset::In8:
+		return RailingHeightAdjust8Cm;
+	case EStageDeckHeightPreset::In12:
+		return RailingHeightAdjust12Cm;
+	case EStageDeckHeightPreset::In27:
+		return RailingHeightAdjust27Cm;
+	case EStageDeckHeightPreset::In24:
+	default:
+		return RailingHeightAdjust24Cm;
+	}
+}
+
 FString AStageDeckActor::GetDeckAssetFolder(EStageDeckHeightPreset HeightPreset, EStageDeckSurfaceStyle SurfaceStyle) const
 {
 	switch (HeightPreset)
@@ -530,6 +584,22 @@ TArray<FSoftObjectPath> AStageDeckActor::GetPodiumMeshPaths() const
 TArray<FSoftObjectPath> AStageDeckActor::GetRailingMeshPaths(EStageRailingSpanType SpanType) const
 {
 	return GetMeshPathsForFolder(GetRailingAssetFolder(SpanType));
+}
+
+TArray<FSoftObjectPath> AStageDeckActor::GetStepMeshPaths(EStageDeckHeightPreset HeightPreset) const
+{
+	switch (HeightPreset)
+	{
+	case EStageDeckHeightPreset::In12:
+		return GetMeshPathsForFolder(TEXT("/Game/Majic_Gear/Stage/Stageright_Steps/Stageright_2_Step/StaticMeshes"));
+	case EStageDeckHeightPreset::In24:
+		return GetMeshPathsForFolder(TEXT("/Game/Majic_Gear/Stage/Stageright_Steps/Stageright_3_Step/StaticMeshes"));
+	case EStageDeckHeightPreset::In27:
+		return GetMeshPathsForFolder(TEXT("/Game/Majic_Gear/Stage/Stageright_Steps/Stageright_4_Step/StaticMeshes"));
+	case EStageDeckHeightPreset::In8:
+	default:
+		return {};
+	}
 }
 
 UMaterialInterface* AStageDeckActor::ResolveDeckSurfaceMaterial(EStageDeckSurfaceStyle SurfaceStyle) const
@@ -762,6 +832,69 @@ void AStageDeckActor::AddPodiumInstances(TMap<FString, UInstancedStaticMeshCompo
 	}
 }
 
+void AStageDeckActor::AddStepInstances(TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds)
+{
+	const float StepX = CellWidthCm + HorizontalSpacingCm;
+	const float StepY = CellDepthCm + VerticalSpacingCm;
+	const float OriginX = bCenterOnActor ? (-0.5f * (Columns - 1) * StepX) : 0.0f;
+	const float OriginY = bCenterOnActor ? (-0.5f * (Rows - 1) * StepY) : 0.0f;
+
+	for (int32 RowIndex = 0; RowIndex < Rows; ++RowIndex)
+	{
+		for (int32 ColumnIndex = 0; ColumnIndex < Columns; ++ColumnIndex)
+		{
+			const int32 CellIndex = GetCellLinearIndex(RowIndex, ColumnIndex);
+			if (!DeckCells.IsValidIndex(CellIndex) || !DeckCells[CellIndex].bEnabled)
+			{
+				continue;
+			}
+
+			const bool bPlaceLeftStep = ShouldPlaceLeftStepAtCell(RowIndex, ColumnIndex);
+			const bool bPlaceRightStep = ShouldPlaceRightStepAtCell(RowIndex, ColumnIndex);
+			if (!bPlaceLeftStep && !bPlaceRightStep)
+			{
+				continue;
+			}
+
+			const FVector CellCenter(
+				OriginX + (ColumnIndex * StepX),
+				OriginY + (RowIndex * StepY),
+				0.0f);
+			const EStageDeckHeightPreset HeightPreset = DeckCells[CellIndex].HeightPreset;
+
+			for (const FSoftObjectPath& MeshPath : GetStepMeshPaths(HeightPreset))
+			{
+				UInstancedStaticMeshComponent* MeshComponent = FindOrCreateMeshBucket(MeshPath, StageStepPrefix, DefaultSurfaceStyle, BucketMap);
+				if (!MeshComponent || !MeshComponent->GetStaticMesh())
+				{
+					continue;
+				}
+
+				const UStaticMesh* StaticMesh = MeshComponent->GetStaticMesh();
+				const FBoxSphereBounds MeshBounds = StaticMesh->GetBounds();
+
+				if (bPlaceLeftStep)
+				{
+					const FVector InstanceLocation = CellCenter + DeckPlacementOffsetCm + LeftStepOffsetCm;
+					const FTransform InstanceTransform(LeftStepRotation, InstanceLocation, FVector::OneVector);
+					MeshComponent->AddInstance(InstanceTransform);
+					const FVector MeshCenter = InstanceTransform.TransformPosition(MeshBounds.Origin);
+					Bounds += FBox(MeshCenter - MeshBounds.BoxExtent, MeshCenter + MeshBounds.BoxExtent);
+				}
+
+				if (bPlaceRightStep)
+				{
+					const FVector InstanceLocation = CellCenter + DeckPlacementOffsetCm + RightStepOffsetCm;
+					const FTransform InstanceTransform(RightStepRotation, InstanceLocation, FVector::OneVector);
+					MeshComponent->AddInstance(InstanceTransform);
+					const FVector MeshCenter = InstanceTransform.TransformPosition(MeshBounds.Origin);
+					Bounds += FBox(MeshCenter - MeshBounds.BoxExtent, MeshCenter + MeshBounds.BoxExtent);
+				}
+			}
+		}
+	}
+}
+
 void AStageDeckActor::AddRailingSpan(EStageRailingSpanType SpanType, const FVector& SpanCenter, const FRotator& SpanRotation, const FVector& EdgeOffset, TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds)
 {
 	const FVector SpanAdjustment = SpanType == EStageRailingSpanType::In94 ? Railing94SpanAdjustmentCm : Railing46SpanAdjustmentCm;
@@ -819,6 +952,18 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 			DeckCells[GetCellLinearIndex(RowIndex, ColumnIndex)].bEnabled;
 	};
 
+	auto GetCellHeightPreset = [this](int32 RowIndex, int32 ColumnIndex) -> EStageDeckHeightPreset
+	{
+		return DeckCells[GetCellLinearIndex(RowIndex, ColumnIndex)].HeightPreset;
+	};
+
+	auto GetHeightAdjustedOffset = [this](const FVector& BaseOffset, EStageDeckHeightPreset HeightPreset) -> FVector
+	{
+		FVector AdjustedOffset = BaseOffset;
+		AdjustedOffset.Z += GetRailingHeightDeltaZCm(HeightPreset);
+		return AdjustedOffset;
+	};
+
 	if (bEnableFrontRailing)
 	{
 		for (int32 RowIndex = 0; RowIndex < Rows; ++RowIndex)
@@ -826,7 +971,8 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 			int32 ColumnIndex = 0;
 			while (ColumnIndex < Columns)
 			{
-				const bool bFrontExposed = IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex - 1, ColumnIndex);
+				const bool bFrontExposed = IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex - 1, ColumnIndex);
 				if (!bFrontExposed)
 				{
 					++ColumnIndex;
@@ -834,7 +980,11 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 				}
 
 				const int32 StartColumn = ColumnIndex;
-				while (ColumnIndex < Columns && IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex - 1, ColumnIndex))
+				const EStageDeckHeightPreset RunHeightPreset = GetCellHeightPreset(RowIndex, ColumnIndex);
+				while (ColumnIndex < Columns &&
+					IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex - 1, ColumnIndex) &&
+					GetCellHeightPreset(RowIndex, ColumnIndex) == RunHeightPreset)
 				{
 					++ColumnIndex;
 				}
@@ -844,7 +994,7 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 					OriginX + (StartColumn * StepX) - (0.5f * CellWidthCm),
 					OriginY + (RowIndex * StepY) - (0.5f * CellDepthCm),
 					0.0f);
-				AddRailingRun(RunLengthCm, RunStart, FVector::ForwardVector, FRotator::ZeroRotator, FrontRailingOffsetCm, BucketMap, Bounds);
+				AddRailingRun(RunLengthCm, RunStart, FVector::ForwardVector, FRotator::ZeroRotator, GetHeightAdjustedOffset(FrontRailingOffsetCm, RunHeightPreset), BucketMap, Bounds);
 			}
 		}
 	}
@@ -856,7 +1006,8 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 			int32 ColumnIndex = 0;
 			while (ColumnIndex < Columns)
 			{
-				const bool bBackExposed = IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex + 1, ColumnIndex);
+				const bool bBackExposed = IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex + 1, ColumnIndex);
 				if (!bBackExposed)
 				{
 					++ColumnIndex;
@@ -864,7 +1015,11 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 				}
 
 				const int32 StartColumn = ColumnIndex;
-				while (ColumnIndex < Columns && IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex + 1, ColumnIndex))
+				const EStageDeckHeightPreset RunHeightPreset = GetCellHeightPreset(RowIndex, ColumnIndex);
+				while (ColumnIndex < Columns &&
+					IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex + 1, ColumnIndex) &&
+					GetCellHeightPreset(RowIndex, ColumnIndex) == RunHeightPreset)
 				{
 					++ColumnIndex;
 				}
@@ -874,7 +1029,7 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 					OriginX + (StartColumn * StepX) - (0.5f * CellWidthCm),
 					OriginY + (RowIndex * StepY) + (0.5f * CellDepthCm),
 					0.0f);
-				AddRailingRun(RunLengthCm, RunStart, FVector::ForwardVector, FRotator(0.0f, 180.0f, 0.0f), BackRailingOffsetCm, BucketMap, Bounds);
+				AddRailingRun(RunLengthCm, RunStart, FVector::ForwardVector, FRotator(0.0f, 180.0f, 0.0f), GetHeightAdjustedOffset(BackRailingOffsetCm, RunHeightPreset), BucketMap, Bounds);
 			}
 		}
 	}
@@ -886,7 +1041,9 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 			int32 RowIndex = 0;
 			while (RowIndex < Rows)
 			{
-				const bool bLeftExposed = IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex, ColumnIndex - 1);
+				const bool bLeftExposed = IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex, ColumnIndex - 1) &&
+					!ShouldPlaceLeftStepAtCell(RowIndex, ColumnIndex);
 				if (!bLeftExposed)
 				{
 					++RowIndex;
@@ -894,7 +1051,12 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 				}
 
 				const int32 StartRow = RowIndex;
-				while (RowIndex < Rows && IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex, ColumnIndex - 1))
+				const EStageDeckHeightPreset RunHeightPreset = GetCellHeightPreset(RowIndex, ColumnIndex);
+				while (RowIndex < Rows &&
+					IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex, ColumnIndex - 1) &&
+					!ShouldPlaceLeftStepAtCell(RowIndex, ColumnIndex) &&
+					GetCellHeightPreset(RowIndex, ColumnIndex) == RunHeightPreset)
 				{
 					++RowIndex;
 				}
@@ -904,7 +1066,7 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 					OriginX + (ColumnIndex * StepX) - (0.5f * CellWidthCm),
 					OriginY + (StartRow * StepY) - (0.5f * CellDepthCm),
 					0.0f);
-				AddRailingRun(RunLengthCm, RunStart, FVector::RightVector, FRotator(0.0f, -90.0f, 0.0f), LeftRailingOffsetCm, BucketMap, Bounds);
+				AddRailingRun(RunLengthCm, RunStart, FVector::RightVector, FRotator(0.0f, -90.0f, 0.0f), GetHeightAdjustedOffset(LeftRailingOffsetCm, RunHeightPreset), BucketMap, Bounds);
 			}
 		}
 	}
@@ -916,7 +1078,9 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 			int32 RowIndex = 0;
 			while (RowIndex < Rows)
 			{
-				const bool bRightExposed = IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex, ColumnIndex + 1);
+				const bool bRightExposed = IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex, ColumnIndex + 1) &&
+					!ShouldPlaceRightStepAtCell(RowIndex, ColumnIndex);
 				if (!bRightExposed)
 				{
 					++RowIndex;
@@ -924,7 +1088,12 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 				}
 
 				const int32 StartRow = RowIndex;
-				while (RowIndex < Rows && IsCellEnabled(RowIndex, ColumnIndex) && !IsCellEnabled(RowIndex, ColumnIndex + 1))
+				const EStageDeckHeightPreset RunHeightPreset = GetCellHeightPreset(RowIndex, ColumnIndex);
+				while (RowIndex < Rows &&
+					IsCellEnabled(RowIndex, ColumnIndex) &&
+					!IsCellEnabled(RowIndex, ColumnIndex + 1) &&
+					!ShouldPlaceRightStepAtCell(RowIndex, ColumnIndex) &&
+					GetCellHeightPreset(RowIndex, ColumnIndex) == RunHeightPreset)
 				{
 					++RowIndex;
 				}
@@ -934,7 +1103,7 @@ void AStageDeckActor::AddRailingsForPerimeter(const float OriginX, const float O
 					OriginX + (ColumnIndex * StepX) + (0.5f * CellWidthCm),
 					OriginY + (StartRow * StepY) - (0.5f * CellDepthCm),
 					0.0f);
-				AddRailingRun(RunLengthCm, RunStart, FVector::RightVector, FRotator(0.0f, 90.0f, 0.0f), RightRailingOffsetCm, BucketMap, Bounds);
+				AddRailingRun(RunLengthCm, RunStart, FVector::RightVector, FRotator(0.0f, 90.0f, 0.0f), GetHeightAdjustedOffset(RightRailingOffsetCm, RunHeightPreset), BucketMap, Bounds);
 			}
 		}
 	}
@@ -1015,6 +1184,96 @@ bool AStageDeckActor::GetFirstEnabledCell(int32& OutRowIndex, int32& OutColumnIn
 			OutColumnIndex = ColumnIndex;
 			OutCell = DeckCells[CellIndex];
 			return true;
+		}
+	}
+
+	return false;
+}
+
+bool AStageDeckActor::ShouldPlaceLeftStepAtCell(int32 RowIndex, int32 ColumnIndex) const
+{
+	if (!bEnableLeftStep || !IsValidCellIndexPair(RowIndex, ColumnIndex))
+	{
+		return false;
+	}
+
+	const int32 CellIndex = GetCellLinearIndex(RowIndex, ColumnIndex);
+	if (!DeckCells[CellIndex].bEnabled || DeckCells[CellIndex].HeightPreset == EStageDeckHeightPreset::In8)
+	{
+		return false;
+	}
+
+	const bool bLeftExposed = (ColumnIndex == 0) || !IsValidCellIndexPair(RowIndex, ColumnIndex - 1) || !DeckCells[GetCellLinearIndex(RowIndex, ColumnIndex - 1)].bEnabled;
+	if (!bLeftExposed)
+	{
+		return false;
+	}
+
+	for (int32 OtherRow = Rows - 1; OtherRow >= 0; --OtherRow)
+	{
+		for (int32 OtherColumn = 0; OtherColumn < Columns; ++OtherColumn)
+		{
+			if (!IsValidCellIndexPair(OtherRow, OtherColumn))
+			{
+				continue;
+			}
+
+			const int32 OtherCellIndex = GetCellLinearIndex(OtherRow, OtherColumn);
+			if (!DeckCells[OtherCellIndex].bEnabled || DeckCells[OtherCellIndex].HeightPreset == EStageDeckHeightPreset::In8)
+			{
+				continue;
+			}
+
+			const bool bOtherLeftExposed = (OtherColumn == 0) || !IsValidCellIndexPair(OtherRow, OtherColumn - 1) || !DeckCells[GetCellLinearIndex(OtherRow, OtherColumn - 1)].bEnabled;
+			if (bOtherLeftExposed)
+			{
+				return OtherRow == RowIndex && OtherColumn == ColumnIndex;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool AStageDeckActor::ShouldPlaceRightStepAtCell(int32 RowIndex, int32 ColumnIndex) const
+{
+	if (!bEnableRightStep || !IsValidCellIndexPair(RowIndex, ColumnIndex))
+	{
+		return false;
+	}
+
+	const int32 CellIndex = GetCellLinearIndex(RowIndex, ColumnIndex);
+	if (!DeckCells[CellIndex].bEnabled || DeckCells[CellIndex].HeightPreset == EStageDeckHeightPreset::In8)
+	{
+		return false;
+	}
+
+	const bool bRightExposed = (ColumnIndex == Columns - 1) || !IsValidCellIndexPair(RowIndex, ColumnIndex + 1) || !DeckCells[GetCellLinearIndex(RowIndex, ColumnIndex + 1)].bEnabled;
+	if (!bRightExposed)
+	{
+		return false;
+	}
+
+	for (int32 OtherRow = Rows - 1; OtherRow >= 0; --OtherRow)
+	{
+		for (int32 OtherColumn = Columns - 1; OtherColumn >= 0; --OtherColumn)
+		{
+			if (!IsValidCellIndexPair(OtherRow, OtherColumn))
+			{
+				continue;
+			}
+
+			const int32 OtherCellIndex = GetCellLinearIndex(OtherRow, OtherColumn);
+			if (!DeckCells[OtherCellIndex].bEnabled || DeckCells[OtherCellIndex].HeightPreset == EStageDeckHeightPreset::In8)
+			{
+				continue;
+			}
+
+			const bool bOtherRightExposed = (OtherColumn == Columns - 1) || !IsValidCellIndexPair(OtherRow, OtherColumn + 1) || !DeckCells[GetCellLinearIndex(OtherRow, OtherColumn + 1)].bEnabled;
+			if (bOtherRightExposed)
+			{
+				return OtherRow == RowIndex && OtherColumn == ColumnIndex;
+			}
 		}
 	}
 

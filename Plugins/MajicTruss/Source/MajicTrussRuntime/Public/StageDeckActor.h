@@ -179,22 +179,52 @@ public:
 	FRotator RailingPlacementRotation = FRotator(0.0f, 180.0f, 0.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
-	FVector FrontRailingOffsetCm = FVector(249.338089f, -61.650452f, 32.453884f);
+	FVector FrontRailingOffsetCm = FVector(249.338089f, -61.650452f, 0.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
-	FVector BackRailingOffsetCm = FVector(-254.180094f, 122.288509f, 0.0f);
+	FVector BackRailingOffsetCm = FVector(0.0f, 62.298616f, 0.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
-	FVector LeftRailingOffsetCm = FVector(-66.068067f, 182.906141f, 0.0f);
+	FVector LeftRailingOffsetCm = FVector(189.700066f, 120.653588f, 0.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
-	FVector RightRailingOffsetCm = FVector(-189.954972f, -60.607935f, 0.0f);
+	FVector RightRailingOffsetCm = FVector(58.727953f, -121.189095f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
+	float RailingHeightAdjust8Cm = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
+	float RailingHeightAdjust12Cm = 11.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
+	float RailingHeightAdjust24Cm = 32.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
+	float RailingHeightAdjust27Cm = 55.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
 	FVector Railing94SpanAdjustmentCm = FVector::ZeroVector;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Railing", meta = (Units = "cm"))
-	FVector Railing46SpanAdjustmentCm = FVector::ZeroVector;
+	FVector Railing46SpanAdjustmentCm = FVector(-61.084781f, 0.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Steps")
+	bool bEnableLeftStep = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Steps")
+	bool bEnableRightStep = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Steps", meta = (Units = "cm"))
+	FVector LeftStepOffsetCm = FVector(0.0f, -123.745361f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Steps", meta = (Units = "cm"))
+	FVector RightStepOffsetCm = FVector(244.693954f, 0.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Steps")
+	FRotator LeftStepRotation = FRotator(0.0f, 90.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Steps")
+	FRotator RightStepRotation = FRotator(0.0f, -90.0f, 0.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stage|Skirt")
 	bool bUseDebugSingleSkirt = true;
@@ -277,9 +307,11 @@ private:
 	bool IsValidCellIndexPair(int32 RowIndex, int32 ColumnIndex) const;
 	int32 GetCellLinearIndex(int32 RowIndex, int32 ColumnIndex) const;
 	float GetDeckHeightCm(EStageDeckHeightPreset HeightPreset) const;
+	float GetRailingHeightDeltaZCm(EStageDeckHeightPreset HeightPreset) const;
 	FString GetDeckAssetFolder(EStageDeckHeightPreset HeightPreset, EStageDeckSurfaceStyle SurfaceStyle) const;
 	FString GetPodiumAssetFolder(EStagePodiumStyle InPodiumStyle) const;
 	FString GetRailingAssetFolder(EStageRailingSpanType SpanType) const;
+	TArray<FSoftObjectPath> GetStepMeshPaths(EStageDeckHeightPreset HeightPreset) const;
 	TArray<FSoftObjectPath> GetMeshPathsForFolder(const FString& AssetFolderPath) const;
 	TArray<FSoftObjectPath> GetDeckMeshPaths(EStageDeckHeightPreset HeightPreset, EStageDeckSurfaceStyle SurfaceStyle) const;
 	TArray<FSoftObjectPath> GetPodiumMeshPaths() const;
@@ -293,10 +325,13 @@ private:
 	void AddDeckCellInstance(const FSoftObjectPath& MeshPath, EStageDeckSurfaceStyle SurfaceStyle, const FVector& CellCenter, TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds);
 	void AddCellLabel(int32 RowIndex, int32 ColumnIndex, const FVector& CellCenter, bool bCellEnabled);
 	void AddPodiumInstances(TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds);
+	void AddStepInstances(TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds);
 	void AddRailingSpan(EStageRailingSpanType SpanType, const FVector& SpanCenter, const FRotator& SpanRotation, const FVector& EdgeAdjustment, TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds);
 	void AddRailingRun(float TotalLengthCm, const FVector& StartLocation, const FVector& AlongDirection, const FRotator& SpanRotation, const FVector& EdgeAdjustment, TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds);
 	void AddRailingsForPerimeter(const float OriginX, const float OriginY, const float StepX, const float StepY, TMap<FString, UInstancedStaticMeshComponent*>& BucketMap, FBox& Bounds);
 	void AddDrapeForEdge(const FVector& EdgeCenter, const FRotator& EdgeRotation, float EdgeLengthCm, float DeckHeightCm, FBox& Bounds, const FVector& ExtraScale = FVector::OneVector);
 	bool GetFirstEnabledCell(int32& OutRowIndex, int32& OutColumnIndex, FStageDeckCell& OutCell) const;
+	bool ShouldPlaceLeftStepAtCell(int32 RowIndex, int32 ColumnIndex) const;
+	bool ShouldPlaceRightStepAtCell(int32 RowIndex, int32 ColumnIndex) const;
 	void UpdateSelectionBounds(const FBox& Bounds);
 };
