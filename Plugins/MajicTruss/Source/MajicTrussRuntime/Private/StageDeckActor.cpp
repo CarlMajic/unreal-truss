@@ -328,6 +328,30 @@ void AStageDeckActor::ResizeCellsToGrid()
 	RebuildStage();
 }
 
+void AStageDeckActor::ApplyBuildDefinition(const FStageDeckBuildDefinition& Definition, bool bRebuildNow)
+{
+	Columns = FMath::Max(1, Definition.Columns);
+	Rows = FMath::Max(1, Definition.Rows);
+	DefaultHeightPreset = Definition.DefaultHeightPreset;
+	DefaultSurfaceStyle = Definition.DefaultSurfaceStyle;
+	bEnableFrontRailing = Definition.bEnableFrontRailing;
+	bEnableBackRailing = Definition.bEnableBackRailing;
+	bEnableLeftRailing = Definition.bEnableLeftRailing;
+	bEnableRightRailing = Definition.bEnableRightRailing;
+	bEnableLeftStep = Definition.bEnableLeftStep;
+	bEnableRightStep = Definition.bEnableRightStep;
+
+	EnsureCellCount(true);
+	CachedDefaultHeightPreset = DefaultHeightPreset;
+	CachedDefaultSurfaceStyle = DefaultSurfaceStyle;
+	bHasCachedDefaults = true;
+
+	if (bRebuildNow)
+	{
+		RebuildStage();
+	}
+}
+
 void AStageDeckActor::ApplyBatchEdit()
 {
 	for (const int32 CellIndex : GetBatchCellIndices())

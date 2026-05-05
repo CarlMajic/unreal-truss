@@ -232,15 +232,25 @@ What has been done:
   - `RightStepRotation = (0, 0, -90 display axis)`
 - Reworked left/right side railing generation so a placed step shortens that side’s railing run by one deck cell at the back instead of trying to hide the railing after generation.
 - Fixed stage default height editing so changing `Default Height Preset` now pushes the new preset across the deck cells and rebuilds immediately.
+- Added first-pass runtime stage build support to the shared build flow:
+  - `EBuildItemType::StageDeck`
+  - `FStageDeckBuildDefinition`
+  - build-manager application for preview and spawn
+  - fallback runtime stage build item creation when no saved stage build asset exists
+- Added a new `Stage` tab to the runtime `BuildMenuWidget`.
+- Added first-pass runtime stage controls:
+  - columns
+  - rows
+  - deck height preset
+  - surface style
+  - front/back/left/right railing toggles
+  - left/right step toggles
+- Added `AStageDeckActor::ApplyBuildDefinition(...)` so runtime preview and final placement use the same stage-grid setup path.
 
 Immediate next steps:
 
-- Bring `AStageDeckActor` into the runtime `Tab` build menu flow as the next major stage task.
-- Add first-pass runtime controls for:
-  - deck height preset
-  - left/right steps
-  - front/back/left/right rail toggles
-- Keep editing as a later pass after first runtime stage placement is stable.
+- Test the new runtime `Stage` tab in-editor and tune any menu defaults or placement behavior.
+- Keep stage editing as a later pass after first runtime stage placement is stable.
 
 Notes for the next session:
 
@@ -252,7 +262,7 @@ Notes for the next session:
   - side alignment offsets
   - preset height adjustments
   - side steps that shorten railing runs
-- Runtime stage placement in the `Tab` menu is the next planned feature.
+- Runtime stage placement now has a first-pass menu path; runtime stage editing is the next planned feature.
 
 </details>
 

@@ -4,6 +4,7 @@
 #include "BuildManagerComponent.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/CheckBox.h"
 #include "Components/ComboBoxString.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -13,6 +14,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "StageDeckActor.h"
 #include "TrussMathLibrary.h"
 #include "TrussStructureActor.h"
 #include "WhiteComboBoxString.h"
@@ -76,9 +78,10 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 	{
 		CurrentTrussDefinition = SelectedBuildItem->DefaultTrussDefinition;
 		CurrentMBPWallDefinition = SelectedBuildItem->DefaultMBPWallDefinition;
+		CurrentStageDeckDefinition = SelectedBuildItem->DefaultStageDeckDefinition;
 		ActiveMenuTab = SelectedBuildItem->ItemType == EBuildItemType::MBPWall
 			? EBuildItemType::MBPWall
-			: EBuildItemType::TrussStructure;
+			: (SelectedBuildItem->ItemType == EBuildItemType::StageDeck ? EBuildItemType::StageDeck : EBuildItemType::TrussStructure);
 	}
 
 	RefreshMenu();
@@ -92,9 +95,10 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 	{
 		CurrentTrussDefinition = InSelectedItem->DefaultTrussDefinition;
 		CurrentMBPWallDefinition = InSelectedItem->DefaultMBPWallDefinition;
+		CurrentStageDeckDefinition = InSelectedItem->DefaultStageDeckDefinition;
 		ActiveMenuTab = InSelectedItem->ItemType == EBuildItemType::MBPWall
 			? EBuildItemType::MBPWall
-			: EBuildItemType::TrussStructure;
+			: (InSelectedItem->ItemType == EBuildItemType::StageDeck ? EBuildItemType::StageDeck : EBuildItemType::TrussStructure);
 	}
 
 	if (BuildManager && InSelectedItem)
@@ -102,6 +106,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		BuildManager->SetSelectedBuildItem(InSelectedItem);
 		ApplyTrussDefinitionToBuildManager();
 		ApplyMBPDefinitionToBuildManager();
+		ApplyStageDefinitionToBuildManager();
 	}
 
 	RefreshMenu();
@@ -131,6 +136,7 @@ void UBuildMenuWidget::RefreshMenu()
 
 	RefreshTrussControls();
 	RefreshMBPControls();
+	RefreshStageControls();
 	RefreshTabButtons();
 	RebuildItemButtons();
 }
@@ -148,6 +154,11 @@ FTrussBuildDefinition UBuildMenuWidget::GetCurrentTrussDefinition() const
 FMBPWallDefinition UBuildMenuWidget::GetCurrentMBPWallDefinition() const
 {
 	return CurrentMBPWallDefinition;
+}
+
+FStageDeckBuildDefinition UBuildMenuWidget::GetCurrentStageDeckDefinition() const
+{
+	return CurrentStageDeckDefinition;
 }
 
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
@@ -275,7 +286,18 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	MBPTabText->SetText(FText::FromString(TEXT("MBP")));
 	MBPTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	MBPTabButton->AddChild(MBPTabText);
-	TabButtonBox->AddChildToHorizontalBox(MBPTabButton);
+	if (UHorizontalBoxSlot* MBPTabSlot = TabButtonBox->AddChildToHorizontalBox(MBPTabButton))
+	{
+		MBPTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	StageTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("StageTabButton"));
+	StageTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleStageTabClicked);
+	UTextBlock* StageTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StageTabText"));
+	StageTabText->SetText(FText::FromString(TEXT("Stage")));
+	StageTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	StageTabButton->AddChild(StageTabText);
+	TabButtonBox->AddChildToHorizontalBox(StageTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -476,6 +498,82 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 		MBPStyleComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 	}
 
+	StageHeightLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StageHeightLabelText"));
+	StageHeightLabelText->SetText(FText::FromString(TEXT("Deck Height")));
+	StageHeightLabelText->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+	if (UVerticalBoxSlot* StageHeightLabelSlot = RootBox->AddChildToVerticalBox(StageHeightLabelText))
+	{
+		StageHeightLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+	}
+
+	StageHeightComboBox = WidgetTree->ConstructWidget<UWhiteComboBoxString>(UWhiteComboBoxString::StaticClass(), TEXT("StageHeightComboBox"));
+	StageHeightComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In8));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In12));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In24));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In27));
+	StageHeightComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageHeightChanged);
+	if (UVerticalBoxSlot* StageHeightComboSlot = RootBox->AddChildToVerticalBox(StageHeightComboBox))
+	{
+		StageHeightComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
+	StageSurfaceLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StageSurfaceLabelText"));
+	StageSurfaceLabelText->SetText(FText::FromString(TEXT("Surface Style")));
+	StageSurfaceLabelText->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+	if (UVerticalBoxSlot* StageSurfaceLabelSlot = RootBox->AddChildToVerticalBox(StageSurfaceLabelText))
+	{
+		StageSurfaceLabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+	}
+
+	StageSurfaceComboBox = WidgetTree->ConstructWidget<UWhiteComboBoxString>(UWhiteComboBoxString::StaticClass(), TEXT("StageSurfaceComboBox"));
+	StageSurfaceComboBox->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
+	StageSurfaceComboBox->AddOption(StageSurfaceStyleToOption(EStageDeckSurfaceStyle::BlackTop));
+	StageSurfaceComboBox->AddOption(StageSurfaceStyleToOption(EStageDeckSurfaceStyle::GrayCarpet));
+	StageSurfaceComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageSurfaceChanged);
+	if (UVerticalBoxSlot* StageSurfaceComboSlot = RootBox->AddChildToVerticalBox(StageSurfaceComboBox))
+	{
+		StageSurfaceComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
+	auto AddStageCheckBoxRow = [this, RootBox](const TCHAR* LabelName, const TCHAR* CheckBoxName, const TCHAR* LabelText, TObjectPtr<UTextBlock>& OutLabel, TObjectPtr<UCheckBox>& OutCheckBox)
+	{
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		OutLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), LabelName);
+		OutLabel->SetText(FText::FromString(LabelText));
+		OutLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+		OutCheckBox = WidgetTree->ConstructWidget<UCheckBox>(UCheckBox::StaticClass(), CheckBoxName);
+
+		if (UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(OutLabel))
+		{
+			LabelSlot->SetHorizontalAlignment(HAlign_Left);
+			LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+
+		if (UHorizontalBoxSlot* CheckSlot = Row->AddChildToHorizontalBox(OutCheckBox))
+		{
+			CheckSlot->SetHorizontalAlignment(HAlign_Right);
+		}
+
+		if (UVerticalBoxSlot* RowSlot = RootBox->AddChildToVerticalBox(Row))
+		{
+			RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		}
+	};
+
+	AddStageCheckBoxRow(TEXT("StageFrontRailingLabelText"), TEXT("StageFrontRailingCheckBox"), TEXT("Front Railing"), StageFrontRailingLabelText, StageFrontRailingCheckBox);
+	StageFrontRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageFrontRailingChanged);
+	AddStageCheckBoxRow(TEXT("StageBackRailingLabelText"), TEXT("StageBackRailingCheckBox"), TEXT("Back Railing"), StageBackRailingLabelText, StageBackRailingCheckBox);
+	StageBackRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageBackRailingChanged);
+	AddStageCheckBoxRow(TEXT("StageLeftRailingLabelText"), TEXT("StageLeftRailingCheckBox"), TEXT("Left Railing"), StageLeftRailingLabelText, StageLeftRailingCheckBox);
+	StageLeftRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageLeftRailingChanged);
+	AddStageCheckBoxRow(TEXT("StageRightRailingLabelText"), TEXT("StageRightRailingCheckBox"), TEXT("Right Railing"), StageRightRailingLabelText, StageRightRailingCheckBox);
+	StageRightRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageRightRailingChanged);
+	AddStageCheckBoxRow(TEXT("StageLeftStepLabelText"), TEXT("StageLeftStepCheckBox"), TEXT("Left Step"), StageLeftStepLabelText, StageLeftStepCheckBox);
+	StageLeftStepCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageLeftStepChanged);
+	AddStageCheckBoxRow(TEXT("StageRightStepLabelText"), TEXT("StageRightStepCheckBox"), TEXT("Right Step"), StageRightStepLabelText, StageRightStepCheckBox);
+	StageRightStepCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageRightStepChanged);
+
 	ActionButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ActionButton"));
 	ActionButton->SetBackgroundColor(FLinearColor(0.18f, 0.45f, 0.70f, 1.0f));
 	ActionButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleActionButtonClicked);
@@ -567,7 +665,7 @@ FText UBuildMenuWidget::BuildDetailText() const
 		SelectedBuildItem ? *SelectedBuildItem->Category.ToString() : TEXT("Backdrop"),
 		ActiveMenuTab == EBuildItemType::TrussStructure
 			? TEXT("Truss Structure")
-			: TEXT("MBP Wall"),
+			: (ActiveMenuTab == EBuildItemType::StageDeck ? TEXT("Stage Deck") : TEXT("MBP Wall")),
 		SelectedBuildItem ? SelectedBuildItem->GridSnapSizeCm : 30.48f,
 		SelectedBuildItem ? SelectedBuildItem->RotationStepDegrees : 15.0f
 	);
@@ -616,6 +714,22 @@ FText UBuildMenuWidget::BuildDetailText() const
 				CurrentMBPEditTargetColumn + 1,
 				CurrentMBPEditDepthOffsetCm);
 		}
+	}
+	else if (ActiveMenuTab == EBuildItemType::StageDeck)
+	{
+		const FStageDeckBuildDefinition& Definition = CurrentStageDeckDefinition;
+		Detail += FString::Printf(
+			TEXT("\nRows: %d\nColumns: %d\nHeight: %s\nSurface: %s\nRailings: F:%s B:%s L:%s R:%s\nSteps: Left:%s Right:%s"),
+			Definition.Rows,
+			Definition.Columns,
+			*StageHeightPresetToOption(Definition.DefaultHeightPreset),
+			*StageSurfaceStyleToOption(Definition.DefaultSurfaceStyle),
+			Definition.bEnableFrontRailing ? TEXT("On") : TEXT("Off"),
+			Definition.bEnableBackRailing ? TEXT("On") : TEXT("Off"),
+			Definition.bEnableLeftRailing ? TEXT("On") : TEXT("Off"),
+			Definition.bEnableRightRailing ? TEXT("On") : TEXT("Off"),
+			Definition.bEnableLeftStep ? TEXT("On") : TEXT("Off"),
+			Definition.bEnableRightStep ? TEXT("On") : TEXT("Off"));
 	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
@@ -793,6 +907,11 @@ void UBuildMenuWidget::RefreshTabButtons()
 	{
 		MBPTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::MBPWall));
 	}
+
+	if (StageTabButton)
+	{
+		StageTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::StageDeck));
+	}
 }
 
 void UBuildMenuWidget::RefreshMBPControls()
@@ -927,6 +1046,115 @@ void UBuildMenuWidget::RefreshMBPControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshStageControls()
+{
+	bRefreshingControls = true;
+
+	const bool bIsStageItem = ActiveMenuTab == EBuildItemType::StageDeck;
+	const ESlateVisibility VisibleState = bIsStageItem ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+
+	if (ModeLabelText)
+	{
+		ModeLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	auto SetNumericControl = [VisibleState](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, bool bShow)
+	{
+		const ESlateVisibility ControlVisibility = bShow && VisibleState == ESlateVisibility::Visible
+			? ESlateVisibility::Visible
+			: ESlateVisibility::Collapsed;
+
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ControlVisibility);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ControlVisibility);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(MaxValue);
+			if (ControlVisibility == ESlateVisibility::Visible)
+			{
+				SpinBox->SetValue(Value);
+			}
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Columns"), CurrentStageDeckDefinition.Columns, 1.0f, 24.0f, bIsStageItem);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Rows"), CurrentStageDeckDefinition.Rows, 1.0f, 24.0f, bIsStageItem);
+	SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+	SetNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+
+	if (SidePieceLabelText) SidePieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (SidePieceComboBox) SidePieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (DepthPieceLabelText) DepthPieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (DepthPieceComboBox) DepthPieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	auto SetTextVisibility = [VisibleState](UTextBlock* Label)
+	{
+		if (Label)
+		{
+			Label->SetVisibility(VisibleState);
+		}
+	};
+
+	auto SetCheckBoxValue = [VisibleState](UCheckBox* CheckBox, bool bValue)
+	{
+		if (CheckBox)
+		{
+			CheckBox->SetVisibility(VisibleState);
+			if (VisibleState == ESlateVisibility::Visible)
+			{
+				CheckBox->SetIsChecked(bValue);
+			}
+		}
+	};
+
+	SetTextVisibility(StageHeightLabelText);
+	if (StageHeightComboBox)
+	{
+		StageHeightComboBox->SetVisibility(VisibleState);
+		if (bIsStageItem)
+		{
+			StageHeightComboBox->SetSelectedOption(StageHeightPresetToOption(CurrentStageDeckDefinition.DefaultHeightPreset));
+		}
+	}
+
+	SetTextVisibility(StageSurfaceLabelText);
+	if (StageSurfaceComboBox)
+	{
+		StageSurfaceComboBox->SetVisibility(VisibleState);
+		if (bIsStageItem)
+		{
+			StageSurfaceComboBox->SetSelectedOption(StageSurfaceStyleToOption(CurrentStageDeckDefinition.DefaultSurfaceStyle));
+		}
+	}
+
+	SetTextVisibility(StageFrontRailingLabelText);
+	SetCheckBoxValue(StageFrontRailingCheckBox, CurrentStageDeckDefinition.bEnableFrontRailing);
+	SetTextVisibility(StageBackRailingLabelText);
+	SetCheckBoxValue(StageBackRailingCheckBox, CurrentStageDeckDefinition.bEnableBackRailing);
+	SetTextVisibility(StageLeftRailingLabelText);
+	SetCheckBoxValue(StageLeftRailingCheckBox, CurrentStageDeckDefinition.bEnableLeftRailing);
+	SetTextVisibility(StageRightRailingLabelText);
+	SetCheckBoxValue(StageRightRailingCheckBox, CurrentStageDeckDefinition.bEnableRightRailing);
+	SetTextVisibility(StageLeftStepLabelText);
+	SetCheckBoxValue(StageLeftStepCheckBox, CurrentStageDeckDefinition.bEnableLeftStep);
+	SetTextVisibility(StageRightStepLabelText);
+	SetCheckBoxValue(StageRightStepCheckBox, CurrentStageDeckDefinition.bEnableRightStep);
+
+	bRefreshingControls = false;
+}
+
 void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
@@ -945,6 +1173,16 @@ void UBuildMenuWidget::ApplyMBPDefinitionToBuildManager()
 	}
 
 	BuildManager->SetActiveMBPWallDefinition(CurrentMBPWallDefinition);
+}
+
+void UBuildMenuWidget::ApplyStageDefinitionToBuildManager()
+{
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveStageDeckDefinition(CurrentStageDeckDefinition);
 }
 
 void UBuildMenuWidget::ApplyMBPEditToTarget()
@@ -979,6 +1217,11 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 	if (ActiveMenuTab == EBuildItemType::MBPWall)
 	{
 		return BuildItem->ItemType == EBuildItemType::MBPWall;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::StageDeck)
+	{
+		return BuildItem->ItemType == EBuildItemType::StageDeck;
 	}
 
 	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
@@ -1127,6 +1370,60 @@ EMBPPanelStyle UBuildMenuWidget::OptionToMBPStyle(const FString& Option)
 	return EMBPPanelStyle::Geo;
 }
 
+FString UBuildMenuWidget::StageHeightPresetToOption(EStageDeckHeightPreset HeightPreset)
+{
+	switch (HeightPreset)
+	{
+	case EStageDeckHeightPreset::In8:
+		return TEXT("8 Inch");
+	case EStageDeckHeightPreset::In12:
+		return TEXT("12 Inch");
+	case EStageDeckHeightPreset::In27:
+		return TEXT("27 Inch");
+	case EStageDeckHeightPreset::In24:
+	default:
+		return TEXT("24 Inch");
+	}
+}
+
+EStageDeckHeightPreset UBuildMenuWidget::OptionToStageHeightPreset(const FString& Option)
+{
+	if (Option == TEXT("8 Inch"))
+	{
+		return EStageDeckHeightPreset::In8;
+	}
+	if (Option == TEXT("12 Inch"))
+	{
+		return EStageDeckHeightPreset::In12;
+	}
+	if (Option == TEXT("27 Inch"))
+	{
+		return EStageDeckHeightPreset::In27;
+	}
+	return EStageDeckHeightPreset::In24;
+}
+
+FString UBuildMenuWidget::StageSurfaceStyleToOption(EStageDeckSurfaceStyle SurfaceStyle)
+{
+	switch (SurfaceStyle)
+	{
+	case EStageDeckSurfaceStyle::GrayCarpet:
+		return TEXT("Gray Carpet");
+	case EStageDeckSurfaceStyle::BlackTop:
+	default:
+		return TEXT("Black Top");
+	}
+}
+
+EStageDeckSurfaceStyle UBuildMenuWidget::OptionToStageSurfaceStyle(const FString& Option)
+{
+	if (Option == TEXT("Gray Carpet"))
+	{
+		return EStageDeckSurfaceStyle::GrayCarpet;
+	}
+	return EStageDeckSurfaceStyle::BlackTop;
+}
+
 FString UBuildMenuWidget::MBPEditScopeToOption(EMBPRuntimeEditScope Scope)
 {
 	switch (Scope)
@@ -1204,6 +1501,25 @@ void UBuildMenuWidget::HandleMBPTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleStageTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::StageDeck;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
@@ -1240,6 +1556,17 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 	{
 		CurrentMBPEditTargetRow = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
 		ApplyMBPEditToTarget();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::StageDeck)
+	{
+		CurrentStageDeckDefinition.Columns = FMath::Max(1, FMath::RoundToInt(NewValue));
+		ApplyStageDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -1290,6 +1617,17 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 	{
 		CurrentMBPEditTargetColumn = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
 		ApplyMBPEditToTarget();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::StageDeck)
+	{
+		CurrentStageDeckDefinition.Rows = FMath::Max(1, FMath::RoundToInt(NewValue));
+		ApplyStageDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -1453,6 +1791,126 @@ void UBuildMenuWidget::HandleMBPStyleChanged(FString SelectedItemOption, ESelect
 	{
 		ApplyMBPDefinitionToBuildManager();
 	}
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageHeightChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
+{
+	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.DefaultHeightPreset = OptionToStageHeightPreset(SelectedItemOption);
+	ApplyStageDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageSurfaceChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
+{
+	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.DefaultSurfaceStyle = OptionToStageSurfaceStyle(SelectedItemOption);
+	ApplyStageDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageFrontRailingChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.bEnableFrontRailing = bIsChecked;
+	ApplyStageDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageBackRailingChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.bEnableBackRailing = bIsChecked;
+	ApplyStageDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageLeftRailingChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.bEnableLeftRailing = bIsChecked;
+	ApplyStageDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageRightRailingChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.bEnableRightRailing = bIsChecked;
+	ApplyStageDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageLeftStepChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.bEnableLeftStep = bIsChecked;
+	ApplyStageDefinitionToBuildManager();
+	if (DetailText)
+	{
+		DetailText->SetText(BuildDetailText());
+	}
+}
+
+void UBuildMenuWidget::HandleStageRightStepChanged(bool bIsChecked)
+{
+	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	{
+		return;
+	}
+
+	CurrentStageDeckDefinition.bEnableRightStep = bIsChecked;
+	ApplyStageDefinitionToBuildManager();
 	if (DetailText)
 	{
 		DetailText->SetText(BuildDetailText());

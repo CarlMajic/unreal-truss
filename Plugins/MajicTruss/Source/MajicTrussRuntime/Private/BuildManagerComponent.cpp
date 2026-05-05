@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "MBPWallActor.h"
+#include "StageDeckActor.h"
 #include "TrussStructureActor.h"
 
 UBuildManagerComponent::UBuildManagerComponent()
@@ -29,6 +30,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	SelectedBuildItem = BuildItem;
 	ActiveTrussDefinition = BuildItem ? BuildItem->DefaultTrussDefinition : FTrussBuildDefinition();
 	ActiveMBPWallDefinition = BuildItem ? BuildItem->DefaultMBPWallDefinition : FMBPWallDefinition();
+	ActiveStageDeckDefinition = BuildItem ? BuildItem->DefaultStageDeckDefinition : FStageDeckBuildDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -63,6 +65,16 @@ void UBuildManagerComponent::SetActiveTrussDefinition(const FTrussBuildDefinitio
 void UBuildManagerComponent::SetActiveMBPWallDefinition(const FMBPWallDefinition& Definition)
 {
 	ActiveMBPWallDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveStageDeckDefinition(const FStageDeckBuildDefinition& Definition)
+{
+	ActiveStageDeckDefinition = Definition;
 
 	if (ActivePreviewActor)
 	{
@@ -263,6 +275,16 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 		{
 			MBPWallActor->bBuildOnConstruction = false;
 			MBPWallActor->ApplyWallDefinition(ActiveMBPWallDefinition, true);
+		}
+		return;
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::StageDeck)
+	{
+		if (AStageDeckActor* StageDeckActor = Cast<AStageDeckActor>(Actor))
+		{
+			StageDeckActor->bBuildOnConstruction = false;
+			StageDeckActor->ApplyBuildDefinition(ActiveStageDeckDefinition, true);
 		}
 	}
 }

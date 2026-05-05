@@ -4,12 +4,14 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "MBPWallActor.h"
+#include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
 #include "BuildMenuWidget.generated.h"
 
 class UBuildItemDataAsset;
 class UBuildManagerComponent;
 class UButton;
+class UCheckBox;
 class UHorizontalBox;
 class UWhiteComboBoxString;
 class USpinBox;
@@ -76,6 +78,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FMBPWallDefinition GetCurrentMBPWallDefinition() const;
 
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FStageDeckBuildDefinition GetCurrentStageDeckDefinition() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
 
@@ -108,6 +113,9 @@ private:
 	FMBPWallDefinition CurrentMBPWallDefinition;
 
 	UPROPERTY(Transient)
+	FStageDeckBuildDefinition CurrentStageDeckDefinition;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBuildManagerComponent> BuildManager = nullptr;
 
 	UPROPERTY(Transient)
@@ -124,6 +132,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> MBPTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> StageTabButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HeaderText = nullptr;
@@ -198,6 +209,54 @@ private:
 	TObjectPtr<UWhiteComboBoxString> MBPStyleComboBox = nullptr;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageHeightLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWhiteComboBoxString> StageHeightComboBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageSurfaceLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWhiteComboBoxString> StageSurfaceComboBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageFrontRailingLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageFrontRailingCheckBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageBackRailingLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageBackRailingCheckBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageLeftRailingLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageLeftRailingCheckBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageRightRailingLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageRightRailingCheckBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageLeftStepLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageLeftStepCheckBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> StageRightStepLabelText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCheckBox> StageRightStepCheckBox = nullptr;
+
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<UBuildMenuItemButtonProxy>> ButtonProxies;
 
 	UPROPERTY(Transient)
@@ -221,8 +280,10 @@ private:
 	void RefreshTabButtons();
 	void RefreshTrussControls();
 	void RefreshMBPControls();
+	void RefreshStageControls();
 	void ApplyTrussDefinitionToBuildManager();
 	void ApplyMBPDefinitionToBuildManager();
+	void ApplyStageDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	bool ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildItem) const;
 	static FString BuildModeToOption(ETrussBuildMode BuildMode);
@@ -231,6 +292,10 @@ private:
 	static ETrussPieceType OptionToPieceType(const FString& Option);
 	static FString MBPStyleToOption(EMBPPanelStyle Style);
 	static EMBPPanelStyle OptionToMBPStyle(const FString& Option);
+	static FString StageHeightPresetToOption(EStageDeckHeightPreset HeightPreset);
+	static EStageDeckHeightPreset OptionToStageHeightPreset(const FString& Option);
+	static FString StageSurfaceStyleToOption(EStageDeckSurfaceStyle SurfaceStyle);
+	static EStageDeckSurfaceStyle OptionToStageSurfaceStyle(const FString& Option);
 	static FString MBPEditScopeToOption(EMBPRuntimeEditScope Scope);
 	static EMBPRuntimeEditScope OptionToMBPEditScope(const FString& Option);
 	UWidget* GenerateComboItemWidget(FString Item);
@@ -240,6 +305,9 @@ private:
 
 	UFUNCTION()
 	void HandleMBPTabClicked();
+
+	UFUNCTION()
+	void HandleStageTabClicked();
 
 	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
@@ -270,6 +338,30 @@ private:
 
 	UFUNCTION()
 	void HandleMBPStyleChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void HandleStageHeightChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void HandleStageSurfaceChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void HandleStageFrontRailingChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleStageBackRailingChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleStageLeftRailingChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleStageRightRailingChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleStageLeftStepChanged(bool bIsChecked);
+
+	UFUNCTION()
+	void HandleStageRightStepChanged(bool bIsChecked);
 
 	UFUNCTION()
 	void HandleActionButtonClicked();

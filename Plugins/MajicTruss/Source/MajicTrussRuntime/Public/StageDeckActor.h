@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "StageDeckBuildDefinition.h"
 #include "GameFramework/Actor.h"
 #include "StageDeckActor.generated.h"
 
@@ -9,22 +10,6 @@ class UInstancedStaticMeshComponent;
 class UMaterialInterface;
 class UStaticMeshComponent;
 class UTextRenderComponent;
-
-UENUM(BlueprintType)
-enum class EStageDeckHeightPreset : uint8
-{
-	In8 UMETA(DisplayName = "8 Inch"),
-	In12 UMETA(DisplayName = "12 Inch"),
-	In24 UMETA(DisplayName = "24 Inch"),
-	In27 UMETA(DisplayName = "27 Inch")
-};
-
-UENUM(BlueprintType)
-enum class EStageDeckSurfaceStyle : uint8
-{
-	BlackTop UMETA(DisplayName = "Black Top"),
-	GrayCarpet UMETA(DisplayName = "Gray Carpet")
-};
 
 UENUM(BlueprintType)
 enum class EStageDeckBatchAxis : uint8
@@ -258,6 +243,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Stage")
 	void RebuildStage();
+
+	UFUNCTION(BlueprintCallable, Category = "Stage")
+	void ApplyBuildDefinition(const FStageDeckBuildDefinition& Definition, bool bRebuildNow = true);
 
 	UFUNCTION(BlueprintCallable, Category = "Stage")
 	bool GetCellIndicesFromWorldLocation(const FVector& WorldLocation, int32& OutRow, int32& OutColumn) const;

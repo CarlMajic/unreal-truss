@@ -8,6 +8,7 @@
 #include "BuildPreviewActor.h"
 #include "LightPlacementMenuWidget.h"
 #include "MBPWallActor.h"
+#include "StageDeckActor.h"
 #include "TargetingPointerComponent.h"
 #include "InputCoreTypes.h"
 #include "Camera/CameraComponent.h"
@@ -39,6 +40,27 @@ static UBuildItemDataAsset* CreateFallbackMBPBuildItem(UObject* Outer)
 	BuildItem->BuildActorClass = AMBPWallActor::StaticClass();
 	BuildItem->GridSnapSizeCm = 30.48f;
 	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackStageBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("StageDeckDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Stage"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime stage builder."));
+	BuildItem->Category = TEXT("Stage");
+	BuildItem->ItemType = EBuildItemType::StageDeck;
+	BuildItem->BuildActorClass = AStageDeckActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 121.92f;
+	BuildItem->RotationStepDegrees = 90.0f;
 	BuildItem->bUseGridSnap = true;
 	BuildItem->bAlignToSurfaceNormal = false;
 	return BuildItem;
@@ -318,6 +340,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	{
 		BuildManagerComponent->SetActiveMBPWallDefinition(BuildMenuWidget->GetCurrentMBPWallDefinition());
 	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::StageDeck)
+	{
+		BuildManagerComponent->SetActiveStageDeckDefinition(BuildMenuWidget->GetCurrentStageDeckDefinition());
+	}
 	BuildManagerComponent->EnterBuildMode();
 }
 
@@ -581,6 +607,14 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 			AvailableBuildItems.Add(FallbackMBPItem);
 		}
 	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::StageDeck))
+	{
+		if (UBuildItemDataAsset* FallbackStageItem = CreateFallbackStageBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackStageItem);
+		}
+	}
 }
 
 void AUnrealTrussBuildPawn::GatherLightingBlueprints()
@@ -829,6 +863,10 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::MBPWall)
 	{
 		BuildManagerComponent->SetActiveMBPWallDefinition(BuildMenuWidget->GetCurrentMBPWallDefinition());
+	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::StageDeck)
+	{
+		BuildManagerComponent->SetActiveStageDeckDefinition(BuildMenuWidget->GetCurrentStageDeckDefinition());
 	}
 	else
 	{

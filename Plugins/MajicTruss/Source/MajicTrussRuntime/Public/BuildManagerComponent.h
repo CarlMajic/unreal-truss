@@ -8,6 +8,7 @@
 class ABuildPreviewActor;
 class AMBPWallActor;
 class APlayerController;
+class AStageDeckActor;
 class ATrussStructureActor;
 
 USTRUCT(BlueprintType)
@@ -55,6 +56,9 @@ public:
 	FMBPWallDefinition ActiveMBPWallDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FStageDeckBuildDefinition ActiveStageDeckDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -71,6 +75,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveMBPWallDefinition(const FMBPWallDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveStageDeckDefinition(const FStageDeckBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);
