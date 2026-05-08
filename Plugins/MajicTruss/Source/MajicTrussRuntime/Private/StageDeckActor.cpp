@@ -29,7 +29,7 @@ const FVector PreviousLeftRailingOffset(189.700066f, 120.653588f, 32.453884f);
 const FVector PreviousRightRailingOffset(58.727953f, -121.189095f, 32.453884f);
 const FVector Tuned46SpanAdjustment(-61.084781f, 0.0f, 0.0f);
 
-bool IsStaticMeshAsset(const FAssetData& AssetData)
+bool IsStageStaticMeshAsset(const FAssetData& AssetData)
 {
 	return AssetData.AssetClassPath == UStaticMesh::StaticClass()->GetClassPathName();
 }
@@ -611,7 +611,7 @@ TArray<FSoftObjectPath> AStageDeckActor::GetMeshPathsForFolder(const FString& As
 
 	for (const FAssetData& AssetData : Assets)
 	{
-		if (IsStaticMeshAsset(AssetData))
+		if (IsStageStaticMeshAsset(AssetData))
 		{
 			MeshPaths.Add(AssetData.ToSoftObjectPath());
 		}

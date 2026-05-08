@@ -167,6 +167,53 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 
 ## Project Log
 
+<details open>
+<summary><strong>2026-05-08: Editor-first pipe-and-drape run actor</strong></summary>
+
+### 2026-05-08
+
+Current direction:
+
+- Keep `ADrapeRunActor` editor-first until the physical pipe-and-drape model is stable.
+- Use the new shared-origin drape assets in `Content/Majic_Gear/Drape` instead of the older combined section imports.
+- Treat Chaos cloth as the next experiment after the static/hardware actor is reliable.
+
+What has been done:
+
+- Added first-pass `ADrapeRunActor` in `MajicTrussRuntime`.
+- Added freeform drape run controls:
+  - `Length (ft)`
+  - `Height (ft)`
+  - automatic section calculation from 7-12 ft crossbars
+  - hardware and drape visibility toggles
+- Added automatic pole-kit selection:
+  - 72 inch pole kit for heights up to 120 in
+  - 96 inch pole kit for heights up to 144 in
+  - 120 inch pole kit for taller runs
+- Reworked the crossbar as a telescoping kit:
+  - inside rod group stays fixed by default
+  - outside rod group slides as the section span changes
+  - current calibrated defaults:
+    - `CrossbarPlacementOffsetCm.X = 317`
+    - `OutsideRodSpanAdjustmentCm = 49`
+- Added inside-upright calibration by pole kit:
+  - `Inside72InchPoleCalibrationOffsetCm = 58`
+  - `Inside96InchPoleCalibrationOffsetCm = 89`
+  - `Inside120InchPoleCalibrationOffsetCm = 0`
+- Added static drape generation with material override and calibrated placement:
+  - `DrapePlacementOffsetCm = (150, 0.1, 242)`
+  - `DrapeScale = (1, 1, 0.5)`
+  - `DrapeTopAnchorLocalZCm = 486`
+- Added switches for static mesh, Chaos cloth, and material-sway drape modes. Static mesh mode is the currently calibrated path.
+
+Notes:
+
+- The drape width scaling is close enough for now, but shorter-than-12-ft sections can still show minor horizontal drift because the drape mesh scales around its own origin.
+- The next likely pass is Chaos cloth using a pre-authored cloth-capable drape panel, not runtime creation of brand-new cloth assets.
+- Runtime placement/menu integration should wait until the editor actor has had more use in real layouts.
+
+</details>
+
 <details>
 <summary><strong>2026-05-05: Stage railing pass and updated podium integration</strong></summary>
 
