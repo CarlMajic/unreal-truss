@@ -7,6 +7,7 @@
 #include "MBPWallActor.h"
 #include "StageDeckActor.h"
 #include "TrussStructureActor.h"
+#include "VideoPlacementActor.h"
 
 UBuildManagerComponent::UBuildManagerComponent()
 {
@@ -33,6 +34,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	ActiveMBPWallDefinition = BuildItem ? BuildItem->DefaultMBPWallDefinition : FMBPWallDefinition();
 	ActiveStageDeckDefinition = BuildItem ? BuildItem->DefaultStageDeckDefinition : FStageDeckBuildDefinition();
 	ActiveDrapeRunDefinition = BuildItem ? BuildItem->DefaultDrapeRunDefinition : FDrapeRunBuildDefinition();
+	ActiveVideoPlacementDefinition = BuildItem ? BuildItem->DefaultVideoPlacementDefinition : FVideoPlacementBuildDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -87,6 +89,16 @@ void UBuildManagerComponent::SetActiveStageDeckDefinition(const FStageDeckBuildD
 void UBuildManagerComponent::SetActiveDrapeRunDefinition(const FDrapeRunBuildDefinition& Definition)
 {
 	ActiveDrapeRunDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveVideoPlacementDefinition(const FVideoPlacementBuildDefinition& Definition)
+{
+	ActiveVideoPlacementDefinition = Definition;
 
 	if (ActivePreviewActor)
 	{
@@ -307,6 +319,16 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 		{
 			DrapeRunActor->bBuildOnConstruction = false;
 			DrapeRunActor->ApplyBuildDefinition(ActiveDrapeRunDefinition, true);
+		}
+		return;
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::VideoPlacement)
+	{
+		if (AVideoPlacementActor* VideoPlacementActor = Cast<AVideoPlacementActor>(Actor))
+		{
+			VideoPlacementActor->bBuildOnConstruction = false;
+			VideoPlacementActor->ApplyBuildDefinition(ActiveVideoPlacementDefinition, true);
 		}
 	}
 }

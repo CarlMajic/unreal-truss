@@ -11,6 +11,7 @@ class AMBPWallActor;
 class APlayerController;
 class AStageDeckActor;
 class ATrussStructureActor;
+class AVideoPlacementActor;
 
 USTRUCT(BlueprintType)
 struct FBuildPlacementResult
@@ -63,6 +64,9 @@ public:
 	FDrapeRunBuildDefinition ActiveDrapeRunDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FVideoPlacementBuildDefinition ActiveVideoPlacementDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -85,6 +89,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveDrapeRunDefinition(const FDrapeRunBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveVideoPlacementDefinition(const FVideoPlacementBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);

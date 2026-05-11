@@ -86,6 +86,11 @@ Core goals:
     <td>Editor and runtime create/edit workflow started.</td>
   </tr>
   <tr>
+    <td><strong>Video</strong></td>
+    <td>TV placement on truss towers first, then Altman bases with black pipe, projection screen kits, and video wall parts.</td>
+    <td>First runtime TV-on-truss placement pass started.</td>
+  </tr>
+  <tr>
     <td><strong>Decor, Bars, Tables</strong></td>
     <td>Venue-ready build items that use the same preview, placement, editing, and save/load direction.</td>
     <td>Planned expansion.</td>
@@ -157,7 +162,7 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 3. Validate final Y-run truss fixture alignment on rectangle and cube structures.
 4. Improve MBP authoring with easier slot editing, pattern helpers, and mixed-style presets.
 5. Improve stage deck authoring, podium integration, and runtime placement/editing.
-6. Add the next venue gear tool, likely TV/display stands or speaker stands.
+6. Continue the video placement tool by adding Altman bases and selectable black pipe lengths.
 7. Add decor, bars, tables, and other venue-ready build items.
 8. Add VR as a new input layer with controller-ray targeting and world-space UI.
 
@@ -172,6 +177,48 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 | `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details open>
+<summary><strong>2026-05-11: First video placement pass and refreshed TV/rigging assets</strong></summary>
+
+### 2026-05-11
+
+Current direction:
+
+- Build video as a broader placement tool with TV, projection screen, and video wall modes over time.
+- Start with TV placement on truss towers because the truss tower workflow already exists.
+- Add Altman base and black pipe support next using the new shared-origin rigging assets.
+
+What has been done:
+
+- Added `VideoPlacement` as a shared build item type.
+- Added `FVideoPlacementBuildDefinition` support to `UBuildItemDataAsset` and `UBuildManagerComponent`.
+- Added first-pass `AVideoPlacementActor` in `MajicTrussRuntime`.
+- Added a `Video` tab to the runtime build menu.
+- Added runtime video controls:
+  - `TV Model`
+  - `TV Center Height (ft)`
+  - `Tower Height (ft)`
+- Added fallback runtime video build item creation when no saved video build asset exists.
+- Replaced the old TV static mesh references with the refreshed TV asset paths that use the new mesh object names.
+- Added `Vizio 70 LED` and `BenQ 25 Preview` to the TV model list.
+- Added the full UPM assembly to the video actor using all parts from `Content/Majic_Gear/Rigging/UPM/StaticMeshes`.
+- Added two UPM assemblies per TV, placed at the TV center height plus/minus `15.24 cm`.
+- Locked in the current placement calibration:
+  - `TowerPlacementOffsetCm = (-12, -16, 0)`
+  - editor-visible tower rotation target is `X = 0, Y = 90, Z = 90`
+  - code value for that target is `FRotator(90, 90, 0)` because `FRotator(Pitch, Yaw, Roll)` maps to editor `X/Y/Z = Roll/Pitch/Yaw`
+  - `TVPlacementOffsetCm = (1.786592, -19.894883, 0)`
+  - `TVPlacementRotation = (0, 0, 180 display axis)`
+  - `UPMPlacementRotation = (0, 0, 180 display axis)`
+
+Notes:
+
+- New TV meshes are intended to have the TV center at the origin, so `TV Center Height (ft)` should directly control the visual TV center.
+- The rigging folder now includes `Altman_Base`, `UPM`, and black pipe lengths including `7`, `12`, `24`, `36`, `48`, `72`, `96`, and `120` inch pieces.
+- The next pass should add an Altman-base/black-pipe TV support mode, then reuse the same TV and UPM placement logic.
+
+</details>
 
 <details open>
 <summary><strong>2026-05-11: Runtime pipe-and-drape placement and editing</strong></summary>

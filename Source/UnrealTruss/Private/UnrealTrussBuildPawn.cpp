@@ -21,6 +21,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "TrussStructureActor.h"
+#include "VideoPlacementActor.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 
 namespace
@@ -87,6 +88,30 @@ static UBuildItemDataAsset* CreateFallbackDrapeBuildItem(UObject* Outer)
 	BuildItem->bAlignToSurfaceNormal = false;
 	BuildItem->DefaultDrapeRunDefinition.LengthFt = 30.0f;
 	BuildItem->DefaultDrapeRunDefinition.HeightFt = 8.0f;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackVideoBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("VideoPlacementDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Video"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime TV on truss tower builder."));
+	BuildItem->Category = TEXT("Video");
+	BuildItem->ItemType = EBuildItemType::VideoPlacement;
+	BuildItem->BuildActorClass = AVideoPlacementActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	BuildItem->DefaultVideoPlacementDefinition.TVModel = EVideoTVModel::Samsung58;
+	BuildItem->DefaultVideoPlacementDefinition.TVCenterHeightFt = 6.0f;
+	BuildItem->DefaultVideoPlacementDefinition.TowerHeightFt = 8.0f;
 	return BuildItem;
 }
 
@@ -424,6 +449,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::DrapeRun)
 	{
 		BuildManagerComponent->SetActiveDrapeRunDefinition(BuildMenuWidget->GetCurrentDrapeRunDefinition());
+	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::VideoPlacement)
+	{
+		BuildManagerComponent->SetActiveVideoPlacementDefinition(BuildMenuWidget->GetCurrentVideoPlacementDefinition());
 	}
 	BuildManagerComponent->EnterBuildMode();
 }
@@ -815,6 +844,14 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 			AvailableBuildItems.Add(FallbackDrapeItem);
 		}
 	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::VideoPlacement))
+	{
+		if (UBuildItemDataAsset* FallbackVideoItem = CreateFallbackVideoBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackVideoItem);
+		}
+	}
 }
 
 void AUnrealTrussBuildPawn::GatherLightingBlueprints()
@@ -1071,6 +1108,10 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::DrapeRun)
 	{
 		BuildManagerComponent->SetActiveDrapeRunDefinition(BuildMenuWidget->GetCurrentDrapeRunDefinition());
+	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::VideoPlacement)
+	{
+		BuildManagerComponent->SetActiveVideoPlacementDefinition(BuildMenuWidget->GetCurrentVideoPlacementDefinition());
 	}
 	else
 	{

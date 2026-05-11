@@ -26,7 +26,8 @@ static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 {
 	if (ItemType == EBuildItemType::MBPWall ||
 		ItemType == EBuildItemType::StageDeck ||
-		ItemType == EBuildItemType::DrapeRun)
+		ItemType == EBuildItemType::DrapeRun ||
+		ItemType == EBuildItemType::VideoPlacement)
 	{
 		return ItemType;
 	}
@@ -138,6 +139,7 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 		CurrentMBPWallDefinition = SelectedBuildItem->DefaultMBPWallDefinition;
 		CurrentStageDeckDefinition = SelectedBuildItem->DefaultStageDeckDefinition;
 		CurrentDrapeRunDefinition = SelectedBuildItem->DefaultDrapeRunDefinition;
+		CurrentVideoPlacementDefinition = SelectedBuildItem->DefaultVideoPlacementDefinition;
 		ActiveMenuTab = BuildTabForItemType(SelectedBuildItem->ItemType);
 	}
 
@@ -154,6 +156,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		CurrentMBPWallDefinition = InSelectedItem->DefaultMBPWallDefinition;
 		CurrentStageDeckDefinition = InSelectedItem->DefaultStageDeckDefinition;
 		CurrentDrapeRunDefinition = InSelectedItem->DefaultDrapeRunDefinition;
+		CurrentVideoPlacementDefinition = InSelectedItem->DefaultVideoPlacementDefinition;
 		ActiveMenuTab = BuildTabForItemType(InSelectedItem->ItemType);
 	}
 
@@ -164,6 +167,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		ApplyMBPDefinitionToBuildManager();
 		ApplyStageDefinitionToBuildManager();
 		ApplyDrapeDefinitionToBuildManager();
+		ApplyVideoDefinitionToBuildManager();
 	}
 
 	RefreshMenu();
@@ -195,6 +199,7 @@ void UBuildMenuWidget::RefreshMenu()
 	RefreshMBPControls();
 	RefreshStageControls();
 	RefreshDrapeControls();
+	RefreshVideoControls();
 	RefreshTabButtons();
 	RebuildItemButtons();
 }
@@ -222,6 +227,11 @@ FStageDeckBuildDefinition UBuildMenuWidget::GetCurrentStageDeckDefinition() cons
 FDrapeRunBuildDefinition UBuildMenuWidget::GetCurrentDrapeRunDefinition() const
 {
 	return CurrentDrapeRunDefinition;
+}
+
+FVideoPlacementBuildDefinition UBuildMenuWidget::GetCurrentVideoPlacementDefinition() const
+{
+	return CurrentVideoPlacementDefinition;
 }
 
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
@@ -460,7 +470,18 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	DrapeTabText->SetText(FText::FromString(TEXT("Drape")));
 	DrapeTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	DrapeTabButton->AddChild(DrapeTabText);
-	TabButtonBox->AddChildToHorizontalBox(DrapeTabButton);
+	if (UHorizontalBoxSlot* DrapeTabSlot = TabButtonBox->AddChildToHorizontalBox(DrapeTabButton))
+	{
+		DrapeTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	VideoTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("VideoTabButton"));
+	VideoTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleVideoTabClicked);
+	UTextBlock* VideoTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("VideoTabText"));
+	VideoTabText->SetText(FText::FromString(TEXT("Video")));
+	VideoTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	VideoTabButton->AddChild(VideoTabText);
+	TabButtonBox->AddChildToHorizontalBox(VideoTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -818,14 +839,16 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun)
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
 
 	const FText Name = SelectedBuildItem
 		? (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName)
-		: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall")));
+		: (ActiveMenuTab == EBuildItemType::VideoPlacement
+			? FText::FromString(TEXT("Video"))
+			: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall"))));
 
 	const TCHAR* TypeLabel = TEXT("MBP Wall");
 	if (ActiveMenuTab == EBuildItemType::TrussStructure)
@@ -839,6 +862,10 @@ FText UBuildMenuWidget::BuildDetailText() const
 	else if (ActiveMenuTab == EBuildItemType::DrapeRun)
 	{
 		TypeLabel = TEXT("Drape Run");
+	}
+	else if (ActiveMenuTab == EBuildItemType::VideoPlacement)
+	{
+		TypeLabel = TEXT("Video Placement");
 	}
 
 	FString Detail = FString::Printf(
@@ -928,6 +955,15 @@ FText UBuildMenuWidget::BuildDetailText() const
 			TEXT("\nLength: %.1f ft\nHeight: %.1f ft"),
 			Definition.LengthFt,
 			Definition.HeightFt);
+	}
+	else if (ActiveMenuTab == EBuildItemType::VideoPlacement)
+	{
+		const FVideoPlacementBuildDefinition& Definition = CurrentVideoPlacementDefinition;
+		Detail += FString::Printf(
+			TEXT("\nVideo Mode: TV on Truss Tower\nTV: %s\nTV Center Height: %.1f ft\nTower Height: %.1f ft"),
+			*TVModelToOption(Definition.TVModel),
+			Definition.TVCenterHeightFt,
+			Definition.TowerHeightFt);
 	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
@@ -1134,6 +1170,11 @@ void UBuildMenuWidget::RefreshTabButtons()
 	if (DrapeTabButton)
 	{
 		DrapeTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::DrapeRun));
+	}
+
+	if (VideoTabButton)
+	{
+		VideoTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::VideoPlacement));
 	}
 }
 
@@ -1484,6 +1525,81 @@ void UBuildMenuWidget::RefreshDrapeControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshVideoControls()
+{
+	if (ActiveMenuTab != EBuildItemType::VideoPlacement)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	if (ModeLabelText)
+	{
+		ModeLabelText->SetText(FText::FromString(TEXT("TV Model")));
+		ModeLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(ESlateVisibility::Visible);
+		ModeComboBox->ClearOptions();
+		for (EVideoTVModel TVModel : {
+			EVideoTVModel::Hisense58,
+			EVideoTVModel::Insignia43,
+			EVideoTVModel::Philips46,
+			EVideoTVModel::Samsung22,
+			EVideoTVModel::Samsung55Outdoor,
+			EVideoTVModel::Samsung58,
+			EVideoTVModel::Samsung60,
+			EVideoTVModel::Samsung82Crystal,
+			EVideoTVModel::Samsung82Smart,
+			EVideoTVModel::Sharp55,
+			EVideoTVModel::Sharp60,
+			EVideoTVModel::Sharp80,
+			EVideoTVModel::Sharp90,
+			EVideoTVModel::Vizio70,
+			EVideoTVModel::Benq25Preview})
+		{
+			ModeComboBox->AddOption(TVModelToOption(TVModel));
+		}
+		ModeComboBox->SetSelectedOption(TVModelToOption(CurrentVideoPlacementDefinition.TVModel));
+	}
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, float SliderMax)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ESlateVisibility::Visible);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(SliderMax);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("TV Center Height (ft)"), CurrentVideoPlacementDefinition.TVCenterHeightFt, 1.0f, 30.0f, 16.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Tower Height (ft)"), CurrentVideoPlacementDefinition.TowerHeightFt, 2.0f, 30.0f, 20.0f);
+
+	if (TertiaryValueLabelText) TertiaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (TertiaryValueSpinBox) TertiaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (SidePieceLabelText) SidePieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (SidePieceComboBox) SidePieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (DepthPieceLabelText) DepthPieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (DepthPieceComboBox) DepthPieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	bRefreshingControls = false;
+}
+
 void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
@@ -1522,6 +1638,16 @@ void UBuildMenuWidget::ApplyDrapeDefinitionToBuildManager()
 	}
 
 	BuildManager->SetActiveDrapeRunDefinition(CurrentDrapeRunDefinition);
+}
+
+void UBuildMenuWidget::ApplyVideoDefinitionToBuildManager()
+{
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::VideoPlacement)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveVideoPlacementDefinition(CurrentVideoPlacementDefinition);
 }
 
 void UBuildMenuWidget::ApplyDrapeEditToTarget()
@@ -1613,6 +1739,11 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 	if (ActiveMenuTab == EBuildItemType::DrapeRun)
 	{
 		return BuildItem->ItemType == EBuildItemType::DrapeRun;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
+	{
+		return BuildItem->ItemType == EBuildItemType::VideoPlacement;
 	}
 
 	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
@@ -1864,6 +1995,63 @@ EStageRuntimeEditScope UBuildMenuWidget::OptionToStageEditScope(const FString& O
 	return EStageRuntimeEditScope::Cell;
 }
 
+FString UBuildMenuWidget::TVModelToOption(EVideoTVModel TVModel)
+{
+	switch (TVModel)
+	{
+	case EVideoTVModel::Hisense58:
+		return TEXT("Hisense 58 4K");
+	case EVideoTVModel::Insignia43:
+		return TEXT("Insignia 43 1080p");
+	case EVideoTVModel::Philips46:
+		return TEXT("Philips 46 Monitor");
+	case EVideoTVModel::Samsung22:
+		return TEXT("Samsung 22 Monitor");
+	case EVideoTVModel::Samsung55Outdoor:
+		return TEXT("Samsung 55 Outdoor");
+	case EVideoTVModel::Samsung60:
+		return TEXT("Samsung 60 HD");
+	case EVideoTVModel::Samsung82Crystal:
+		return TEXT("Samsung 82 Crystal");
+	case EVideoTVModel::Samsung82Smart:
+		return TEXT("Samsung 82 Smart");
+	case EVideoTVModel::Sharp55:
+		return TEXT("Sharp 55 4K");
+	case EVideoTVModel::Sharp60:
+		return TEXT("Sharp 60 4K");
+	case EVideoTVModel::Sharp80:
+		return TEXT("Sharp 80 LED");
+	case EVideoTVModel::Sharp90:
+		return TEXT("Sharp 90 LED");
+	case EVideoTVModel::Vizio70:
+		return TEXT("Vizio 70 LED");
+	case EVideoTVModel::Benq25Preview:
+		return TEXT("BenQ 25 Preview");
+	case EVideoTVModel::Samsung58:
+	default:
+		return TEXT("Samsung 58 UHD");
+	}
+}
+
+EVideoTVModel UBuildMenuWidget::OptionToTVModel(const FString& Option)
+{
+	if (Option == TEXT("Hisense 58 4K")) return EVideoTVModel::Hisense58;
+	if (Option == TEXT("Insignia 43 1080p")) return EVideoTVModel::Insignia43;
+	if (Option == TEXT("Philips 46 Monitor")) return EVideoTVModel::Philips46;
+	if (Option == TEXT("Samsung 22 Monitor")) return EVideoTVModel::Samsung22;
+	if (Option == TEXT("Samsung 55 Outdoor")) return EVideoTVModel::Samsung55Outdoor;
+	if (Option == TEXT("Samsung 60 HD")) return EVideoTVModel::Samsung60;
+	if (Option == TEXT("Samsung 82 Crystal")) return EVideoTVModel::Samsung82Crystal;
+	if (Option == TEXT("Samsung 82 Smart")) return EVideoTVModel::Samsung82Smart;
+	if (Option == TEXT("Sharp 55 4K")) return EVideoTVModel::Sharp55;
+	if (Option == TEXT("Sharp 60 4K")) return EVideoTVModel::Sharp60;
+	if (Option == TEXT("Sharp 80 LED")) return EVideoTVModel::Sharp80;
+	if (Option == TEXT("Sharp 90 LED")) return EVideoTVModel::Sharp90;
+	if (Option == TEXT("Vizio 70 LED")) return EVideoTVModel::Vizio70;
+	if (Option == TEXT("BenQ 25 Preview")) return EVideoTVModel::Benq25Preview;
+	return EVideoTVModel::Samsung58;
+}
+
 UWidget* UBuildMenuWidget::GenerateComboItemWidget(FString Item)
 {
 	UTextBlock* ItemText = WidgetTree ? WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass()) : NewObject<UTextBlock>(this);
@@ -1952,6 +2140,25 @@ void UBuildMenuWidget::HandleDrapeTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleVideoTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::VideoPlacement;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
@@ -1975,6 +2182,17 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 			SyncCurrentStageCellFromTarget();
 		}
 		RefreshMenu();
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
+	{
+		CurrentVideoPlacementDefinition.TVModel = OptionToTVModel(SelectedItemOption);
+		ApplyVideoDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
 		return;
 	}
 
@@ -2045,6 +2263,17 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 		{
 			ApplyDrapeDefinitionToBuildManager();
 		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
+	{
+		CurrentVideoPlacementDefinition.TVCenterHeightFt = FMath::Max(NewValue, 1.0f);
+		ApplyVideoDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -2141,6 +2370,17 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 		{
 			ApplyDrapeDefinitionToBuildManager();
 		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
+	{
+		CurrentVideoPlacementDefinition.TowerHeightFt = FMath::Max(NewValue, 2.0f);
+		ApplyVideoDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());

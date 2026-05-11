@@ -8,6 +8,7 @@
 #include "StageDeckActor.h"
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
+#include "VideoPlacementActor.h"
 #include "BuildMenuWidget.generated.h"
 
 class UBuildItemDataAsset;
@@ -92,6 +93,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FDrapeRunBuildDefinition GetCurrentDrapeRunDefinition() const;
 
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FVideoPlacementBuildDefinition GetCurrentVideoPlacementDefinition() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
 
@@ -145,6 +149,9 @@ private:
 	FDrapeRunBuildDefinition CurrentDrapeRunDefinition;
 
 	UPROPERTY(Transient)
+	FVideoPlacementBuildDefinition CurrentVideoPlacementDefinition;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBuildManagerComponent> BuildManager = nullptr;
 
 	UPROPERTY(Transient)
@@ -167,6 +174,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> DrapeTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> VideoTabButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HeaderText = nullptr;
@@ -340,10 +350,12 @@ private:
 	void RefreshMBPControls();
 	void RefreshStageControls();
 	void RefreshDrapeControls();
+	void RefreshVideoControls();
 	void ApplyTrussDefinitionToBuildManager();
 	void ApplyMBPDefinitionToBuildManager();
 	void ApplyStageDefinitionToBuildManager();
 	void ApplyDrapeDefinitionToBuildManager();
+	void ApplyVideoDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	void ApplyStageEditToTarget();
 	void ApplyDrapeEditToTarget();
@@ -363,6 +375,8 @@ private:
 	static EMBPRuntimeEditScope OptionToMBPEditScope(const FString& Option);
 	static FString StageEditScopeToOption(EStageRuntimeEditScope Scope);
 	static EStageRuntimeEditScope OptionToStageEditScope(const FString& Option);
+	static FString TVModelToOption(EVideoTVModel TVModel);
+	static EVideoTVModel OptionToTVModel(const FString& Option);
 	UWidget* GenerateComboItemWidget(FString Item);
 
 	UFUNCTION()
@@ -376,6 +390,9 @@ private:
 
 	UFUNCTION()
 	void HandleDrapeTabClicked();
+
+	UFUNCTION()
+	void HandleVideoTabClicked();
 
 	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
