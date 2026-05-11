@@ -81,6 +81,11 @@ Core goals:
     <td>Editor-first stage actor started.</td>
   </tr>
   <tr>
+    <td><strong>Pipe And Drape</strong></td>
+    <td>Freeform drape runs using bases, telescoping uprights, adjustable 7-12 ft crossbars, static drape cloth, and optional future cloth/sway modes.</td>
+    <td>Editor and runtime create/edit workflow started.</td>
+  </tr>
+  <tr>
     <td><strong>Decor, Bars, Tables</strong></td>
     <td>Venue-ready build items that use the same preview, placement, editing, and save/load direction.</td>
     <td>Planned expansion.</td>
@@ -147,25 +152,75 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 
 ## Roadmap
 
-1. Validate final Y-run truss fixture alignment on rectangle and cube structures.
-2. Bring `AMBPWallActor` into the shared runtime buildable item flow.
-3. Add runtime MBP preview, placement, and editing using the same slot/grid data model.
+1. Validate drape runtime placement/editing in a real room layout and decide whether the short-span drape offset needs another calibration pass.
+2. Revisit Chaos cloth with a clean pre-authored drape skeletal mesh and simple pinned top edge.
+3. Validate final Y-run truss fixture alignment on rectangle and cube structures.
 4. Improve MBP authoring with easier slot editing, pattern helpers, and mixed-style presets.
 5. Improve stage deck authoring, podium integration, and runtime placement/editing.
-6. Add decor, bars, tables, and venue-ready build items.
-7. Add VR as a new input layer with controller-ray targeting and world-space UI.
+6. Add the next venue gear tool, likely TV/display stands or speaker stands.
+7. Add decor, bars, tables, and other venue-ready build items.
+8. Add VR as a new input layer with controller-ray targeting and world-space UI.
 
 ## Repository Map
 
 | Path | Purpose |
 | --- | --- |
-| `Plugins/MajicTruss/Source/MajicTrussRuntime` | Runtime plugin with truss generation, build placement support, fixture mounting, MBP wall generation, and stage deck generation. |
+| `Plugins/MajicTruss/Source/MajicTrussRuntime` | Runtime plugin with truss generation, build placement support, fixture mounting, MBP wall generation, stage deck generation, and pipe-and-drape generation. |
 | `Source/UnrealTruss` | Code-first playable test path, build menu widget, light placement menu, targeting pointer, pawn, and game mode. |
 | `Content/Build` | Build item data assets used by the runtime placement workflow. |
 | `Content/Majic_Gear` | Imported truss, MBP, lighting, and event-gear assets used by the current tool pass. |
 | `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details open>
+<summary><strong>2026-05-11: Runtime pipe-and-drape placement and editing</strong></summary>
+
+### 2026-05-11
+
+Current direction:
+
+- Keep the static drape/hardware path as the reliable default.
+- Keep Chaos cloth as an optional experiment until a clean pre-authored cloth asset is stable.
+- Use the same runtime build menu and pointer selection model as truss, MBP, and stage so drape does not become a one-off tool.
+
+What has been done:
+
+- Added `DrapeRun` as a shared build item type.
+- Added `FDrapeRunBuildDefinition` support to `UBuildItemDataAsset` and `UBuildManagerComponent`.
+- Added a `Drape` tab to the runtime build menu.
+- Added runtime drape controls:
+  - `Length (ft)`
+  - `Height (ft)`
+- Added fallback runtime drape build item creation when no saved drape build asset exists.
+- Runtime drape preview and placement now spawn `ADrapeRunActor` and apply the active drape definition.
+- Added runtime drape editing using the same pointer workflow:
+  - look at a drape line and press `E`
+  - click the highlighted drape line
+  - edit length and height in the `Edit Drape` menu
+  - apply changes directly to the selected drape actor
+- Added selection/highlight cleanup so drape edit mode cancels and closes consistently with other build systems.
+- Added a generated-component Nanite safeguard for drape static mesh components by setting `bDisallowNanite`, which avoids warnings when imported meshes use the USD `DisplayColor` material without Nanite usage flags.
+- Added a simple Chaos cloth checkbox/path, but static mesh mode remains the expected working mode.
+- Added an OBJ source reference for the Chaos test drape panel at `Content/Majic_Gear/Drape/Chaos_Test_Drape/Source/Chaos_Test_Drape.obj`.
+
+Notes:
+
+- Current drape hardware calibration is good enough to use:
+  - `CrossbarPlacementOffsetCm.X = 317`
+  - `OutsideRodSpanAdjustmentCm = 49`
+  - `DrapePlacementOffsetCm = (150, 0.1, 242)`
+  - `DrapeTopAnchorLocalZCm = 486`
+- The drape width scaling is acceptable for now, but very short crossbar spans may still need minor horizontal offset tuning later.
+- Cloth painting on reduced skeletal drape meshes produced unstable/random triangle simulation, so the next cloth pass should start from clean topology and a simple pre-authored cloth asset.
+
+Possible next tools:
+
+- TV/display stands on Altman bases and black pipe, with selectable screen sizes and trim heights.
+- Speaker stands, with tripod or crank-stand variants and common speaker sizes.
+- Projection screen kits as runtime build items, reusing the existing screen assets and drape/skirt ideas.
+
+</details>
 
 <details open>
 <summary><strong>2026-05-08: Editor-first pipe-and-drape run actor</strong></summary>
@@ -624,9 +679,9 @@ Current test controls:
 - `Mouse`: look
 - `Tab`: open or close the placeholder build menu
 - `B`: toggle build mode
-- `E`: edit the truss actor currently under the view
+- `E`: edit the truss, MBP wall, stage, or drape actor currently under the view
 - `L`: toggle truss light placement mode
-- Looking at a truss actor with the menu closed should now highlight its selection bounds before pressing `E`.
+- Looking at an editable actor with the menu closed should highlight its selection bounds before pressing `E`.
 - `Left Mouse Button`: place the selected build item
 - `R`: rotate positive
 - `F`: rotate negative
@@ -660,6 +715,19 @@ Shared targeting pointer:
 - `L` light mode uses the pointer for truss rail targeting.
 - This keeps the targeting workflow unified so later systems like stage placement can reuse it instead of creating separate one-off traces.
 - Current visuals use lightweight engine basic-shape meshes for the beam and hit marker. This is a practical first pass and can later be upgraded to nicer materials or Niagara effects if needed.
+
+Runtime drape first pass:
+
+- Open the build menu with `Tab`.
+- Choose the `Drape` tab.
+- Set `Length (ft)` and `Height (ft)`.
+- Press `B` or use the create action to place a pipe-and-drape line using the current static drape setup.
+- To edit an existing drape run:
+  - look at the drape line and press `E`
+  - left click the highlighted drape line
+  - adjust `Length (ft)` or `Height (ft)` in the edit menu
+  - press `Apply` to close the edit state
+- Drape currently uses static mesh mode as the reliable default. Chaos cloth remains experimental and should use a clean pre-authored cloth-capable drape mesh when revisited.
 
 Current direction:
 

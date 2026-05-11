@@ -48,6 +48,9 @@ struct FDrapeRunBuildDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drape")
 	EDrapeRunDrapeMode DrapeMode = EDrapeRunDrapeMode::StaticMesh;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drape")
+	bool bUseChaosCloth = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drape", meta = (ClampMin = "0.1"))
 	float Fullness = 1.0f;
 
@@ -95,6 +98,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drape")
 	EDrapeRunDrapeMode DrapeMode = EDrapeRunDrapeMode::StaticMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drape")
+	bool bUseChaosCloth = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drape", meta = (ClampMin = "0.1"))
 	float Fullness = 1.0f;

@@ -1,6 +1,7 @@
 #include "BuildManagerComponent.h"
 
 #include "BuildPreviewActor.h"
+#include "DrapeRunActor.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "MBPWallActor.h"
@@ -31,6 +32,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	ActiveTrussDefinition = BuildItem ? BuildItem->DefaultTrussDefinition : FTrussBuildDefinition();
 	ActiveMBPWallDefinition = BuildItem ? BuildItem->DefaultMBPWallDefinition : FMBPWallDefinition();
 	ActiveStageDeckDefinition = BuildItem ? BuildItem->DefaultStageDeckDefinition : FStageDeckBuildDefinition();
+	ActiveDrapeRunDefinition = BuildItem ? BuildItem->DefaultDrapeRunDefinition : FDrapeRunBuildDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -75,6 +77,16 @@ void UBuildManagerComponent::SetActiveMBPWallDefinition(const FMBPWallDefinition
 void UBuildManagerComponent::SetActiveStageDeckDefinition(const FStageDeckBuildDefinition& Definition)
 {
 	ActiveStageDeckDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveDrapeRunDefinition(const FDrapeRunBuildDefinition& Definition)
+{
+	ActiveDrapeRunDefinition = Definition;
 
 	if (ActivePreviewActor)
 	{
@@ -285,6 +297,16 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 		{
 			StageDeckActor->bBuildOnConstruction = false;
 			StageDeckActor->ApplyBuildDefinition(ActiveStageDeckDefinition, true);
+		}
+		return;
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::DrapeRun)
+	{
+		if (ADrapeRunActor* DrapeRunActor = Cast<ADrapeRunActor>(Actor))
+		{
+			DrapeRunActor->bBuildOnConstruction = false;
+			DrapeRunActor->ApplyBuildDefinition(ActiveDrapeRunDefinition, true);
 		}
 	}
 }

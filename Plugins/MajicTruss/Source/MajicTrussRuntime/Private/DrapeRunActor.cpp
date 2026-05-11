@@ -38,7 +38,7 @@ ADrapeRunActor::ADrapeRunActor()
 	SelectionBounds->ShapeColor = FColor::Purple;
 
 	StaticDrapeMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/Majic_Gear/Drape/Static_Drape/StaticMeshes/Static_Drape.Static_Drape")));
-	ChaosDrapeMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/Majic_Gear/StageDrape/StageDrape/SkeletalMeshes/SK_Drape.SK_Drape")));
+	ChaosDrapeMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/Majic_Gear/Drape/Chaos_Test_Drape/SK_Chaos_Test_Drape.SK_Chaos_Test_Drape")));
 }
 
 void ADrapeRunActor::OnConstruction(const FTransform& Transform)
@@ -165,7 +165,7 @@ void ADrapeRunActor::RebuildDrapeRun()
 			SectionCenter + FVector(0.0f, 0.0f, SlidingAssemblyHeightAdjustmentCm) + DrapePlacementOffsetCm + DrapeScaleAnchorAdjustment,
 			ResolvedDrapeScale);
 
-		if (DrapeMode == EDrapeRunDrapeMode::ChaosCloth)
+		if (bUseChaosCloth || DrapeMode == EDrapeRunDrapeMode::ChaosCloth)
 		{
 			AddChaosDrapeSection(SectionIndex, DrapeTransform, Bounds);
 		}
@@ -184,6 +184,7 @@ void ADrapeRunActor::ApplyBuildDefinition(const FDrapeRunBuildDefinition& Defini
 	SectionLengthFt = FMath::Max(1.0f, Definition.SectionLengthFt);
 	HeightFt = FMath::Clamp(Definition.HeightFt, 6.0f, 18.333f);
 	DrapeMode = Definition.DrapeMode;
+	bUseChaosCloth = Definition.bUseChaosCloth;
 	Fullness = FMath::Max(0.1f, Definition.Fullness);
 	bShowHardware = Definition.bShowHardware;
 	bCenterOnActor = Definition.bCenterOnActor;
@@ -202,6 +203,7 @@ FDrapeRunBuildDefinition ADrapeRunActor::GetBuildDefinition() const
 	Definition.SectionLengthFt = SectionLengthFt;
 	Definition.HeightFt = HeightFt;
 	Definition.DrapeMode = DrapeMode;
+	Definition.bUseChaosCloth = bUseChaosCloth;
 	Definition.Fullness = Fullness;
 	Definition.bShowHardware = bShowHardware;
 	Definition.bCenterOnActor = bCenterOnActor;
@@ -409,6 +411,8 @@ UInstancedStaticMeshComponent* ADrapeRunActor::FindOrCreateMeshBucket(UStaticMes
 	if (UInstancedStaticMeshComponent* ExistingComponent = FindGeneratedMeshComponentByName(ComponentName))
 	{
 		ExistingComponent->SetStaticMesh(StaticMesh);
+		ExistingComponent->bDisallowNanite = true;
+		ExistingComponent->MarkRenderStateDirty();
 		ExistingComponent->SetVisibility(true);
 		ExistingComponent->SetHiddenInGame(false);
 		if (!GeneratedMeshComponents.Contains(ExistingComponent))
@@ -430,6 +434,7 @@ UInstancedStaticMeshComponent* ADrapeRunActor::FindOrCreateMeshBucket(UStaticMes
 	AddInstanceComponent(MeshComponent);
 	GeneratedMeshComponents.Add(MeshComponent);
 
+	MeshComponent->bDisallowNanite = true;
 	MeshComponent->SetStaticMesh(StaticMesh);
 	if (bApplyDrapeMaterial)
 	{

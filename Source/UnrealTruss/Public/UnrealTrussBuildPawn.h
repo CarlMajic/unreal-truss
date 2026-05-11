@@ -10,6 +10,7 @@ class UBuildManagerComponent;
 class UBuildMenuWidget;
 class ULightPlacementMenuWidget;
 class UTargetingPointerComponent;
+class ADrapeRunActor;
 class AMBPWallActor;
 class AStageDeckActor;
 class ABuildPreviewActor;
@@ -76,6 +77,9 @@ private:
 	TObjectPtr<AStageDeckActor> PendingStageEditActor;
 
 	UPROPERTY(Transient)
+	TObjectPtr<ADrapeRunActor> PendingDrapeEditActor;
+
+	UPROPERTY(Transient)
 	TObjectPtr<ATrussStructureActor> HoveredTrussActor;
 
 	UPROPERTY(Transient)
@@ -114,6 +118,7 @@ private:
 	bool bLightPlacementModeActive = false;
 	bool bMBPEditSelectionModeActive = false;
 	bool bStageEditSelectionModeActive = false;
+	bool bDrapeEditSelectionModeActive = false;
 	float MoveForwardValue = 0.0f;
 	float MoveRightValue = 0.0f;
 	float MoveUpValue = 0.0f;
@@ -154,5 +159,5 @@ private:
 	UFUNCTION()
 	void HandleLightPlacementCanceled();
 	ATrussStructureActor* TraceForTrussActor() const;
-	bool TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor) const;
+	bool TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor) const;
 };

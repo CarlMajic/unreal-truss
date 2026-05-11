@@ -22,6 +22,18 @@
 
 namespace
 {
+static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
+{
+	if (ItemType == EBuildItemType::MBPWall ||
+		ItemType == EBuildItemType::StageDeck ||
+		ItemType == EBuildItemType::DrapeRun)
+	{
+		return ItemType;
+	}
+
+	return EBuildItemType::TrussStructure;
+}
+
 static UBuildItemDataAsset* FindMatchingBuildItemForActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ATrussStructureActor* TrussActor)
 {
 	if (!TrussActor)
@@ -67,6 +79,29 @@ static UBuildItemDataAsset* FindMatchingBuildItemForStageActor(const TArray<TObj
 
 	return nullptr;
 }
+
+static UBuildItemDataAsset* FindMatchingBuildItemForDrapeActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ADrapeRunActor* DrapeActor)
+{
+	if (!DrapeActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (!BuildItem || BuildItem->ItemType != EBuildItemType::DrapeRun)
+		{
+			continue;
+		}
+
+		if (BuildItem->BuildActorClass && DrapeActor->IsA(BuildItem->BuildActorClass))
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
 }
 
 void UBuildMenuItemButtonProxy::Initialize(UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem)
@@ -102,9 +137,8 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 		CurrentTrussDefinition = SelectedBuildItem->DefaultTrussDefinition;
 		CurrentMBPWallDefinition = SelectedBuildItem->DefaultMBPWallDefinition;
 		CurrentStageDeckDefinition = SelectedBuildItem->DefaultStageDeckDefinition;
-		ActiveMenuTab = SelectedBuildItem->ItemType == EBuildItemType::MBPWall
-			? EBuildItemType::MBPWall
-			: (SelectedBuildItem->ItemType == EBuildItemType::StageDeck ? EBuildItemType::StageDeck : EBuildItemType::TrussStructure);
+		CurrentDrapeRunDefinition = SelectedBuildItem->DefaultDrapeRunDefinition;
+		ActiveMenuTab = BuildTabForItemType(SelectedBuildItem->ItemType);
 	}
 
 	RefreshMenu();
@@ -119,9 +153,8 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		CurrentTrussDefinition = InSelectedItem->DefaultTrussDefinition;
 		CurrentMBPWallDefinition = InSelectedItem->DefaultMBPWallDefinition;
 		CurrentStageDeckDefinition = InSelectedItem->DefaultStageDeckDefinition;
-		ActiveMenuTab = InSelectedItem->ItemType == EBuildItemType::MBPWall
-			? EBuildItemType::MBPWall
-			: (InSelectedItem->ItemType == EBuildItemType::StageDeck ? EBuildItemType::StageDeck : EBuildItemType::TrussStructure);
+		CurrentDrapeRunDefinition = InSelectedItem->DefaultDrapeRunDefinition;
+		ActiveMenuTab = BuildTabForItemType(InSelectedItem->ItemType);
 	}
 
 	if (BuildManager && InSelectedItem)
@@ -130,6 +163,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		ApplyTrussDefinitionToBuildManager();
 		ApplyMBPDefinitionToBuildManager();
 		ApplyStageDefinitionToBuildManager();
+		ApplyDrapeDefinitionToBuildManager();
 	}
 
 	RefreshMenu();
@@ -160,6 +194,7 @@ void UBuildMenuWidget::RefreshMenu()
 	RefreshTrussControls();
 	RefreshMBPControls();
 	RefreshStageControls();
+	RefreshDrapeControls();
 	RefreshTabButtons();
 	RebuildItemButtons();
 }
@@ -184,11 +219,17 @@ FStageDeckBuildDefinition UBuildMenuWidget::GetCurrentStageDeckDefinition() cons
 	return CurrentStageDeckDefinition;
 }
 
+FDrapeRunBuildDefinition UBuildMenuWidget::GetCurrentDrapeRunDefinition() const
+{
+	return CurrentDrapeRunDefinition;
+}
+
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 {
 	EditingTarget = InEditingTarget;
 	EditingMBPTarget = nullptr;
 	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
 
 	if (EditingTarget)
 	{
@@ -212,6 +253,7 @@ void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32
 	EditingTarget = nullptr;
 	EditingMBPTarget = InEditingTarget;
 	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
 
 	if (EditingMBPTarget)
 	{
@@ -278,6 +320,7 @@ void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, i
 	EditingTarget = nullptr;
 	EditingMBPTarget = nullptr;
 	EditingStageTarget = InEditingTarget;
+	EditingDrapeTarget = nullptr;
 
 	if (EditingStageTarget)
 	{
@@ -310,6 +353,31 @@ void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, i
 AStageDeckActor* UBuildMenuWidget::GetEditingStageTarget() const
 {
 	return EditingStageTarget;
+}
+
+void UBuildMenuWidget::SetEditingDrapeTarget(ADrapeRunActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = InEditingTarget;
+
+	if (EditingDrapeTarget)
+	{
+		ActiveMenuTab = EBuildItemType::DrapeRun;
+		CurrentDrapeRunDefinition = EditingDrapeTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForDrapeActor(BuildItems, EditingDrapeTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+ADrapeRunActor* UBuildMenuWidget::GetEditingDrapeTarget() const
+{
+	return EditingDrapeTarget;
 }
 
 void UBuildMenuWidget::SetEditingStageCellTarget(int32 InTargetRow, int32 InTargetColumn)
@@ -381,7 +449,18 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	StageTabText->SetText(FText::FromString(TEXT("Stage")));
 	StageTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	StageTabButton->AddChild(StageTabText);
-	TabButtonBox->AddChildToHorizontalBox(StageTabButton);
+	if (UHorizontalBoxSlot* StageTabSlot = TabButtonBox->AddChildToHorizontalBox(StageTabButton))
+	{
+		StageTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	DrapeTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("DrapeTabButton"));
+	DrapeTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleDrapeTabClicked);
+	UTextBlock* DrapeTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DrapeTabText"));
+	DrapeTabText->SetText(FText::FromString(TEXT("Drape")));
+	DrapeTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	DrapeTabButton->AddChild(DrapeTabText);
+	TabButtonBox->AddChildToHorizontalBox(DrapeTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -692,7 +771,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ButtonProxies.Reset();
 	ItemListBox->ClearChildren();
 
-	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && BuildItems.Num() > 1;
+	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && BuildItems.Num() > 1;
 	int32 VisibleItemCount = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
@@ -739,21 +818,33 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall)
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
 
 	const FText Name = SelectedBuildItem
 		? (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName)
-		: FText::FromString(TEXT("MBP Wall"));
+		: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall")));
+
+	const TCHAR* TypeLabel = TEXT("MBP Wall");
+	if (ActiveMenuTab == EBuildItemType::TrussStructure)
+	{
+		TypeLabel = TEXT("Truss Structure");
+	}
+	else if (ActiveMenuTab == EBuildItemType::StageDeck)
+	{
+		TypeLabel = TEXT("Stage Deck");
+	}
+	else if (ActiveMenuTab == EBuildItemType::DrapeRun)
+	{
+		TypeLabel = TEXT("Drape Run");
+	}
 
 	FString Detail = FString::Printf(
 		TEXT("Category: %s\nType: %s\nGrid Snap: %.2f cm\nRotation Step: %.1f deg"),
 		SelectedBuildItem ? *SelectedBuildItem->Category.ToString() : TEXT("Backdrop"),
-		ActiveMenuTab == EBuildItemType::TrussStructure
-			? TEXT("Truss Structure")
-			: (ActiveMenuTab == EBuildItemType::StageDeck ? TEXT("Stage Deck") : TEXT("MBP Wall")),
+		TypeLabel,
 		SelectedBuildItem ? SelectedBuildItem->GridSnapSizeCm : 30.48f,
 		SelectedBuildItem ? SelectedBuildItem->RotationStepDegrees : 15.0f
 	);
@@ -830,6 +921,14 @@ FText UBuildMenuWidget::BuildDetailText() const
 				bCurrentStageCellEnabled ? TEXT("Yes") : TEXT("No"));
 		}
 	}
+	else if (ActiveMenuTab == EBuildItemType::DrapeRun)
+	{
+		const FDrapeRunBuildDefinition& Definition = CurrentDrapeRunDefinition;
+		Detail += FString::Printf(
+			TEXT("\nLength: %.1f ft\nHeight: %.1f ft"),
+			Definition.LengthFt,
+			Definition.HeightFt);
+	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
 }
@@ -851,12 +950,17 @@ FText UBuildMenuWidget::BuildHeaderText() const
 		return FText::FromString(TEXT("Edit Stage"));
 	}
 
+	if (IsEditingDrape())
+	{
+		return FText::FromString(TEXT("Edit Drape"));
+	}
+
 	return FText::FromString(TEXT("Build Menu"));
 }
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return (EditingTarget || IsEditingMBP() || IsEditingStage())
+	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape())
 		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
 }
@@ -869,6 +973,11 @@ bool UBuildMenuWidget::IsEditingMBP() const
 bool UBuildMenuWidget::IsEditingStage() const
 {
 	return EditingStageTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingDrape() const
+{
+	return EditingDrapeTarget != nullptr;
 }
 
 void UBuildMenuWidget::RefreshTrussControls()
@@ -1020,6 +1129,11 @@ void UBuildMenuWidget::RefreshTabButtons()
 	if (StageTabButton)
 	{
 		StageTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::StageDeck));
+	}
+
+	if (DrapeTabButton)
+	{
+		DrapeTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::DrapeRun));
 	}
 }
 
@@ -1324,6 +1438,52 @@ void UBuildMenuWidget::RefreshStageControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshDrapeControls()
+{
+	if (ActiveMenuTab != EBuildItemType::DrapeRun)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	if (ModeLabelText) ModeLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (ModeComboBox) ModeComboBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, float SliderMax)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ESlateVisibility::Visible);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(SliderMax);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Length (ft)"), CurrentDrapeRunDefinition.LengthFt, 1.0f, 1000.0f, 120.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Height (ft)"), CurrentDrapeRunDefinition.HeightFt, 1.0f, 24.0f, 20.0f);
+
+	if (TertiaryValueLabelText) TertiaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (TertiaryValueSpinBox) TertiaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (SidePieceLabelText) SidePieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (SidePieceComboBox) SidePieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (DepthPieceLabelText) DepthPieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (DepthPieceComboBox) DepthPieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	bRefreshingControls = false;
+}
+
 void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
@@ -1352,6 +1512,24 @@ void UBuildMenuWidget::ApplyStageDefinitionToBuildManager()
 	}
 
 	BuildManager->SetActiveStageDeckDefinition(CurrentStageDeckDefinition);
+}
+
+void UBuildMenuWidget::ApplyDrapeDefinitionToBuildManager()
+{
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DrapeRun)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveDrapeRunDefinition(CurrentDrapeRunDefinition);
+}
+
+void UBuildMenuWidget::ApplyDrapeEditToTarget()
+{
+	if (EditingDrapeTarget)
+	{
+		EditingDrapeTarget->ApplyBuildDefinition(CurrentDrapeRunDefinition, true);
+	}
 }
 
 void UBuildMenuWidget::ApplyMBPEditToTarget()
@@ -1430,6 +1608,11 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 	if (ActiveMenuTab == EBuildItemType::StageDeck)
 	{
 		return BuildItem->ItemType == EBuildItemType::StageDeck;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DrapeRun)
+	{
+		return BuildItem->ItemType == EBuildItemType::DrapeRun;
 	}
 
 	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
@@ -1750,6 +1933,25 @@ void UBuildMenuWidget::HandleStageTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleDrapeTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::DrapeRun;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
@@ -1832,6 +2034,24 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 		return;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::DrapeRun)
+	{
+		CurrentDrapeRunDefinition.LengthFt = FMath::Max(NewValue, 1.0f);
+		if (IsEditingDrape())
+		{
+			ApplyDrapeEditToTarget();
+		}
+		else
+		{
+			ApplyDrapeDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
 	{
 		return;
@@ -1902,6 +2122,24 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 			{
 				ApplyStageDefinitionToBuildManager();
 			}
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DrapeRun)
+	{
+		CurrentDrapeRunDefinition.HeightFt = FMath::Max(NewValue, 1.0f);
+		if (IsEditingDrape())
+		{
+			ApplyDrapeEditToTarget();
+		}
+		else
+		{
+			ApplyDrapeDefinitionToBuildManager();
 		}
 		if (DetailText)
 		{

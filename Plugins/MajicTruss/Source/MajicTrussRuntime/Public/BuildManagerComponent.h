@@ -6,6 +6,7 @@
 #include "BuildManagerComponent.generated.h"
 
 class ABuildPreviewActor;
+class ADrapeRunActor;
 class AMBPWallActor;
 class APlayerController;
 class AStageDeckActor;
@@ -59,6 +60,9 @@ public:
 	FStageDeckBuildDefinition ActiveStageDeckDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FDrapeRunBuildDefinition ActiveDrapeRunDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -78,6 +82,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveStageDeckDefinition(const FStageDeckBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveDrapeRunDefinition(const FDrapeRunBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);

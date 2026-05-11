@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "DrapeRunActor.h"
 #include "MBPWallActor.h"
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
@@ -15,7 +16,8 @@ enum class EBuildItemType : uint8
 	ActorClass UMETA(DisplayName = "Actor Class"),
 	TrussStructure UMETA(DisplayName = "Truss Structure"),
 	MBPWall UMETA(DisplayName = "MBP Wall"),
-	StageDeck UMETA(DisplayName = "Stage Deck")
+	StageDeck UMETA(DisplayName = "Stage Deck"),
+	DrapeRun UMETA(DisplayName = "Drape Run")
 };
 
 UCLASS(BlueprintType)
@@ -65,4 +67,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Stage")
 	FStageDeckBuildDefinition DefaultStageDeckDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Drape")
+	FDrapeRunBuildDefinition DefaultDrapeRunDefinition;
 };

@@ -6,6 +6,7 @@
 #include "BuildManagerComponent.h"
 #include "BuildMenuWidget.h"
 #include "BuildPreviewActor.h"
+#include "DrapeRunActor.h"
 #include "LightPlacementMenuWidget.h"
 #include "MBPWallActor.h"
 #include "StageDeckActor.h"
@@ -63,6 +64,29 @@ static UBuildItemDataAsset* CreateFallbackStageBuildItem(UObject* Outer)
 	BuildItem->RotationStepDegrees = 90.0f;
 	BuildItem->bUseGridSnap = true;
 	BuildItem->bAlignToSurfaceNormal = false;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackDrapeBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("DrapeRunDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Drape"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime pipe and drape builder."));
+	BuildItem->Category = TEXT("Backdrop");
+	BuildItem->ItemType = EBuildItemType::DrapeRun;
+	BuildItem->BuildActorClass = ADrapeRunActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	BuildItem->DefaultDrapeRunDefinition.LengthFt = 30.0f;
+	BuildItem->DefaultDrapeRunDefinition.HeightFt = 8.0f;
 	return BuildItem;
 }
 
@@ -186,6 +210,10 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 		{
 			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
+		else if (!bBuildMenuVisible && !bLightMenuVisible && bDrapeEditSelectionModeActive)
+		{
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+		}
 		else if (bBuildMenuVisible && bEditingMBP)
 		{
 			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
@@ -208,7 +236,8 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 			ATrussStructureActor* HitTrussActor = nullptr;
 			AMBPWallActor* HitMBPWallActor = nullptr;
 			AStageDeckActor* HitStageDeckActor = nullptr;
-			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor) && HitMBPWallActor == EditingMBPWall)
+			ADrapeRunActor* HitDrapeActor = nullptr;
+			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor) && HitMBPWallActor == EditingMBPWall)
 			{
 				int32 TargetRow = 0;
 				int32 TargetColumn = 0;
@@ -224,7 +253,8 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 			ATrussStructureActor* HitTrussActor = nullptr;
 			AMBPWallActor* HitMBPWallActor = nullptr;
 			AStageDeckActor* HitStageDeckActor = nullptr;
-			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor) && HitStageDeckActor == EditingStageDeck)
+			ADrapeRunActor* HitDrapeActor = nullptr;
+			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor) && HitStageDeckActor == EditingStageDeck)
 			{
 				int32 TargetRow = 0;
 				int32 TargetColumn = 0;
@@ -335,12 +365,18 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 		{
 			EditingStageDeck->SetSelectionHighlighted(false);
 		}
+		if (ADrapeRunActor* EditingDrape = BuildMenuWidget->GetEditingDrapeTarget())
+		{
+			EditingDrape->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
+		BuildMenuWidget->SetEditingDrapeTarget(nullptr);
 	}
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
+	bDrapeEditSelectionModeActive = false;
 	if (PendingMBPEditWall)
 	{
 		PendingMBPEditWall->SetSelectionHighlighted(false);
@@ -350,6 +386,11 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	{
 		PendingStageEditActor->SetSelectionHighlighted(false);
 		PendingStageEditActor = nullptr;
+	}
+	if (PendingDrapeEditActor)
+	{
+		PendingDrapeEditActor->SetSelectionHighlighted(false);
+		PendingDrapeEditActor = nullptr;
 	}
 
 	EnsureBuildMenuWidget();
@@ -380,6 +421,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	{
 		BuildManagerComponent->SetActiveStageDeckDefinition(BuildMenuWidget->GetCurrentStageDeckDefinition());
 	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::DrapeRun)
+	{
+		BuildManagerComponent->SetActiveDrapeRunDefinition(BuildMenuWidget->GetCurrentDrapeRunDefinition());
+	}
 	BuildManagerComponent->EnterBuildMode();
 }
 
@@ -409,8 +454,9 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		ATrussStructureActor* HitTrussActor = nullptr;
 		AMBPWallActor* HitMBPWallActor = nullptr;
 		AStageDeckActor* HitStageDeckActor = nullptr;
+		ADrapeRunActor* HitDrapeActor = nullptr;
 		if (PendingMBPEditWall &&
-			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor) &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor) &&
 			HitMBPWallActor == PendingMBPEditWall)
 		{
 			int32 TargetRow = 0;
@@ -434,8 +480,9 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		ATrussStructureActor* HitTrussActor = nullptr;
 		AMBPWallActor* HitMBPWallActor = nullptr;
 		AStageDeckActor* HitStageDeckActor = nullptr;
+		ADrapeRunActor* HitDrapeActor = nullptr;
 		if (PendingStageEditActor &&
-			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor) &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor) &&
 			HitStageDeckActor == PendingStageEditActor)
 		{
 			int32 TargetRow = 0;
@@ -450,6 +497,29 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		}
 
 		bStageEditSelectionModeActive = false;
+		return;
+	}
+
+	if (bDrapeEditSelectionModeActive)
+	{
+		FHitResult HitResult;
+		ATrussStructureActor* HitTrussActor = nullptr;
+		AMBPWallActor* HitMBPWallActor = nullptr;
+		AStageDeckActor* HitStageDeckActor = nullptr;
+		ADrapeRunActor* HitDrapeActor = nullptr;
+		if (PendingDrapeEditActor &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor) &&
+			HitDrapeActor == PendingDrapeEditActor)
+		{
+			EnsureBuildMenuWidget();
+			if (BuildMenuWidget)
+			{
+				BuildMenuWidget->SetEditingDrapeTarget(HitDrapeActor);
+			}
+			SetBuildMenuVisible(true);
+		}
+
+		bDrapeEditSelectionModeActive = false;
 		return;
 	}
 
@@ -486,14 +556,21 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		{
 			EditingStageDeck->SetSelectionHighlighted(false);
 		}
+		if (ADrapeRunActor* EditingDrape = BuildMenuWidget->GetEditingDrapeTarget())
+		{
+			EditingDrape->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
+		BuildMenuWidget->SetEditingDrapeTarget(nullptr);
 	}
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
+	bDrapeEditSelectionModeActive = false;
 	PendingMBPEditWall = nullptr;
 	PendingStageEditActor = nullptr;
+	PendingDrapeEditActor = nullptr;
 
 	bLightPlacementModeActive = false;
 	ActiveLightFixtureClass = nullptr;
@@ -510,11 +587,12 @@ void AUnrealTrussBuildPawn::EditLookedAtTruss()
 	ATrussStructureActor* TrussActor = nullptr;
 	AMBPWallActor* MBPWallActor = nullptr;
 	AStageDeckActor* StageDeckActor = nullptr;
-	if (!TraceForEditableActorHit(HitResult, TrussActor, MBPWallActor, StageDeckActor) || !BuildManagerComponent)
+	ADrapeRunActor* DrapeActor = nullptr;
+	if (!TraceForEditableActorHit(HitResult, TrussActor, MBPWallActor, StageDeckActor, DrapeActor) || !BuildManagerComponent)
 	{
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No editable truss, MBP wall, or stage found under the view."));
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No editable truss, MBP wall, stage, or drape found under the view."));
 		}
 		return;
 	}
@@ -553,6 +631,19 @@ void AUnrealTrussBuildPawn::EditLookedAtTruss()
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Cyan, TEXT("Aim at a stage cell and left click to open stage edit controls."));
+		}
+		return;
+	}
+	else if (DrapeActor)
+	{
+		BuildManagerComponent->ExitBuildMode();
+		BuildManagerComponent->ClearEditingTrussActor();
+		DrapeActor->SetSelectionHighlighted(true);
+		PendingDrapeEditActor = DrapeActor;
+		bDrapeEditSelectionModeActive = true;
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Cyan, TEXT("Aim at the drape line and left click to open drape edit controls."));
 		}
 		return;
 	}
@@ -599,14 +690,21 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 		{
 			EditingStageDeck->SetSelectionHighlighted(false);
 		}
+		if (ADrapeRunActor* EditingDrape = BuildMenuWidget->GetEditingDrapeTarget())
+		{
+			EditingDrape->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
+		BuildMenuWidget->SetEditingDrapeTarget(nullptr);
 	}
 	PendingMBPEditWall = nullptr;
 	PendingStageEditActor = nullptr;
+	PendingDrapeEditActor = nullptr;
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
+	bDrapeEditSelectionModeActive = false;
 
 	SetBuildMenuVisible(false);
 	EnsureLightPlacementMenuWidget();
@@ -707,6 +805,14 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 		if (UBuildItemDataAsset* FallbackStageItem = CreateFallbackStageBuildItem(this))
 		{
 			AvailableBuildItems.Add(FallbackStageItem);
+		}
+	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::DrapeRun))
+	{
+		if (UBuildItemDataAsset* FallbackDrapeItem = CreateFallbackDrapeBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackDrapeItem);
 		}
 	}
 }
@@ -962,6 +1068,10 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 	{
 		BuildManagerComponent->SetActiveStageDeckDefinition(BuildMenuWidget->GetCurrentStageDeckDefinition());
 	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::DrapeRun)
+	{
+		BuildManagerComponent->SetActiveDrapeRunDefinition(BuildMenuWidget->GetCurrentDrapeRunDefinition());
+	}
 	else
 	{
 		BuildManagerComponent->SetActiveTrussDefinition(SelectedItem->DefaultTrussDefinition);
@@ -986,6 +1096,14 @@ void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
 			EditingStageDeck->SetSelectionHighlighted(false);
 			BuildMenuWidget->SetEditingStageTarget(nullptr);
 			PendingStageEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
+		if (ADrapeRunActor* EditingDrape = BuildMenuWidget->GetEditingDrapeTarget())
+		{
+			EditingDrape->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingDrapeTarget(nullptr);
+			PendingDrapeEditActor = nullptr;
 			SetBuildMenuVisible(false);
 			return;
 		}
@@ -1214,12 +1332,13 @@ ATrussStructureActor* AUnrealTrussBuildPawn::TraceForTrussActor() const
 	return TraceForTrussHit(HitResult, TrussActor) ? TrussActor : nullptr;
 }
 
-bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor) const
+bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor) const
 {
 	OutHitResult = FHitResult();
 	OutTrussActor = nullptr;
 	OutMBPWallActor = nullptr;
 	OutStageDeckActor = nullptr;
+	OutDrapeActor = nullptr;
 
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	UWorld* World = GetWorld();
@@ -1267,6 +1386,13 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 			return true;
 		}
 
+		if (ADrapeRunActor* HitDrapeActor = Cast<ADrapeRunActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutDrapeActor = HitDrapeActor;
+			return true;
+		}
+
 		if (const UActorComponent* HitComponent = HitResult.GetComponent())
 		{
 			if (ATrussStructureActor* OwnerTrussActor = Cast<ATrussStructureActor>(HitComponent->GetOwner()))
@@ -1287,6 +1413,13 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 			{
 				OutHitResult = HitResult;
 				OutStageDeckActor = OwnerStageDeckActor;
+				return true;
+			}
+
+			if (ADrapeRunActor* OwnerDrapeActor = Cast<ADrapeRunActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutDrapeActor = OwnerDrapeActor;
 				return true;
 			}
 		}

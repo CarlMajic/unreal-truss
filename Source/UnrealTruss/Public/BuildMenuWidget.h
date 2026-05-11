@@ -3,6 +3,7 @@
 #include "BuildItemDataAsset.h"
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "DrapeRunActor.h"
 #include "MBPWallActor.h"
 #include "StageDeckActor.h"
 #include "StageDeckBuildDefinition.h"
@@ -88,6 +89,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FStageDeckBuildDefinition GetCurrentStageDeckDefinition() const;
 
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FDrapeRunBuildDefinition GetCurrentDrapeRunDefinition() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
 
@@ -112,6 +116,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingStageCellTarget(int32 InTargetRow, int32 InTargetColumn);
 
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingDrapeTarget(class ADrapeRunActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class ADrapeRunActor* GetEditingDrapeTarget() const;
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 
@@ -130,6 +140,9 @@ private:
 
 	UPROPERTY(Transient)
 	FStageDeckBuildDefinition CurrentStageDeckDefinition;
+
+	UPROPERTY(Transient)
+	FDrapeRunBuildDefinition CurrentDrapeRunDefinition;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBuildManagerComponent> BuildManager = nullptr;
@@ -151,6 +164,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> StageTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> DrapeTabButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HeaderText = nullptr;
@@ -296,6 +312,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AStageDeckActor> EditingStageTarget = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<ADrapeRunActor> EditingDrapeTarget = nullptr;
+
 	bool bRefreshingControls = false;
 	EBuildItemType ActiveMenuTab = EBuildItemType::TrussStructure;
 	EMBPRuntimeEditScope CurrentMBPEditScope = EMBPRuntimeEditScope::Panel;
@@ -315,15 +334,19 @@ private:
 	FText BuildActionButtonText() const;
 	bool IsEditingMBP() const;
 	bool IsEditingStage() const;
+	bool IsEditingDrape() const;
 	void RefreshTabButtons();
 	void RefreshTrussControls();
 	void RefreshMBPControls();
 	void RefreshStageControls();
+	void RefreshDrapeControls();
 	void ApplyTrussDefinitionToBuildManager();
 	void ApplyMBPDefinitionToBuildManager();
 	void ApplyStageDefinitionToBuildManager();
+	void ApplyDrapeDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	void ApplyStageEditToTarget();
+	void ApplyDrapeEditToTarget();
 	void SyncCurrentStageCellFromTarget();
 	bool ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildItem) const;
 	static FString BuildModeToOption(ETrussBuildMode BuildMode);
@@ -350,6 +373,9 @@ private:
 
 	UFUNCTION()
 	void HandleStageTabClicked();
+
+	UFUNCTION()
+	void HandleDrapeTabClicked();
 
 	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
