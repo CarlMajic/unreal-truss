@@ -179,6 +179,73 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 ## Project Log
 
 <details open>
+<summary><strong>2026-05-13: Projection runtime tool and pointer-based edit selection</strong></summary>
+
+### 2026-05-13
+
+Current direction:
+
+- Keep TV placement, projection screens/projectors, and video walls as separate tools.
+- Use the Projection tool for screen-kit plus projector placement only; support structures can be built separately with the truss tools.
+- Use the screen material/video setup for color content on projection screens. Unreal light functions are useful for beam/frustum visualization, but standard light functions are not a reliable color/video projector path.
+- Edit selection should be pointer-based, not “look at actor and immediately edit,” because stages, drape, MBP walls, TVs, and projection actors often overlap.
+
+What has been done:
+
+- Added runtime Projection support to the Build Menu:
+  - `Projection` tab
+  - screen dropdown for `6 x 12`, `8 x 14`, `9 x 16`, and `13 x 24`
+  - projector dropdown, currently `Christie M 4K25 RGB`
+  - lens dropdown for `ILS 0.67 HD`, `ILS 1.16-1.49 HD`, and `ILS 4.1-6.9 HD`
+  - projector left/right and up/down sliders constrained by selected lens shift data
+- Projection actors now use the same build-definition path for runtime preview, placement, and editing.
+- Projection edit mode includes screen-center offset controls so the screen center marker can be calibrated after placement.
+- Projector support was separated from the Projection tool:
+  - truss towers, hanging truss, AV carts, and other supports can be built/placed separately
+  - the projector actor handles screen/projector/lens placement and visualization
+- Added pointer-based edit selection:
+  - press `E` to enter edit-select mode
+  - the shared fake laser pointer appears
+  - the actor under the pointer shows its selection bounds before clicking
+  - normal left click opens whole-actor edit
+  - `Shift` + left click opens sub-selection edit for MBP panels or Stage cells
+- Added hover sub-selection previews:
+  - MBP panel preview draws a yellow box over the visible selected panel
+  - Stage cell preview draws a raised yellow box over the visible selected deck cell so skirts do not hide it
+- Stage and MBP whole-actor edit now opens first by default:
+  - MBP whole wall can change rows, columns, and default style
+  - Stage whole structure can change rows, columns, railings, steps, skirt, default height, and surface
+  - sub-selection remains available with `Shift` + click
+- Build verified after the latest changes with:
+  - `Result: Succeeded`
+
+Current runtime controls:
+
+- `Tab`: open or close Build Menu
+- `B`: toggle build placement mode
+- `E`: enter edit-select mode
+- `Shift` + left click while edit-selecting Stage/MBP: edit the pointed cell/panel instead of the whole actor
+- `L`: light placement mode
+- `Left Mouse Button`: place/confirm/select depending on active mode
+- `Q`: cancel build/light/edit mode
+
+Useful continuation notes:
+
+- If Stage or MBP sub-selection appears offset again, inspect the actor's generated mesh origin versus logical grid origin. The preview boxes intentionally apply extra half-cell/half-panel offsets and placement offsets to match visible meshes, not just data-grid points.
+- GitHub backup for this work is commit `4349300 Add projection runtime tools and edit selection workflow` on `origin/main`.
+- The local `ue-tool-building` skill was updated with the pointer edit-select rule: normal click selects whole actor; `Shift` + click is for Stage/MBP sub-selection.
+- There is an untracked `Content/Majic_Gear/Audio/` folder after the backup. Decide tomorrow whether it should be added or ignored.
+
+Suggested next checks:
+
+- Test MBP whole-wall row/column changes after opening edit mode with a normal click.
+- Test Stage whole-structure row/column, railing, step, and skirt edits after opening edit mode with a normal click.
+- Test `Shift` + click Stage and MBP sub-selection after placing actors at different rotations and offsets.
+- Continue projection runtime testing: screen dropdown, lens dropdown, left/right and up/down projector offsets, and edit-mode screen center offsets.
+
+</details>
+
+<details open>
 <summary><strong>2026-05-12: Editor-first projection screen actor</strong></summary>
 
 ### 2026-05-12
@@ -817,9 +884,11 @@ Current test controls:
 - `Mouse`: look
 - `Tab`: open or close the placeholder build menu
 - `B`: toggle build mode
-- `E`: edit the truss, MBP wall, stage, or drape actor currently under the view
+- `E`: enter edit-select mode and show the shared pointer
+- Normal left click in edit-select mode: edit the whole highlighted actor
+- `Shift` + left click in edit-select mode on MBP/Stage: edit the highlighted panel/cell
 - `L`: toggle truss light placement mode
-- Looking at an editable actor with the menu closed should highlight its selection bounds before pressing `E`.
+- While edit-select mode is active, the editable actor under the pointer should show selection bounds before clicking.
 - `Left Mouse Button`: place the selected build item
 - `R`: rotate positive
 - `F`: rotate negative
