@@ -301,7 +301,7 @@ bool AStageDeckActor::GetCellIndicesFromWorldLocation(const FVector& WorldLocati
 
 	const float OriginX = bCenterOnActor ? (-0.5f * (Columns - 1) * StepX) : 0.0f;
 	const float OriginY = bCenterOnActor ? (-0.5f * (Rows - 1) * StepY) : 0.0f;
-	const FVector LocalHitLocation = GetActorTransform().InverseTransformPosition(WorldLocation);
+	const FVector LocalHitLocation = GetActorTransform().InverseTransformPosition(WorldLocation) - DeckPlacementOffsetCm;
 
 	OutColumn = FMath::Clamp(FMath::RoundToInt((LocalHitLocation.X - OriginX) / StepX), 0, Columns - 1);
 	OutRow = FMath::Clamp(FMath::RoundToInt((LocalHitLocation.Y - OriginY) / StepY), 0, Rows - 1);

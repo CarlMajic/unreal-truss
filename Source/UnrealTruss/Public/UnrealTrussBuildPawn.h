@@ -12,7 +12,9 @@ class ULightPlacementMenuWidget;
 class UTargetingPointerComponent;
 class ADrapeRunActor;
 class AMBPWallActor;
+class AProjectionScreenActor;
 class AStageDeckActor;
+class AVideoPlacementActor;
 class ABuildPreviewActor;
 class UCameraComponent;
 class UFloatingPawnMovement;
@@ -80,7 +82,16 @@ private:
 	TObjectPtr<ADrapeRunActor> PendingDrapeEditActor;
 
 	UPROPERTY(Transient)
+	TObjectPtr<AVideoPlacementActor> PendingVideoEditActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AProjectionScreenActor> PendingProjectionEditActor;
+
+	UPROPERTY(Transient)
 	TObjectPtr<ATrussStructureActor> HoveredTrussActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> HoveredEditSelectionActor;
 
 	UPROPERTY(Transient)
 	FVector HoveredTrussHitLocation = FVector::ZeroVector;
@@ -119,6 +130,9 @@ private:
 	bool bMBPEditSelectionModeActive = false;
 	bool bStageEditSelectionModeActive = false;
 	bool bDrapeEditSelectionModeActive = false;
+	bool bVideoEditSelectionModeActive = false;
+	bool bProjectionEditSelectionModeActive = false;
+	bool bEditSelectionModeActive = false;
 	float MoveForwardValue = 0.0f;
 	float MoveRightValue = 0.0f;
 	float MoveUpValue = 0.0f;
@@ -147,6 +161,11 @@ private:
 	void SetBuildMenuVisible(bool bVisible);
 	void SetLightPlacementMenuVisible(bool bVisible);
 	void SetHoveredTrussActor(ATrussStructureActor* NewHoveredActor);
+	void SetHoveredEditSelectionActor(AActor* NewHoveredActor);
+	void ClearHoveredEditSelection();
+	void UpdateHoveredEditSelection();
+	void SetEditableActorSelectionHighlighted(AActor* Actor, bool bHighlighted);
+	void DrawEditSubSelectionPreview(const FHitResult& HitResult, AMBPWallActor* MBPWallActor, AStageDeckActor* StageDeckActor) const;
 	bool TraceForTrussHit(FHitResult& OutHitResult, ATrussStructureActor*& OutActor) const;
 	void BeginLightPlacementSelection();
 	void UpdateLightPreview();
@@ -159,5 +178,5 @@ private:
 	UFUNCTION()
 	void HandleLightPlacementCanceled();
 	ATrussStructureActor* TraceForTrussActor() const;
-	bool TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor) const;
+	bool TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor, AVideoPlacementActor*& OutVideoActor, AProjectionScreenActor*& OutProjectionActor) const;
 };

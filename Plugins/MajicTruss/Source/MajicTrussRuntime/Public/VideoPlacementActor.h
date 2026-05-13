@@ -30,6 +30,13 @@ enum class EVideoTVModel : uint8
 	Benq25Preview UMETA(DisplayName = "BenQ 25 Preview")
 };
 
+UENUM(BlueprintType)
+enum class EVideoTVSupportMode : uint8
+{
+	BlackPipe UMETA(DisplayName = "Altman Base And Black Pipe"),
+	TrussTower UMETA(DisplayName = "Truss Tower")
+};
+
 USTRUCT(BlueprintType)
 struct FVideoPlacementBuildDefinition
 {
@@ -41,11 +48,11 @@ struct FVideoPlacementBuildDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video", meta = (DisplayName = "TV Center Height (ft)", ClampMin = "1.0"))
 	float TVCenterHeightFt = 6.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video", meta = (DisplayName = "Tower Height (ft)", ClampMin = "2.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video", meta = (DisplayName = "Support Height (ft)", ClampMin = "2.0"))
 	float TowerHeightFt = 8.0f;
 };
 
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (DisplayName = "TV Actor"))
 class MAJICTRUSSRUNTIME_API AVideoPlacementActor : public AActor
 {
 	GENERATED_BODY()
@@ -81,6 +88,12 @@ public:
 	TObjectPtr<UStaticMeshComponent> TVComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Video|Generated")
+	TObjectPtr<UStaticMeshComponent> AltmanBaseComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Video|Generated")
+	TObjectPtr<UStaticMeshComponent> BlackPipeComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Video|Generated")
 	TArray<TObjectPtr<UStaticMeshComponent>> UpperUPMComponents;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Video|Generated")
@@ -92,7 +105,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video", meta = (DisplayName = "TV Center Height (ft)", ClampMin = "1.0"))
 	float TVCenterHeightFt = 6.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video", meta = (DisplayName = "Tower Height (ft)", ClampMin = "2.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video", meta = (DisplayName = "Support Height (ft)", ClampMin = "2.0"))
 	float TowerHeightFt = 8.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video")
@@ -113,11 +126,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement")
 	FRotator TowerRotation = FRotator(90.0f, 90.0f, 0.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement", meta = (Units = "cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement", meta = (DisplayName = "Truss TV Placement Offset Cm", Units = "cm"))
 	FVector TVPlacementOffsetCm = FVector(1.786592f, -19.894883f, 0.0f);
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement", meta = (DisplayName = "Truss TV Placement Rotation"))
+	FRotator TVPlacementRotation = FRotator(180.0f, 0.0f, 180.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement", meta = (Units = "cm"))
+	FVector BlackPipeSupportOffsetCm = FVector::ZeroVector;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement")
-	FRotator TVPlacementRotation = FRotator(0.0f, 0.0f, 180.0f);
+	FRotator BlackPipeSupportRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement", meta = (Units = "cm"))
+	FVector BlackPipeTVPlacementOffsetCm = FVector(0.0f, -7.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement")
+	FRotator BlackPipeTVPlacementRotation = FRotator(180.0f, 0.0f, 180.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Placement")
 	FVector TVScale = FVector::OneVector;
@@ -137,6 +162,12 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Video|Debug", meta = (DisplayName = "Current Actual Tower Height (ft)"))
 	float CurrentActualTowerHeightFt = 0.0f;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Video|Debug")
+	EVideoTVSupportMode CurrentSupportMode = EVideoTVSupportMode::BlackPipe;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Video|Debug")
+	int32 CurrentBlackPipeLengthInches = 0;
+
 	UFUNCTION(BlueprintCallable, Category = "Video")
 	void RebuildVideoPlacement();
 
@@ -149,6 +180,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Video")
 	void SetSelectionHighlighted(bool bHighlighted);
 
+	static int32 GetTVSizeInches(EVideoTVModel Model);
+	static EVideoTVSupportMode GetSupportModeForTVModel(EVideoTVModel Model);
+
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 #if WITH_EDITOR
@@ -159,12 +193,17 @@ private:
 	FBox GeneratedBounds;
 
 	void ClearGenerated();
+	void BuildTrussTowerSupport();
+	void BuildBlackPipeSupport();
 	void AddTowerPiece(ETrussPieceType PieceType, const FVector& TargetMinLocation, const FRotator& Rotation);
 	UInstancedStaticMeshComponent* GetMeshComponentForPiece(ETrussPieceType PieceType) const;
 	UStaticMesh* LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const;
 	UStaticMesh* LoadTVMesh(EVideoTVModel Model) const;
+	UStaticMesh* LoadAltmanBaseMesh() const;
+	UStaticMesh* LoadBlackPipeMesh(int32 PipeLengthInches) const;
 	void LoadUPMMeshes();
 	void PlaceUPMComponents(const FVector& TVCenterLocation);
+	void PlaceStaticMeshComponent(UStaticMeshComponent* Component, UStaticMesh* Mesh, const FVector& Location, const FRotator& Rotation, const FVector& Scale);
 	bool GetPieceDefinition(ETrussPieceType PieceType, FTrussPieceDefinition& OutPiece, UStaticMesh*& OutMesh) const;
 	FVector GetMeshPlacementLocation(UStaticMesh* StaticMesh, const FVector& TargetMinLocation, const FRotator& Rotation) const;
 	FVector GetScaledRotatedMeshExtent(UStaticMesh* StaticMesh, const FRotator& Rotation) const;

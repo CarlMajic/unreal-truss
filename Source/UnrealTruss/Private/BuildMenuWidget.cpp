@@ -27,7 +27,8 @@ static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 	if (ItemType == EBuildItemType::MBPWall ||
 		ItemType == EBuildItemType::StageDeck ||
 		ItemType == EBuildItemType::DrapeRun ||
-		ItemType == EBuildItemType::VideoPlacement)
+		ItemType == EBuildItemType::VideoPlacement ||
+		ItemType == EBuildItemType::ProjectionScreen)
 	{
 		return ItemType;
 	}
@@ -103,6 +104,52 @@ static UBuildItemDataAsset* FindMatchingBuildItemForDrapeActor(const TArray<TObj
 
 	return nullptr;
 }
+
+static UBuildItemDataAsset* FindMatchingBuildItemForVideoActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const AVideoPlacementActor* VideoActor)
+{
+	if (!VideoActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (!BuildItem || BuildItem->ItemType != EBuildItemType::VideoPlacement)
+		{
+			continue;
+		}
+
+		if (BuildItem->BuildActorClass && VideoActor->IsA(BuildItem->BuildActorClass))
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
+static UBuildItemDataAsset* FindMatchingBuildItemForProjectionActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const AProjectionScreenActor* ProjectionActor)
+{
+	if (!ProjectionActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (!BuildItem || BuildItem->ItemType != EBuildItemType::ProjectionScreen)
+		{
+			continue;
+		}
+
+		if (BuildItem->BuildActorClass && ProjectionActor->IsA(BuildItem->BuildActorClass))
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
 }
 
 void UBuildMenuItemButtonProxy::Initialize(UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem)
@@ -140,6 +187,7 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 		CurrentStageDeckDefinition = SelectedBuildItem->DefaultStageDeckDefinition;
 		CurrentDrapeRunDefinition = SelectedBuildItem->DefaultDrapeRunDefinition;
 		CurrentVideoPlacementDefinition = SelectedBuildItem->DefaultVideoPlacementDefinition;
+		CurrentProjectionScreenDefinition = SelectedBuildItem->DefaultProjectionScreenDefinition;
 		ActiveMenuTab = BuildTabForItemType(SelectedBuildItem->ItemType);
 	}
 
@@ -157,6 +205,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		CurrentStageDeckDefinition = InSelectedItem->DefaultStageDeckDefinition;
 		CurrentDrapeRunDefinition = InSelectedItem->DefaultDrapeRunDefinition;
 		CurrentVideoPlacementDefinition = InSelectedItem->DefaultVideoPlacementDefinition;
+		CurrentProjectionScreenDefinition = InSelectedItem->DefaultProjectionScreenDefinition;
 		ActiveMenuTab = BuildTabForItemType(InSelectedItem->ItemType);
 	}
 
@@ -168,6 +217,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		ApplyStageDefinitionToBuildManager();
 		ApplyDrapeDefinitionToBuildManager();
 		ApplyVideoDefinitionToBuildManager();
+		ApplyProjectionDefinitionToBuildManager();
 	}
 
 	RefreshMenu();
@@ -200,6 +250,7 @@ void UBuildMenuWidget::RefreshMenu()
 	RefreshStageControls();
 	RefreshDrapeControls();
 	RefreshVideoControls();
+	RefreshProjectionControls();
 	RefreshTabButtons();
 	RebuildItemButtons();
 }
@@ -234,12 +285,19 @@ FVideoPlacementBuildDefinition UBuildMenuWidget::GetCurrentVideoPlacementDefinit
 	return CurrentVideoPlacementDefinition;
 }
 
+FProjectionScreenBuildDefinition UBuildMenuWidget::GetCurrentProjectionScreenDefinition() const
+{
+	return CurrentProjectionScreenDefinition;
+}
+
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 {
 	EditingTarget = InEditingTarget;
 	EditingMBPTarget = nullptr;
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingProjectionTarget = nullptr;
 
 	if (EditingTarget)
 	{
@@ -258,12 +316,14 @@ ATrussStructureActor* UBuildMenuWidget::GetEditingTarget() const
 	return EditingTarget;
 }
 
-void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32 InTargetRow, int32 InTargetColumn)
+void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32 InTargetRow, int32 InTargetColumn, bool bStartWithPanel)
 {
 	EditingTarget = nullptr;
 	EditingMBPTarget = InEditingTarget;
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingProjectionTarget = nullptr;
 
 	if (EditingMBPTarget)
 	{
@@ -271,7 +331,7 @@ void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32
 		CurrentMBPWallDefinition = EditingMBPTarget->GetWallDefinition();
 		CurrentMBPEditTargetRow = FMath::Clamp(InTargetRow, 0, FMath::Max(EditingMBPTarget->Rows - 1, 0));
 		CurrentMBPEditTargetColumn = FMath::Clamp(InTargetColumn, 0, FMath::Max(EditingMBPTarget->Columns - 1, 0));
-		CurrentMBPEditScope = EMBPRuntimeEditScope::Panel;
+		CurrentMBPEditScope = bStartWithPanel ? EMBPRuntimeEditScope::Panel : EMBPRuntimeEditScope::WholeWall;
 
 		FMBPPanelSlot TargetSlot;
 		if (EditingMBPTarget->GetPanelSlot(CurrentMBPEditTargetRow, CurrentMBPEditTargetColumn, TargetSlot))
@@ -325,12 +385,14 @@ void UBuildMenuWidget::SetEditingMBPPanelTarget(int32 InTargetRow, int32 InTarge
 	RefreshMenu();
 }
 
-void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, int32 InTargetRow, int32 InTargetColumn)
+void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, int32 InTargetRow, int32 InTargetColumn, bool bStartWithCell)
 {
 	EditingTarget = nullptr;
 	EditingMBPTarget = nullptr;
 	EditingStageTarget = InEditingTarget;
 	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingProjectionTarget = nullptr;
 
 	if (EditingStageTarget)
 	{
@@ -346,7 +408,7 @@ void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, i
 		CurrentStageDeckDefinition.bEnableLeftStep = EditingStageTarget->bEnableLeftStep;
 		CurrentStageDeckDefinition.bEnableRightStep = EditingStageTarget->bEnableRightStep;
 		CurrentStageDeckDefinition.bEnableAutomaticSkirt = EditingStageTarget->bEnableAutomaticSkirt;
-		CurrentStageEditScope = EStageRuntimeEditScope::Cell;
+		CurrentStageEditScope = bStartWithCell ? EStageRuntimeEditScope::Cell : EStageRuntimeEditScope::WholeStage;
 		CurrentStageEditTargetRow = FMath::Clamp(InTargetRow, 0, FMath::Max(EditingStageTarget->Rows - 1, 0));
 		CurrentStageEditTargetColumn = FMath::Clamp(InTargetColumn, 0, FMath::Max(EditingStageTarget->Columns - 1, 0));
 		SyncCurrentStageCellFromTarget();
@@ -371,6 +433,8 @@ void UBuildMenuWidget::SetEditingDrapeTarget(ADrapeRunActor* InEditingTarget)
 	EditingMBPTarget = nullptr;
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = InEditingTarget;
+	EditingVideoTarget = nullptr;
+	EditingProjectionTarget = nullptr;
 
 	if (EditingDrapeTarget)
 	{
@@ -388,6 +452,75 @@ void UBuildMenuWidget::SetEditingDrapeTarget(ADrapeRunActor* InEditingTarget)
 ADrapeRunActor* UBuildMenuWidget::GetEditingDrapeTarget() const
 {
 	return EditingDrapeTarget;
+}
+
+void UBuildMenuWidget::SetEditingVideoTarget(AVideoPlacementActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = InEditingTarget;
+	EditingProjectionTarget = nullptr;
+
+	if (EditingVideoTarget)
+	{
+		ActiveMenuTab = EBuildItemType::VideoPlacement;
+		CurrentVideoPlacementDefinition = EditingVideoTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForVideoActor(BuildItems, EditingVideoTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+AVideoPlacementActor* UBuildMenuWidget::GetEditingVideoTarget() const
+{
+	return EditingVideoTarget;
+}
+
+void UBuildMenuWidget::SetEditingProjectionTarget(AProjectionScreenActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingProjectionTarget = InEditingTarget;
+
+	if (EditingProjectionTarget)
+	{
+		ActiveMenuTab = EBuildItemType::ProjectionScreen;
+		CurrentProjectionScreenDefinition = EditingProjectionTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForProjectionActor(BuildItems, EditingProjectionTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+AProjectionScreenActor* UBuildMenuWidget::GetEditingProjectionTarget() const
+{
+	return EditingProjectionTarget;
+}
+
+bool UBuildMenuWidget::ShouldShowPointerForCurrentEdit() const
+{
+	if (IsEditingMBP())
+	{
+		return CurrentMBPEditScope != EMBPRuntimeEditScope::WholeWall;
+	}
+
+	if (IsEditingStage())
+	{
+		return CurrentStageEditScope == EStageRuntimeEditScope::Cell;
+	}
+
+	return false;
 }
 
 void UBuildMenuWidget::SetEditingStageCellTarget(int32 InTargetRow, int32 InTargetColumn)
@@ -478,10 +611,21 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	VideoTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("VideoTabButton"));
 	VideoTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleVideoTabClicked);
 	UTextBlock* VideoTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("VideoTabText"));
-	VideoTabText->SetText(FText::FromString(TEXT("Video")));
+	VideoTabText->SetText(FText::FromString(TEXT("TV")));
 	VideoTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	VideoTabButton->AddChild(VideoTabText);
-	TabButtonBox->AddChildToHorizontalBox(VideoTabButton);
+	if (UHorizontalBoxSlot* VideoTabSlot = TabButtonBox->AddChildToHorizontalBox(VideoTabButton))
+	{
+		VideoTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	ProjectionTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ProjectionTabButton"));
+	ProjectionTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleProjectionTabClicked);
+	UTextBlock* ProjectionTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ProjectionTabText"));
+	ProjectionTabText->SetText(FText::FromString(TEXT("Projection")));
+	ProjectionTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	ProjectionTabButton->AddChild(ProjectionTabText);
+	TabButtonBox->AddChildToHorizontalBox(ProjectionTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -509,6 +653,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::StraightRun));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Rectangle));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Arch));
+	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Tower));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Cube));
 	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::CubeArch));
 	ModeComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleModeChanged);
@@ -792,7 +937,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ButtonProxies.Reset();
 	ItemListBox->ClearChildren();
 
-	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && BuildItems.Num() > 1;
+	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingProjection() && BuildItems.Num() > 1;
 	int32 VisibleItemCount = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
@@ -839,16 +984,18 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement)
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::ProjectionScreen)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
 
 	const FText Name = SelectedBuildItem
 		? (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName)
-		: (ActiveMenuTab == EBuildItemType::VideoPlacement
-			? FText::FromString(TEXT("Video"))
-			: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall"))));
+		: (ActiveMenuTab == EBuildItemType::ProjectionScreen
+			? FText::FromString(TEXT("Projection"))
+			: (ActiveMenuTab == EBuildItemType::VideoPlacement
+				? FText::FromString(TEXT("Video"))
+				: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall")))));
 
 	const TCHAR* TypeLabel = TEXT("MBP Wall");
 	if (ActiveMenuTab == EBuildItemType::TrussStructure)
@@ -865,7 +1012,11 @@ FText UBuildMenuWidget::BuildDetailText() const
 	}
 	else if (ActiveMenuTab == EBuildItemType::VideoPlacement)
 	{
-		TypeLabel = TEXT("Video Placement");
+		TypeLabel = TEXT("TV Placement");
+	}
+	else if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		TypeLabel = TEXT("Projection Screen");
 	}
 
 	FString Detail = FString::Printf(
@@ -886,6 +1037,9 @@ FText UBuildMenuWidget::BuildDetailText() const
 			break;
 		case ETrussBuildMode::Arch:
 			Detail += FString::Printf(TEXT("\nMode: Arch\nSize: %.1f ft x %.1f ft"), Definition.ArchWidthFt, Definition.ArchHeightFt);
+			break;
+		case ETrussBuildMode::Tower:
+			Detail += FString::Printf(TEXT("\nMode: Tower\nHeight: %.1f ft"), Definition.TowerHeightFt);
 			break;
 		case ETrussBuildMode::Cube:
 			Detail += FString::Printf(TEXT("\nMode: Cube\nSize: %.1f x %.1f x %.1f ft"), Definition.CubeLengthFt, Definition.CubeWidthFt, Definition.CubeHeightFt);
@@ -959,11 +1113,30 @@ FText UBuildMenuWidget::BuildDetailText() const
 	else if (ActiveMenuTab == EBuildItemType::VideoPlacement)
 	{
 		const FVideoPlacementBuildDefinition& Definition = CurrentVideoPlacementDefinition;
+		const EVideoTVSupportMode SupportMode = AVideoPlacementActor::GetSupportModeForTVModel(Definition.TVModel);
+		const FString SupportModeText = SupportMode == EVideoTVSupportMode::TrussTower
+			? TEXT("Truss Tower")
+			: TEXT("Altman Base + Black Pipe");
 		Detail += FString::Printf(
-			TEXT("\nVideo Mode: TV on Truss Tower\nTV: %s\nTV Center Height: %.1f ft\nTower Height: %.1f ft"),
+			TEXT("\nTV Support: %s\nTV: %s\nTV Size: %d in\nTV Center Height: %.1f ft\nSupport Height: %.1f ft"),
+			*SupportModeText,
 			*TVModelToOption(Definition.TVModel),
+			AVideoPlacementActor::GetTVSizeInches(Definition.TVModel),
 			Definition.TVCenterHeightFt,
 			Definition.TowerHeightFt);
+	}
+	else if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		const FProjectionScreenBuildDefinition& Definition = CurrentProjectionScreenDefinition;
+		Detail += FString::Printf(
+			TEXT("\nScreen: %s\nProjector: %s\nLens: %s\nHorizontal Offset: %.1f ft\nHeight From Center: %.1f ft\nCenter Offset: X %.1f cm, Z %.1f cm"),
+			*ProjectionScreenSizeToOption(Definition.ScreenKitSize),
+			*ProjectionProjectorToOption(Definition.ProjectorType),
+			*ProjectionLensToOption(Definition.LensType),
+			Definition.ProjectorHorizontalOffsetFt,
+			Definition.TowerHeightFt,
+			Definition.ScreenCenterOffsetCm.X,
+			Definition.ScreenCenterOffsetCm.Z);
 	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
@@ -991,12 +1164,22 @@ FText UBuildMenuWidget::BuildHeaderText() const
 		return FText::FromString(TEXT("Edit Drape"));
 	}
 
+	if (IsEditingVideo())
+	{
+		return FText::FromString(TEXT("Edit TV"));
+	}
+
+	if (IsEditingProjection())
+	{
+		return FText::FromString(TEXT("Edit Projection"));
+	}
+
 	return FText::FromString(TEXT("Build Menu"));
 }
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape())
+	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingProjection())
 		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
 }
@@ -1014,6 +1197,16 @@ bool UBuildMenuWidget::IsEditingStage() const
 bool UBuildMenuWidget::IsEditingDrape() const
 {
 	return EditingDrapeTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingVideo() const
+{
+	return EditingVideoTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingProjection() const
+{
+	return EditingProjectionTarget != nullptr;
 }
 
 void UBuildMenuWidget::RefreshTrussControls()
@@ -1113,6 +1306,14 @@ void UBuildMenuWidget::RefreshTrussControls()
 		SetPieceControl(SidePieceLabelText, SidePieceComboBox, TEXT(""), TEXT(""), false);
 		SetPieceControl(DepthPieceLabelText, DepthPieceComboBox, TEXT(""), TEXT(""), false);
 		break;
+	case ETrussBuildMode::Tower:
+		SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Tower Height (ft)"), CurrentTrussDefinition.TowerHeightFt, 2.0f, 100.0f, true);
+		SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+		SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+		SetNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+		SetPieceControl(SidePieceLabelText, SidePieceComboBox, TEXT(""), TEXT(""), false);
+		SetPieceControl(DepthPieceLabelText, DepthPieceComboBox, TEXT(""), TEXT(""), false);
+		break;
 	case ETrussBuildMode::Cube:
 		SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Cube Length (ft)"), CurrentTrussDefinition.CubeLengthFt, 4.0f, 200.0f, true);
 		SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Cube Width (ft)"), CurrentTrussDefinition.CubeWidthFt, 4.0f, 200.0f, true);
@@ -1176,6 +1377,11 @@ void UBuildMenuWidget::RefreshTabButtons()
 	{
 		VideoTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::VideoPlacement));
 	}
+
+	if (ProjectionTabButton)
+	{
+		ProjectionTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::ProjectionScreen));
+	}
 }
 
 void UBuildMenuWidget::RefreshMBPControls()
@@ -1201,6 +1407,7 @@ void UBuildMenuWidget::RefreshMBPControls()
 		if (bEditingMBP)
 		{
 			ModeComboBox->ClearOptions();
+			ModeComboBox->AddOption(MBPEditScopeToOption(EMBPRuntimeEditScope::WholeWall));
 			ModeComboBox->AddOption(MBPEditScopeToOption(EMBPRuntimeEditScope::Panel));
 			ModeComboBox->AddOption(MBPEditScopeToOption(EMBPRuntimeEditScope::Row));
 			ModeComboBox->AddOption(MBPEditScopeToOption(EMBPRuntimeEditScope::Column));
@@ -1232,16 +1439,10 @@ void UBuildMenuWidget::RefreshMBPControls()
 
 	if (bEditingMBP)
 	{
-		SetEditNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Target Row"), CurrentMBPEditTargetRow + 1, 1.0f, FMath::Max(CurrentMBPWallDefinition.Rows, 1), true);
-		SetEditNumericControl(
-			SecondaryValueLabelText,
-			SecondaryValueSpinBox,
-			TEXT("Target Column"),
-			CurrentMBPEditTargetColumn + 1,
-			1.0f,
-			FMath::Max(CurrentMBPWallDefinition.Columns, 1),
-			CurrentMBPEditScope == EMBPRuntimeEditScope::Panel);
-		SetEditNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT("Depth Offset (cm)"), CurrentMBPEditDepthOffsetCm, -304.8f, 304.8f, true);
+		const bool bWholeWall = CurrentMBPEditScope == EMBPRuntimeEditScope::WholeWall;
+		SetEditNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, bWholeWall ? TEXT("Rows") : TEXT("Target Row"), bWholeWall ? CurrentMBPWallDefinition.Rows : CurrentMBPEditTargetRow + 1, 1.0f, bWholeWall ? 100.0f : FMath::Max(CurrentMBPWallDefinition.Rows, 1), true);
+		SetEditNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, bWholeWall ? TEXT("Columns") : TEXT("Target Column"), bWholeWall ? CurrentMBPWallDefinition.Columns : CurrentMBPEditTargetColumn + 1, 1.0f, bWholeWall ? 100.0f : FMath::Max(CurrentMBPWallDefinition.Columns, 1), bWholeWall || CurrentMBPEditScope == EMBPRuntimeEditScope::Panel);
+		SetEditNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT("Depth Offset (cm)"), CurrentMBPEditDepthOffsetCm, -304.8f, 304.8f, !bWholeWall);
 		SetEditNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
 		if (SidePieceLabelText) SidePieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
 		if (SidePieceComboBox) SidePieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
@@ -1586,7 +1787,7 @@ void UBuildMenuWidget::RefreshVideoControls()
 	};
 
 	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("TV Center Height (ft)"), CurrentVideoPlacementDefinition.TVCenterHeightFt, 1.0f, 30.0f, 16.0f);
-	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Tower Height (ft)"), CurrentVideoPlacementDefinition.TowerHeightFt, 2.0f, 30.0f, 20.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Support Height (ft)"), CurrentVideoPlacementDefinition.TowerHeightFt, 2.0f, 30.0f, 20.0f);
 
 	if (TertiaryValueLabelText) TertiaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
 	if (TertiaryValueSpinBox) TertiaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
@@ -1597,6 +1798,135 @@ void UBuildMenuWidget::RefreshVideoControls()
 	if (DepthPieceLabelText) DepthPieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
 	if (DepthPieceComboBox) DepthPieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
 
+	bRefreshingControls = false;
+}
+
+void UBuildMenuWidget::RefreshProjectionControls()
+{
+	if (ActiveMenuTab != EBuildItemType::ProjectionScreen)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	if (ModeLabelText)
+	{
+		ModeLabelText->SetText(FText::FromString(TEXT("Screen")));
+		ModeLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(ESlateVisibility::Visible);
+		ModeComboBox->ClearOptions();
+		for (EProjectionScreenKitSize ScreenSize : {
+			EProjectionScreenKitSize::Screen6x12,
+			EProjectionScreenKitSize::Screen8x14,
+			EProjectionScreenKitSize::Screen9x16,
+			EProjectionScreenKitSize::Screen13x24})
+		{
+			ModeComboBox->AddOption(ProjectionScreenSizeToOption(ScreenSize));
+		}
+		ModeComboBox->SetSelectedOption(ProjectionScreenSizeToOption(CurrentProjectionScreenDefinition.ScreenKitSize));
+	}
+
+	if (SidePieceLabelText)
+	{
+		SidePieceLabelText->SetText(FText::FromString(TEXT("Projector")));
+		SidePieceLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	if (SidePieceComboBox)
+	{
+		SidePieceComboBox->SetVisibility(ESlateVisibility::Visible);
+		SidePieceComboBox->ClearOptions();
+		SidePieceComboBox->AddOption(ProjectionProjectorToOption(EProjectionProjectorType::ChristieM4K25RGB));
+		SidePieceComboBox->SetSelectedOption(ProjectionProjectorToOption(CurrentProjectionScreenDefinition.ProjectorType));
+	}
+
+	if (DepthPieceLabelText)
+	{
+		DepthPieceLabelText->SetText(FText::FromString(TEXT("Lens")));
+		DepthPieceLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	if (DepthPieceComboBox)
+	{
+		DepthPieceComboBox->SetVisibility(ESlateVisibility::Visible);
+		DepthPieceComboBox->ClearOptions();
+		for (EProjectionLensType LensType : {
+			EProjectionLensType::ILS067HD,
+			EProjectionLensType::ILS116149HD,
+			EProjectionLensType::ILS4169HD})
+		{
+			DepthPieceComboBox->AddOption(ProjectionLensToOption(LensType));
+		}
+		DepthPieceComboBox->SetSelectedOption(ProjectionLensToOption(CurrentProjectionScreenDefinition.LensType));
+	}
+
+	float ScreenWidthFt = 0.0f;
+	float ScreenHeightFt = 0.0f;
+	GetProjectionScreenDimensionsFt(CurrentProjectionScreenDefinition.ScreenKitSize, ScreenWidthFt, ScreenHeightFt);
+
+	float VerticalMinPercent = 0.0f;
+	float VerticalMaxPercent = 0.0f;
+	float HorizontalMinPercent = 0.0f;
+	float HorizontalMaxPercent = 0.0f;
+	bool bHasShiftData = false;
+	GetProjectionLensShiftPercent(CurrentProjectionScreenDefinition.LensType, VerticalMinPercent, VerticalMaxPercent, HorizontalMinPercent, HorizontalMaxPercent, bHasShiftData);
+
+	const float HorizontalMinFt = bHasShiftData ? ScreenWidthFt * (HorizontalMinPercent / 100.0f) : 0.0f;
+	const float HorizontalMaxFt = bHasShiftData ? ScreenWidthFt * (HorizontalMaxPercent / 100.0f) : 0.0f;
+	const float VerticalMinFt = bHasShiftData ? ScreenHeightFt * (VerticalMinPercent / 100.0f) : 0.0f;
+	const float VerticalMaxFt = bHasShiftData ? ScreenHeightFt * (VerticalMaxPercent / 100.0f) : 0.0f;
+
+	CurrentProjectionScreenDefinition.ProjectorHorizontalOffsetFt = FMath::Clamp(CurrentProjectionScreenDefinition.ProjectorHorizontalOffsetFt, HorizontalMinFt, HorizontalMaxFt);
+	CurrentProjectionScreenDefinition.TowerHeightFt = FMath::Clamp(CurrentProjectionScreenDefinition.TowerHeightFt, VerticalMinFt, VerticalMaxFt);
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ESlateVisibility::Visible);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(MaxValue);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Projector Left / Right (ft)"), CurrentProjectionScreenDefinition.ProjectorHorizontalOffsetFt, HorizontalMinFt, HorizontalMaxFt);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Projector Up / Down (ft)"), CurrentProjectionScreenDefinition.TowerHeightFt, VerticalMinFt, VerticalMaxFt);
+
+	if (IsEditingProjection())
+	{
+		SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT("Center Left / Right (cm)"), CurrentProjectionScreenDefinition.ScreenCenterOffsetCm.X, -500.0f, 500.0f);
+		SetNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT("Center Up / Down (cm)"), CurrentProjectionScreenDefinition.ScreenCenterOffsetCm.Z, -500.0f, 500.0f);
+	}
+	else
+	{
+		if (TertiaryValueLabelText) TertiaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+		if (TertiaryValueSpinBox) TertiaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+		if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+		if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (IsEditingProjection())
+	{
+		ApplyProjectionEditToTarget();
+	}
+	else
+	{
+		ApplyProjectionDefinitionToBuildManager();
+	}
 	bRefreshingControls = false;
 }
 
@@ -1650,11 +1980,37 @@ void UBuildMenuWidget::ApplyVideoDefinitionToBuildManager()
 	BuildManager->SetActiveVideoPlacementDefinition(CurrentVideoPlacementDefinition);
 }
 
+void UBuildMenuWidget::ApplyProjectionDefinitionToBuildManager()
+{
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::ProjectionScreen)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveProjectionScreenDefinition(CurrentProjectionScreenDefinition);
+}
+
 void UBuildMenuWidget::ApplyDrapeEditToTarget()
 {
 	if (EditingDrapeTarget)
 	{
 		EditingDrapeTarget->ApplyBuildDefinition(CurrentDrapeRunDefinition, true);
+	}
+}
+
+void UBuildMenuWidget::ApplyVideoEditToTarget()
+{
+	if (EditingVideoTarget)
+	{
+		EditingVideoTarget->ApplyBuildDefinition(CurrentVideoPlacementDefinition, true);
+	}
+}
+
+void UBuildMenuWidget::ApplyProjectionEditToTarget()
+{
+	if (EditingProjectionTarget)
+	{
+		EditingProjectionTarget->ApplyBuildDefinition(CurrentProjectionScreenDefinition, true);
 	}
 }
 
@@ -1667,6 +2023,9 @@ void UBuildMenuWidget::ApplyMBPEditToTarget()
 
 	switch (CurrentMBPEditScope)
 	{
+	case EMBPRuntimeEditScope::WholeWall:
+		EditingMBPTarget->ApplyWallDefinition(CurrentMBPWallDefinition, true);
+		break;
 	case EMBPRuntimeEditScope::Row:
 		EditingMBPTarget->ApplyRowEditByIndex(CurrentMBPEditTargetRow, CurrentMBPWallDefinition.DefaultStyle, CurrentMBPEditDepthOffsetCm);
 		break;
@@ -1746,6 +2105,11 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 		return BuildItem->ItemType == EBuildItemType::VideoPlacement;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		return BuildItem->ItemType == EBuildItemType::ProjectionScreen;
+	}
+
 	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
 }
 
@@ -1757,6 +2121,8 @@ FString UBuildMenuWidget::BuildModeToOption(ETrussBuildMode BuildMode)
 		return TEXT("Rectangle");
 	case ETrussBuildMode::Arch:
 		return TEXT("Arch");
+	case ETrussBuildMode::Tower:
+		return TEXT("Tower");
 	case ETrussBuildMode::Cube:
 		return TEXT("Cube");
 	case ETrussBuildMode::CubeArch:
@@ -1776,6 +2142,10 @@ ETrussBuildMode UBuildMenuWidget::OptionToBuildMode(const FString& Option)
 	if (Option == TEXT("Arch"))
 	{
 		return ETrussBuildMode::Arch;
+	}
+	if (Option == TEXT("Tower"))
+	{
+		return ETrussBuildMode::Tower;
 	}
 	if (Option == TEXT("Cube"))
 	{
@@ -1950,6 +2320,8 @@ FString UBuildMenuWidget::MBPEditScopeToOption(EMBPRuntimeEditScope Scope)
 {
 	switch (Scope)
 	{
+	case EMBPRuntimeEditScope::WholeWall:
+		return TEXT("Whole Wall");
 	case EMBPRuntimeEditScope::Row:
 		return TEXT("Row");
 	case EMBPRuntimeEditScope::Column:
@@ -1962,6 +2334,10 @@ FString UBuildMenuWidget::MBPEditScopeToOption(EMBPRuntimeEditScope Scope)
 
 EMBPRuntimeEditScope UBuildMenuWidget::OptionToMBPEditScope(const FString& Option)
 {
+	if (Option == TEXT("Whole Wall"))
+	{
+		return EMBPRuntimeEditScope::WholeWall;
+	}
 	if (Option == TEXT("Row"))
 	{
 		return EMBPRuntimeEditScope::Row;
@@ -2050,6 +2426,118 @@ EVideoTVModel UBuildMenuWidget::OptionToTVModel(const FString& Option)
 	if (Option == TEXT("Vizio 70 LED")) return EVideoTVModel::Vizio70;
 	if (Option == TEXT("BenQ 25 Preview")) return EVideoTVModel::Benq25Preview;
 	return EVideoTVModel::Samsung58;
+}
+
+FString UBuildMenuWidget::ProjectionScreenSizeToOption(EProjectionScreenKitSize ScreenKitSize)
+{
+	switch (ScreenKitSize)
+	{
+	case EProjectionScreenKitSize::Screen6x12:
+		return TEXT("6 x 12");
+	case EProjectionScreenKitSize::Screen8x14:
+		return TEXT("8 x 14");
+	case EProjectionScreenKitSize::Screen13x24:
+		return TEXT("13 x 24");
+	case EProjectionScreenKitSize::Screen9x16:
+	default:
+		return TEXT("9 x 16");
+	}
+}
+
+EProjectionScreenKitSize UBuildMenuWidget::OptionToProjectionScreenSize(const FString& Option)
+{
+	if (Option == TEXT("6 x 12")) return EProjectionScreenKitSize::Screen6x12;
+	if (Option == TEXT("8 x 14")) return EProjectionScreenKitSize::Screen8x14;
+	if (Option == TEXT("13 x 24")) return EProjectionScreenKitSize::Screen13x24;
+	return EProjectionScreenKitSize::Screen9x16;
+}
+
+FString UBuildMenuWidget::ProjectionProjectorToOption(EProjectionProjectorType ProjectorType)
+{
+	switch (ProjectorType)
+	{
+	case EProjectionProjectorType::ChristieM4K25RGB:
+	default:
+		return TEXT("Christie M 4K25 RGB");
+	}
+}
+
+EProjectionProjectorType UBuildMenuWidget::OptionToProjectionProjector(const FString& Option)
+{
+	return EProjectionProjectorType::ChristieM4K25RGB;
+}
+
+FString UBuildMenuWidget::ProjectionLensToOption(EProjectionLensType LensType)
+{
+	switch (LensType)
+	{
+	case EProjectionLensType::ILS067HD:
+		return TEXT("ILS 0.67 HD");
+	case EProjectionLensType::ILS4169HD:
+		return TEXT("ILS 4.1-6.9 HD");
+	case EProjectionLensType::ILS116149HD:
+	default:
+		return TEXT("ILS 1.16-1.49 HD");
+	}
+}
+
+EProjectionLensType UBuildMenuWidget::OptionToProjectionLens(const FString& Option)
+{
+	if (Option == TEXT("ILS 0.67 HD")) return EProjectionLensType::ILS067HD;
+	if (Option == TEXT("ILS 4.1-6.9 HD")) return EProjectionLensType::ILS4169HD;
+	return EProjectionLensType::ILS116149HD;
+}
+
+void UBuildMenuWidget::GetProjectionScreenDimensionsFt(EProjectionScreenKitSize ScreenKitSize, float& OutWidthFt, float& OutHeightFt)
+{
+	switch (ScreenKitSize)
+	{
+	case EProjectionScreenKitSize::Screen6x12:
+		OutWidthFt = 12.0f;
+		OutHeightFt = 6.0f;
+		return;
+	case EProjectionScreenKitSize::Screen8x14:
+		OutWidthFt = 14.0f;
+		OutHeightFt = 8.0f;
+		return;
+	case EProjectionScreenKitSize::Screen13x24:
+		OutWidthFt = 24.0f;
+		OutHeightFt = 13.0f;
+		return;
+	case EProjectionScreenKitSize::Screen9x16:
+	default:
+		OutWidthFt = 16.0f;
+		OutHeightFt = 9.0f;
+		return;
+	}
+}
+
+void UBuildMenuWidget::GetProjectionLensShiftPercent(EProjectionLensType LensType, float& OutVerticalMinPercent, float& OutVerticalMaxPercent, float& OutHorizontalMinPercent, float& OutHorizontalMaxPercent, bool& bOutHasData)
+{
+	bOutHasData = true;
+	switch (LensType)
+	{
+	case EProjectionLensType::ILS067HD:
+		OutVerticalMinPercent = -32.0f;
+		OutVerticalMaxPercent = 48.0f;
+		OutHorizontalMinPercent = -8.0f;
+		OutHorizontalMaxPercent = 19.0f;
+		return;
+	case EProjectionLensType::ILS116149HD:
+		OutVerticalMinPercent = -128.0f;
+		OutVerticalMaxPercent = 133.0f;
+		OutHorizontalMinPercent = -73.0f;
+		OutHorizontalMaxPercent = 73.0f;
+		return;
+	case EProjectionLensType::ILS4169HD:
+	default:
+		OutVerticalMinPercent = 0.0f;
+		OutVerticalMaxPercent = 0.0f;
+		OutHorizontalMinPercent = 0.0f;
+		OutHorizontalMaxPercent = 0.0f;
+		bOutHasData = false;
+		return;
+	}
 }
 
 UWidget* UBuildMenuWidget::GenerateComboItemWidget(FString Item)
@@ -2159,6 +2647,25 @@ void UBuildMenuWidget::HandleVideoTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleProjectionTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::ProjectionScreen;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
@@ -2169,6 +2676,10 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 	if (IsEditingMBP())
 	{
 		CurrentMBPEditScope = OptionToMBPEditScope(SelectedItemOption);
+		if (CurrentMBPEditScope == EMBPRuntimeEditScope::WholeWall)
+		{
+			CurrentMBPWallDefinition = EditingMBPTarget ? EditingMBPTarget->GetWallDefinition() : CurrentMBPWallDefinition;
+		}
 		ApplyMBPEditToTarget();
 		RefreshMenu();
 		return;
@@ -2188,11 +2699,33 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
 	{
 		CurrentVideoPlacementDefinition.TVModel = OptionToTVModel(SelectedItemOption);
-		ApplyVideoDefinitionToBuildManager();
+		if (IsEditingVideo())
+		{
+			ApplyVideoEditToTarget();
+		}
+		else
+		{
+			ApplyVideoDefinitionToBuildManager();
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
 		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		CurrentProjectionScreenDefinition.ScreenKitSize = OptionToProjectionScreenSize(SelectedItemOption);
+		if (IsEditingProjection())
+		{
+			ApplyProjectionEditToTarget();
+		}
+		else
+		{
+			ApplyProjectionDefinitionToBuildManager();
+		}
+		RefreshMenu();
 		return;
 	}
 
@@ -2215,8 +2748,20 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 
 	if (IsEditingMBP())
 	{
-		CurrentMBPEditTargetRow = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+		if (CurrentMBPEditScope == EMBPRuntimeEditScope::WholeWall)
+		{
+			CurrentMBPWallDefinition.Rows = FMath::Max(1, FMath::RoundToInt(NewValue));
+		}
+		else
+		{
+			CurrentMBPEditTargetRow = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+		}
 		ApplyMBPEditToTarget();
+		if (CurrentMBPEditScope == EMBPRuntimeEditScope::WholeWall)
+		{
+			RefreshMenu();
+			return;
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -2273,7 +2818,45 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
 	{
 		CurrentVideoPlacementDefinition.TVCenterHeightFt = FMath::Max(NewValue, 1.0f);
-		ApplyVideoDefinitionToBuildManager();
+		if (IsEditingVideo())
+		{
+			ApplyVideoEditToTarget();
+		}
+		else
+		{
+			ApplyVideoDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		float ScreenWidthFt = 0.0f;
+		float ScreenHeightFt = 0.0f;
+		GetProjectionScreenDimensionsFt(CurrentProjectionScreenDefinition.ScreenKitSize, ScreenWidthFt, ScreenHeightFt);
+
+		float VerticalMinPercent = 0.0f;
+		float VerticalMaxPercent = 0.0f;
+		float HorizontalMinPercent = 0.0f;
+		float HorizontalMaxPercent = 0.0f;
+		bool bHasShiftData = false;
+		GetProjectionLensShiftPercent(CurrentProjectionScreenDefinition.LensType, VerticalMinPercent, VerticalMaxPercent, HorizontalMinPercent, HorizontalMaxPercent, bHasShiftData);
+
+		const float MinOffsetFt = bHasShiftData ? ScreenWidthFt * (HorizontalMinPercent / 100.0f) : 0.0f;
+		const float MaxOffsetFt = bHasShiftData ? ScreenWidthFt * (HorizontalMaxPercent / 100.0f) : 0.0f;
+		CurrentProjectionScreenDefinition.ProjectorHorizontalOffsetFt = FMath::Clamp(NewValue, MinOffsetFt, MaxOffsetFt);
+		if (IsEditingProjection())
+		{
+			ApplyProjectionEditToTarget();
+		}
+		else
+		{
+			ApplyProjectionDefinitionToBuildManager();
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -2293,6 +2876,9 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 		break;
 	case ETrussBuildMode::Arch:
 		CurrentTrussDefinition.ArchWidthFt = FMath::Max(NewValue, 4.0f);
+		break;
+	case ETrussBuildMode::Tower:
+		CurrentTrussDefinition.TowerHeightFt = FMath::Max(NewValue, 2.0f);
 		break;
 	case ETrussBuildMode::Cube:
 		CurrentTrussDefinition.CubeLengthFt = FMath::Max(NewValue, 4.0f);
@@ -2322,8 +2908,20 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 
 	if (IsEditingMBP())
 	{
-		CurrentMBPEditTargetColumn = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+		if (CurrentMBPEditScope == EMBPRuntimeEditScope::WholeWall)
+		{
+			CurrentMBPWallDefinition.Columns = FMath::Max(1, FMath::RoundToInt(NewValue));
+		}
+		else
+		{
+			CurrentMBPEditTargetColumn = FMath::Max(0, FMath::RoundToInt(NewValue) - 1);
+		}
 		ApplyMBPEditToTarget();
+		if (CurrentMBPEditScope == EMBPRuntimeEditScope::WholeWall)
+		{
+			RefreshMenu();
+			return;
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -2380,7 +2978,45 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
 	{
 		CurrentVideoPlacementDefinition.TowerHeightFt = FMath::Max(NewValue, 2.0f);
-		ApplyVideoDefinitionToBuildManager();
+		if (IsEditingVideo())
+		{
+			ApplyVideoEditToTarget();
+		}
+		else
+		{
+			ApplyVideoDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		float ScreenWidthFt = 0.0f;
+		float ScreenHeightFt = 0.0f;
+		GetProjectionScreenDimensionsFt(CurrentProjectionScreenDefinition.ScreenKitSize, ScreenWidthFt, ScreenHeightFt);
+
+		float VerticalMinPercent = 0.0f;
+		float VerticalMaxPercent = 0.0f;
+		float HorizontalMinPercent = 0.0f;
+		float HorizontalMaxPercent = 0.0f;
+		bool bHasShiftData = false;
+		GetProjectionLensShiftPercent(CurrentProjectionScreenDefinition.LensType, VerticalMinPercent, VerticalMaxPercent, HorizontalMinPercent, HorizontalMaxPercent, bHasShiftData);
+
+		const float MinOffsetFt = bHasShiftData ? ScreenHeightFt * (VerticalMinPercent / 100.0f) : 0.0f;
+		const float MaxOffsetFt = bHasShiftData ? ScreenHeightFt * (VerticalMaxPercent / 100.0f) : 0.0f;
+		CurrentProjectionScreenDefinition.TowerHeightFt = FMath::Clamp(NewValue, MinOffsetFt, MaxOffsetFt);
+		if (IsEditingProjection())
+		{
+			ApplyProjectionEditToTarget();
+		}
+		else
+		{
+			ApplyProjectionDefinitionToBuildManager();
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -2430,8 +3066,30 @@ void UBuildMenuWidget::HandleTertiaryValueChanged(float NewValue)
 
 	if (IsEditingMBP())
 	{
+		if (CurrentMBPEditScope == EMBPRuntimeEditScope::WholeWall)
+		{
+			return;
+		}
 		CurrentMBPEditDepthOffsetCm = NewValue;
 		ApplyMBPEditToTarget();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		CurrentProjectionScreenDefinition.ScreenCenterOffsetCm.X = FMath::Clamp(NewValue, -500.0f, 500.0f);
+		if (IsEditingProjection())
+		{
+			ApplyProjectionEditToTarget();
+		}
+		else
+		{
+			ApplyProjectionDefinitionToBuildManager();
+		}
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -2466,11 +3124,52 @@ void UBuildMenuWidget::HandleQuaternaryValueChanged(float NewValue)
 	{
 		return;
 	}
+
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		CurrentProjectionScreenDefinition.ScreenCenterOffsetCm.Z = FMath::Clamp(NewValue, -500.0f, 500.0f);
+		if (IsEditingProjection())
+		{
+			ApplyProjectionEditToTarget();
+		}
+		else
+		{
+			ApplyProjectionDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
 }
 
 void UBuildMenuWidget::HandleSidePieceChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
-	if (bRefreshingControls || CurrentTrussDefinition.BuildMode != ETrussBuildMode::CubeArch)
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		CurrentProjectionScreenDefinition.ProjectorType = OptionToProjectionProjector(SelectedItemOption);
+		if (IsEditingProjection())
+		{
+			ApplyProjectionEditToTarget();
+		}
+		else
+		{
+			ApplyProjectionDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (CurrentTrussDefinition.BuildMode != ETrussBuildMode::CubeArch)
 	{
 		return;
 	}
@@ -2485,7 +3184,27 @@ void UBuildMenuWidget::HandleSidePieceChanged(FString SelectedItemOption, ESelec
 
 void UBuildMenuWidget::HandleDepthPieceChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
-	if (bRefreshingControls || CurrentTrussDefinition.BuildMode != ETrussBuildMode::CubeArch)
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
+	{
+		CurrentProjectionScreenDefinition.LensType = OptionToProjectionLens(SelectedItemOption);
+		if (IsEditingProjection())
+		{
+			ApplyProjectionEditToTarget();
+		}
+		else
+		{
+			ApplyProjectionDefinitionToBuildManager();
+		}
+		RefreshMenu();
+		return;
+	}
+
+	if (CurrentTrussDefinition.BuildMode != ETrussBuildMode::CubeArch)
 	{
 		return;
 	}

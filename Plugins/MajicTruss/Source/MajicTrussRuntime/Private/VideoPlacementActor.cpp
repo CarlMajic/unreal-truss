@@ -9,6 +9,7 @@
 namespace
 {
 constexpr float CmPerFoot = 30.48f;
+constexpr float InchesPerFoot = 12.0f;
 
 FSoftObjectPath GetTVMeshPath(EVideoTVModel Model)
 {
@@ -52,6 +53,21 @@ UStaticMesh* LoadMesh(const TCHAR* AssetPath)
 {
 	return Cast<UStaticMesh>(FSoftObjectPath(AssetPath).TryLoad());
 }
+
+int32 PickBlackPipeLengthInches(float RequestedHeightFt)
+{
+	const int32 PipeLengths[] = {7, 12, 24, 36, 48, 72, 96, 120};
+	const int32 RequestedInches = FMath::RoundToInt(FMath::Max(0.0f, RequestedHeightFt) * InchesPerFoot);
+	for (int32 PipeLength : PipeLengths)
+	{
+		if (PipeLength >= RequestedInches)
+		{
+			return PipeLength;
+		}
+	}
+
+	return 120;
+}
 }
 
 AVideoPlacementActor::AVideoPlacementActor()
@@ -94,6 +110,14 @@ AVideoPlacementActor::AVideoPlacementActor()
 	TVComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TVComponent"));
 	TVComponent->SetupAttachment(SceneRoot);
 	TVComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	AltmanBaseComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AltmanBaseComponent"));
+	AltmanBaseComponent->SetupAttachment(SceneRoot);
+	AltmanBaseComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	BlackPipeComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BlackPipeComponent"));
+	BlackPipeComponent->SetupAttachment(SceneRoot);
+	BlackPipeComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	const TCHAR* UPMPartNames[] = {
 		TEXT("Bolt"),
@@ -143,37 +167,24 @@ void AVideoPlacementActor::RebuildVideoPlacement()
 {
 	ClearGenerated();
 
-	FTrussPieceDefinition BaseDefinition;
-	UStaticMesh* BaseMesh = nullptr;
-	float BaseHeightCm = 0.0f;
-	if (GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh) && BaseMesh)
+	CurrentSupportMode = GetSupportModeForTVModel(TVModel);
+	if (CurrentSupportMode == EVideoTVSupportMode::TrussTower)
 	{
-		BaseInstances->SetStaticMesh(BaseMesh);
-		BaseInstances->bDisallowNanite = true;
-		const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
-		BaseHeightCm = BaseExtent.Z;
-		const FVector BaseMin(-BaseExtent.X * 0.5f, -BaseExtent.Y * 0.5f, 0.0f);
-		const FVector BaseLocation = GetMeshPlacementLocation(BaseMesh, BaseMin, FRotator::ZeroRotator);
-		BaseInstances->AddInstance(FTransform(FRotator::ZeroRotator, BaseLocation, FVector(TrussMeshScaleMultiplier)));
-		ExpandGeneratedBounds(FBox(BaseMin, BaseMin + BaseExtent));
+		BuildTrussTowerSupport();
 	}
-
-	const float RequestedTowerCm = FMath::Max(2.0f, TowerHeightFt) * CmPerFoot;
-	const FTrussCombinationResult TowerCombination = UTrussMathLibrary::FindBestTrussCombination(FMath::Max(0.0f, RequestedTowerCm - BaseHeightCm));
-	float CurrentZ = BaseHeightCm;
-	for (ETrussPieceType PieceType : TowerCombination.Pieces)
+	else
 	{
-		AddTowerPiece(PieceType, TowerPlacementOffsetCm + FVector(0.0f, 0.0f, CurrentZ), TowerRotation);
-		CurrentZ += UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType);
+		BuildBlackPipeSupport();
 	}
-	CurrentActualTowerHeightFt = CurrentZ / CmPerFoot;
 
 	if (UStaticMesh* TVMesh = LoadTVMesh(TVModel))
 	{
-		const FVector TVLocation = FVector(0.0f, 0.0f, FMath::Max(1.0f, TVCenterHeightFt) * CmPerFoot) + TVPlacementOffsetCm;
+		const FVector& ActiveTVOffset = CurrentSupportMode == EVideoTVSupportMode::TrussTower ? TVPlacementOffsetCm : BlackPipeTVPlacementOffsetCm;
+		const FRotator& ActiveTVRotation = CurrentSupportMode == EVideoTVSupportMode::TrussTower ? TVPlacementRotation : BlackPipeTVPlacementRotation;
+		const FVector TVLocation = FVector(0.0f, 0.0f, FMath::Max(1.0f, TVCenterHeightFt) * CmPerFoot) + ActiveTVOffset;
 		TVComponent->SetStaticMesh(TVMesh);
 		TVComponent->SetRelativeLocation(TVLocation);
-		TVComponent->SetRelativeRotation(TVPlacementRotation);
+		TVComponent->SetRelativeRotation(ActiveTVRotation);
 		TVComponent->SetRelativeScale3D(TVScale);
 		TVComponent->SetVisibility(true);
 		TVComponent->SetHiddenInGame(false);
@@ -201,6 +212,46 @@ void AVideoPlacementActor::ApplyBuildDefinition(const FVideoPlacementBuildDefini
 	{
 		RebuildVideoPlacement();
 	}
+}
+
+int32 AVideoPlacementActor::GetTVSizeInches(EVideoTVModel Model)
+{
+	switch (Model)
+	{
+	case EVideoTVModel::Benq25Preview:
+		return 25;
+	case EVideoTVModel::Samsung22:
+		return 22;
+	case EVideoTVModel::Insignia43:
+		return 43;
+	case EVideoTVModel::Philips46:
+		return 46;
+	case EVideoTVModel::Samsung55Outdoor:
+	case EVideoTVModel::Sharp55:
+		return 55;
+	case EVideoTVModel::Hisense58:
+	case EVideoTVModel::Samsung58:
+		return 58;
+	case EVideoTVModel::Samsung60:
+	case EVideoTVModel::Sharp60:
+		return 60;
+	case EVideoTVModel::Vizio70:
+		return 70;
+	case EVideoTVModel::Sharp80:
+		return 80;
+	case EVideoTVModel::Samsung82Crystal:
+	case EVideoTVModel::Samsung82Smart:
+		return 82;
+	case EVideoTVModel::Sharp90:
+		return 90;
+	default:
+		return 70;
+	}
+}
+
+EVideoTVSupportMode AVideoPlacementActor::GetSupportModeForTVModel(EVideoTVModel Model)
+{
+	return GetTVSizeInches(Model) >= 70 ? EVideoTVSupportMode::TrussTower : EVideoTVSupportMode::BlackPipe;
 }
 
 FVideoPlacementBuildDefinition AVideoPlacementActor::GetBuildDefinition() const
@@ -234,6 +285,15 @@ void AVideoPlacementActor::ClearGenerated()
 		}
 	}
 
+	for (UStaticMeshComponent* Component : {AltmanBaseComponent.Get(), BlackPipeComponent.Get(), TVComponent.Get()})
+	{
+		if (Component)
+		{
+			Component->SetVisibility(false);
+			Component->SetHiddenInGame(true);
+		}
+	}
+
 	for (UStaticMeshComponent* Component : UpperUPMComponents)
 	{
 		if (Component)
@@ -251,6 +311,56 @@ void AVideoPlacementActor::ClearGenerated()
 			Component->SetHiddenInGame(true);
 		}
 	}
+}
+
+void AVideoPlacementActor::BuildTrussTowerSupport()
+{
+	CurrentBlackPipeLengthInches = 0;
+
+	FTrussPieceDefinition BaseDefinition;
+	UStaticMesh* BaseMesh = nullptr;
+	float BaseHeightCm = 0.0f;
+	if (GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh) && BaseMesh)
+	{
+		BaseInstances->SetStaticMesh(BaseMesh);
+		BaseInstances->bDisallowNanite = true;
+		const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+		BaseHeightCm = BaseExtent.Z;
+		const FVector BaseMin(-BaseExtent.X * 0.5f, -BaseExtent.Y * 0.5f, 0.0f);
+		const FVector BaseLocation = GetMeshPlacementLocation(BaseMesh, BaseMin, FRotator::ZeroRotator);
+		BaseInstances->AddInstance(FTransform(FRotator::ZeroRotator, BaseLocation, FVector(TrussMeshScaleMultiplier)));
+		ExpandGeneratedBounds(FBox(BaseMin, BaseMin + BaseExtent));
+	}
+
+	const float RequestedTowerCm = FMath::Max(2.0f, TowerHeightFt) * CmPerFoot;
+	const FTrussCombinationResult TowerCombination = UTrussMathLibrary::FindBestTrussCombination(FMath::Max(0.0f, RequestedTowerCm - BaseHeightCm));
+	float CurrentZ = BaseHeightCm;
+	for (ETrussPieceType PieceType : TowerCombination.Pieces)
+	{
+		AddTowerPiece(PieceType, TowerPlacementOffsetCm + FVector(0.0f, 0.0f, CurrentZ), TowerRotation);
+		CurrentZ += UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType);
+	}
+	CurrentActualTowerHeightFt = CurrentZ / CmPerFoot;
+}
+
+void AVideoPlacementActor::BuildBlackPipeSupport()
+{
+	CurrentActualTowerHeightFt = 0.0f;
+	CurrentBlackPipeLengthInches = PickBlackPipeLengthInches(TowerHeightFt);
+
+	PlaceStaticMeshComponent(
+		AltmanBaseComponent,
+		LoadAltmanBaseMesh(),
+		BlackPipeSupportOffsetCm,
+		BlackPipeSupportRotation,
+		FVector::OneVector);
+
+	PlaceStaticMeshComponent(
+		BlackPipeComponent,
+		LoadBlackPipeMesh(CurrentBlackPipeLengthInches),
+		BlackPipeSupportOffsetCm,
+		BlackPipeSupportRotation,
+		FVector::OneVector);
 }
 
 void AVideoPlacementActor::AddTowerPiece(ETrussPieceType PieceType, const FVector& TargetMinLocation, const FRotator& Rotation)
@@ -331,6 +441,35 @@ UStaticMesh* AVideoPlacementActor::LoadTVMesh(EVideoTVModel Model) const
 	return Cast<UStaticMesh>(GetTVMeshPath(Model).TryLoad());
 }
 
+UStaticMesh* AVideoPlacementActor::LoadAltmanBaseMesh() const
+{
+	return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/Altman_Base/StaticMeshes/Altman_Base.Altman_Base"));
+}
+
+UStaticMesh* AVideoPlacementActor::LoadBlackPipeMesh(int32 PipeLengthInches) const
+{
+	switch (PipeLengthInches)
+	{
+	case 7:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/7inch_Black_Pipe/StaticMeshes/7inch_Black_Pipe.7inch_Black_Pipe"));
+	case 12:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/12inch_Black_Pipe/StaticMeshes/12inch_Black_Pipe.12inch_Black_Pipe"));
+	case 24:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/24inch_Black_Pipe/StaticMeshes/24inch_Black_Pipe.24inch_Black_Pipe"));
+	case 36:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/36inch_Black_Pipe/StaticMeshes/36inch_Black_Pipe.36inch_Black_Pipe"));
+	case 48:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/48inch_Black_Pipe/StaticMeshes/48inch_Black_Pipe.48inch_Black_Pipe"));
+	case 72:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/72inch_Black_Pipe/StaticMeshes/72inch_Black_Pipe.72inch_Black_Pipe"));
+	case 96:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/96inch_Black_Pipe/StaticMeshes/96inch_Black_Pipe.96inch_Black_Pipe"));
+	case 120:
+	default:
+		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/120inch_Black_Pipe/StaticMeshes/120inch_Black_Pipe.120inch_Black_Pipe"));
+	}
+}
+
 void AVideoPlacementActor::LoadUPMMeshes()
 {
 	const TCHAR* UPMAssetPaths[] = {
@@ -381,6 +520,23 @@ void AVideoPlacementActor::PlaceUPMComponents(const FVector& TVCenterLocation)
 
 	PlaceComponents(UpperUPMComponents, TVCenterLocation + UPMPlacementOffsetCm + FVector(0.0f, 0.0f, UPMVerticalSpacingCm));
 	PlaceComponents(LowerUPMComponents, TVCenterLocation + UPMPlacementOffsetCm - FVector(0.0f, 0.0f, UPMVerticalSpacingCm));
+}
+
+void AVideoPlacementActor::PlaceStaticMeshComponent(UStaticMeshComponent* Component, UStaticMesh* Mesh, const FVector& Location, const FRotator& Rotation, const FVector& Scale)
+{
+	if (!Component || !Mesh)
+	{
+		return;
+	}
+
+	Component->SetStaticMesh(Mesh);
+	Component->bDisallowNanite = true;
+	Component->SetRelativeLocation(Location);
+	Component->SetRelativeRotation(Rotation);
+	Component->SetRelativeScale3D(Scale);
+	Component->SetVisibility(true);
+	Component->SetHiddenInGame(false);
+	ExpandGeneratedBounds(Mesh->GetBoundingBox().TransformBy(Component->GetRelativeTransform()));
 }
 
 bool AVideoPlacementActor::GetPieceDefinition(ETrussPieceType PieceType, FTrussPieceDefinition& OutPiece, UStaticMesh*& OutMesh) const

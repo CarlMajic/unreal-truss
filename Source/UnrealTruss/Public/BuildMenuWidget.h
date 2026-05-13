@@ -9,6 +9,7 @@
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
 #include "VideoPlacementActor.h"
+#include "ProjectionScreenActor.h"
 #include "BuildMenuWidget.generated.h"
 
 class UBuildItemDataAsset;
@@ -27,6 +28,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBuildMenuActionRequested);
 
 enum class EMBPRuntimeEditScope : uint8
 {
+	WholeWall,
 	Panel,
 	Row,
 	Column
@@ -96,6 +98,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FVideoPlacementBuildDefinition GetCurrentVideoPlacementDefinition() const;
 
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FProjectionScreenBuildDefinition GetCurrentProjectionScreenDefinition() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
 
@@ -103,7 +108,7 @@ public:
 	class ATrussStructureActor* GetEditingTarget() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
-	void SetEditingMBPTarget(class AMBPWallActor* InEditingTarget, int32 InTargetRow = 0, int32 InTargetColumn = 0);
+	void SetEditingMBPTarget(class AMBPWallActor* InEditingTarget, int32 InTargetRow = 0, int32 InTargetColumn = 0, bool bStartWithPanel = false);
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	class AMBPWallActor* GetEditingMBPTarget() const;
@@ -112,7 +117,7 @@ public:
 	void SetEditingMBPPanelTarget(int32 InTargetRow, int32 InTargetColumn);
 
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
-	void SetEditingStageTarget(class AStageDeckActor* InEditingTarget, int32 InTargetRow = 0, int32 InTargetColumn = 0);
+	void SetEditingStageTarget(class AStageDeckActor* InEditingTarget, int32 InTargetRow = 0, int32 InTargetColumn = 0, bool bStartWithCell = false);
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	class AStageDeckActor* GetEditingStageTarget() const;
@@ -125,6 +130,21 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	class ADrapeRunActor* GetEditingDrapeTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingVideoTarget(class AVideoPlacementActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class AVideoPlacementActor* GetEditingVideoTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingProjectionTarget(class AProjectionScreenActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class AProjectionScreenActor* GetEditingProjectionTarget() const;
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	bool ShouldShowPointerForCurrentEdit() const;
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -152,6 +172,9 @@ private:
 	FVideoPlacementBuildDefinition CurrentVideoPlacementDefinition;
 
 	UPROPERTY(Transient)
+	FProjectionScreenBuildDefinition CurrentProjectionScreenDefinition;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBuildManagerComponent> BuildManager = nullptr;
 
 	UPROPERTY(Transient)
@@ -177,6 +200,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> VideoTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> ProjectionTabButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HeaderText = nullptr;
@@ -325,6 +351,12 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ADrapeRunActor> EditingDrapeTarget = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<AVideoPlacementActor> EditingVideoTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AProjectionScreenActor> EditingProjectionTarget = nullptr;
+
 	bool bRefreshingControls = false;
 	EBuildItemType ActiveMenuTab = EBuildItemType::TrussStructure;
 	EMBPRuntimeEditScope CurrentMBPEditScope = EMBPRuntimeEditScope::Panel;
@@ -345,20 +377,26 @@ private:
 	bool IsEditingMBP() const;
 	bool IsEditingStage() const;
 	bool IsEditingDrape() const;
+	bool IsEditingVideo() const;
+	bool IsEditingProjection() const;
 	void RefreshTabButtons();
 	void RefreshTrussControls();
 	void RefreshMBPControls();
 	void RefreshStageControls();
 	void RefreshDrapeControls();
 	void RefreshVideoControls();
+	void RefreshProjectionControls();
 	void ApplyTrussDefinitionToBuildManager();
 	void ApplyMBPDefinitionToBuildManager();
 	void ApplyStageDefinitionToBuildManager();
 	void ApplyDrapeDefinitionToBuildManager();
 	void ApplyVideoDefinitionToBuildManager();
+	void ApplyProjectionDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	void ApplyStageEditToTarget();
 	void ApplyDrapeEditToTarget();
+	void ApplyVideoEditToTarget();
+	void ApplyProjectionEditToTarget();
 	void SyncCurrentStageCellFromTarget();
 	bool ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildItem) const;
 	static FString BuildModeToOption(ETrussBuildMode BuildMode);
@@ -377,6 +415,14 @@ private:
 	static EStageRuntimeEditScope OptionToStageEditScope(const FString& Option);
 	static FString TVModelToOption(EVideoTVModel TVModel);
 	static EVideoTVModel OptionToTVModel(const FString& Option);
+	static FString ProjectionScreenSizeToOption(EProjectionScreenKitSize ScreenKitSize);
+	static EProjectionScreenKitSize OptionToProjectionScreenSize(const FString& Option);
+	static FString ProjectionProjectorToOption(EProjectionProjectorType ProjectorType);
+	static EProjectionProjectorType OptionToProjectionProjector(const FString& Option);
+	static FString ProjectionLensToOption(EProjectionLensType LensType);
+	static EProjectionLensType OptionToProjectionLens(const FString& Option);
+	static void GetProjectionScreenDimensionsFt(EProjectionScreenKitSize ScreenKitSize, float& OutWidthFt, float& OutHeightFt);
+	static void GetProjectionLensShiftPercent(EProjectionLensType LensType, float& OutVerticalMinPercent, float& OutVerticalMaxPercent, float& OutHorizontalMinPercent, float& OutHorizontalMaxPercent, bool& bOutHasData);
 	UWidget* GenerateComboItemWidget(FString Item);
 
 	UFUNCTION()
@@ -393,6 +439,9 @@ private:
 
 	UFUNCTION()
 	void HandleVideoTabClicked();
+
+	UFUNCTION()
+	void HandleProjectionTabClicked();
 
 	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);

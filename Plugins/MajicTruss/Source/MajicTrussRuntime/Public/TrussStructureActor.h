@@ -14,6 +14,7 @@ enum class ETrussBuildMode : uint8
 	StraightRun UMETA(DisplayName = "Straight Run"),
 	Rectangle UMETA(DisplayName = "Rectangle"),
 	Arch UMETA(DisplayName = "Arch"),
+	Tower UMETA(DisplayName = "Tower"),
 	Cube UMETA(DisplayName = "Cube"),
 	CubeArch UMETA(DisplayName = "Cube Arch")
 };
@@ -72,6 +73,9 @@ struct FTrussBuildDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (ClampMin = "4.0", Units = "ft"))
 	float ArchWidthFt = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tower", meta = (ClampMin = "2.0", Units = "ft"))
+	float TowerHeightFt = 8.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube", meta = (ClampMin = "4.0", Units = "ft"))
 	float CubeLengthFt = 20.0f;
@@ -199,6 +203,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (ClampMin = "4.0", Units = "ft"))
 	float ArchWidthFt = 16.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tower", meta = (ClampMin = "2.0", Units = "ft"))
+	float TowerHeightFt = 8.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (Units = "cm"))
 	float ArchCornerConnectionOffsetCm = 15.24f;
 
@@ -291,6 +298,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void BuildArch();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss")
+	void BuildTower();
 
 	UFUNCTION(BlueprintCallable, Category = "Truss")
 	void BuildCube();

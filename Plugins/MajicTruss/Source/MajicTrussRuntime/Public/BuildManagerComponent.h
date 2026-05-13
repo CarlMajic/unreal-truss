@@ -12,6 +12,7 @@ class APlayerController;
 class AStageDeckActor;
 class ATrussStructureActor;
 class AVideoPlacementActor;
+class AProjectionScreenActor;
 
 USTRUCT(BlueprintType)
 struct FBuildPlacementResult
@@ -67,6 +68,9 @@ public:
 	FVideoPlacementBuildDefinition ActiveVideoPlacementDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FProjectionScreenBuildDefinition ActiveProjectionScreenDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -92,6 +96,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveVideoPlacementDefinition(const FVideoPlacementBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveProjectionScreenDefinition(const FProjectionScreenBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);

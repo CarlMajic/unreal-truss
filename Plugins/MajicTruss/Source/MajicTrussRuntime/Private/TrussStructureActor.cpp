@@ -105,6 +105,9 @@ void ATrussStructureActor::BuildCurrentMode()
 	case ETrussBuildMode::Cube:
 		BuildCube();
 		break;
+	case ETrussBuildMode::Tower:
+		BuildTower();
+		break;
 	case ETrussBuildMode::Arch:
 		BuildArch();
 		break;
@@ -128,6 +131,7 @@ void ATrussStructureActor::ApplyBuildDefinition(const FTrussBuildDefinition& Def
 	RectangleHeightFt = Definition.RectangleHeightFt;
 	ArchHeightFt = Definition.ArchHeightFt;
 	ArchWidthFt = Definition.ArchWidthFt;
+	TowerHeightFt = Definition.TowerHeightFt;
 	CubeLengthFt = Definition.CubeLengthFt;
 	CubeWidthFt = Definition.CubeWidthFt;
 	CubeHeightFt = Definition.CubeHeightFt;
@@ -153,6 +157,7 @@ FTrussBuildDefinition ATrussStructureActor::GetBuildDefinition() const
 	Definition.RectangleHeightFt = RectangleHeightFt;
 	Definition.ArchHeightFt = ArchHeightFt;
 	Definition.ArchWidthFt = ArchWidthFt;
+	Definition.TowerHeightFt = TowerHeightFt;
 	Definition.CubeLengthFt = CubeLengthFt;
 	Definition.CubeWidthFt = CubeWidthFt;
 	Definition.CubeHeightFt = CubeHeightFt;
@@ -295,6 +300,43 @@ void ATrussStructureActor::BuildArch()
 	);
 
 	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(BaseHeightCm + LegCombination.ActualLengthCm + CornerHeightCm);
+	UpdateSelectionBounds();
+}
+
+void ATrussStructureActor::BuildTower()
+{
+	ClearGeneratedTruss();
+
+	FTrussPieceDefinition BaseDefinition;
+	UStaticMesh* BaseMesh = nullptr;
+	if (!GetPieceDefinition(ETrussPieceType::Base, BaseDefinition, BaseMesh))
+	{
+		return;
+	}
+
+	const FVector BaseExtent = GetScaledRotatedMeshExtent(BaseMesh, FRotator::ZeroRotator);
+	const float BaseHeightCm = BaseExtent.Z;
+	const float LegTargetCm = UTrussMathLibrary::FeetToCentimeters(TowerHeightFt) - BaseHeightCm;
+	if (LegTargetCm <= 0.0f)
+	{
+		return;
+	}
+
+	const FTrussCombinationResult LegCombination = UTrussMathLibrary::FindBestTrussCombination(LegTargetCm);
+	if (LegCombination.Pieces.IsEmpty())
+	{
+		return;
+	}
+
+	const float LegX = ArchVerticalLegXOffsetCm - ArchCornerConnectionOffsetCm;
+	const float BaseMinX = LegX - (BaseExtent.X * 0.5f);
+	const float BaseMinY = ArchBaseYOffsetCm - (BaseExtent.Y * 0.5f);
+	const FRotator VerticalRotation(ArchVerticalRotationYDeg, ArchVerticalRotationZDeg, ArchVerticalRotationXDeg);
+
+	AddPieceInstance(ETrussPieceType::Base, FVector(BaseMinX, BaseMinY, 0.0f), FRotator::ZeroRotator);
+	AddStraightRun(LegCombination.Pieces, FVector(LegX, ArchLegYOffsetCm, BaseHeightCm), VerticalRotation);
+
+	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet(BaseHeightCm + LegCombination.ActualLengthCm);
 	UpdateSelectionBounds();
 }
 

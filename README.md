@@ -62,7 +62,7 @@ Core goals:
   </tr>
   <tr>
     <td><strong>Truss</strong></td>
-    <td>Straight runs, rectangles, arches, cubes, cube arches, real inventory lengths, mounted fixtures.</td>
+    <td>Straight runs, towers, rectangles, arches, cubes, cube arches, real inventory lengths, mounted fixtures.</td>
     <td>Runtime actor and editor/runtime workflows started.</td>
   </tr>
   <tr>
@@ -87,8 +87,8 @@ Core goals:
   </tr>
   <tr>
     <td><strong>Video</strong></td>
-    <td>TV placement on truss towers first, then Altman bases with black pipe, projection screen kits, and video wall parts.</td>
-    <td>First runtime TV-on-truss placement pass started.</td>
+    <td>Separate TV, projection screen, and video wall tools. TV placement chooses black pipe or truss support by TV size.</td>
+    <td>Runtime TV placement started with black-pipe and truss support paths.</td>
   </tr>
   <tr>
     <td><strong>Decor, Bars, Tables</strong></td>
@@ -115,7 +115,7 @@ Core goals:
   <img src="docs/assets/truss-build-modes.png" alt="Architectural sketch strip showing straight, rectangle, arch, and cube truss build modes" width="100%">
 </p>
 
-The first buildable system covers straight truss runs, rectangle structures, arches, cubes, and cube arch structures. Truss pieces are selected from inventory lengths and rendered through instanced static mesh components when meshes are assigned.
+The first buildable system covers straight truss runs, standalone towers, rectangle structures, arches, cubes, and cube arch structures. Truss pieces are selected from inventory lengths and rendered through instanced static mesh components when meshes are assigned.
 
 ## Fixture Placement
 
@@ -157,12 +157,12 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 
 ## Roadmap
 
-1. Validate drape runtime placement/editing in a real room layout and decide whether the short-span drape offset needs another calibration pass.
+1. Keep runtime pipe-and-drape in the current static-mesh path; placement and editing are validated for the current workflow.
 2. Revisit Chaos cloth with a clean pre-authored drape skeletal mesh and simple pinned top edge.
 3. Validate final Y-run truss fixture alignment on rectangle and cube structures.
 4. Improve MBP authoring with easier slot editing, pattern helpers, and mixed-style presets.
 5. Improve stage deck authoring, podium integration, and runtime placement/editing.
-6. Continue the video placement tool by adding Altman bases and selectable black pipe lengths.
+6. Continue TV placement calibration, then add projector screen and video wall as separate runtime tools.
 7. Add decor, bars, tables, and other venue-ready build items.
 8. Add VR as a new input layer with controller-ray targeting and world-space UI.
 
@@ -177,6 +177,96 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 | `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details open>
+<summary><strong>2026-05-12: Editor-first projection screen actor</strong></summary>
+
+### 2026-05-12
+
+Current direction:
+
+- Keep projection screens as a separate tool from TV and video wall placement.
+- Start editor-first so the screen-kit Blueprints, projector mesh orientation, and real-world throw rules can be calibrated before runtime placement.
+- Treat the screen kit as the anchor and drive projector placement from the selected Christie M 4K25 RGB lens data.
+
+What has been done:
+
+- Added `AProjectionScreenActor` in `MajicTrussRuntime`.
+- Added selectable screen kit Blueprint support:
+  - `6 x 12`
+  - `8 x 14`
+  - `9 x 16`
+  - `13 x 24`
+- The actor uses the existing screen-kit Blueprints directly so their materials and video playback setup are preserved.
+- Added first Christie M 4K25 RGB lens options:
+  - `ILS 0.67 HD Fixed`
+  - `ILS 1.16-1.49 HD Zoom`
+  - `ILS 4.1-6.9 HD Zoom`
+- Throw distance is computed from the Christie lens formulas using screen width in inches.
+- Added throw position selection:
+  - `Minimum`
+  - `Middle`
+  - `Maximum`
+  - `Manual`
+- Added a generated Christie 25K projector mesh kit from the projection assets.
+- Added first-pass projector mount modes:
+  - `AV Cart`
+  - `Truss Tower`
+  - `Hanging Truss`
+- Projector mesh placement stays level; the generated spotlight aims at the screen center for projection visualization.
+- `Hanging Truss` supports `Under Slung` and `Over Slung`; over-slung flips the projector mesh from the current under-slung orientation.
+- Added a generated spotlight from the projector toward the screen center as the first lens/brightness visualization path.
+- Added visible debug fields for current screen size and computed throw distances.
+
+Notes:
+
+- Christie M 4K25 RGB brightness starts at `25,300 ISO lumens`; the spotlight currently uses that as its base intensity with an exposed scale multiplier.
+- Christie's throw table measures most throw distances from the center of the projector front feet, so the projector placement origin may need calibration against the imported Christie mesh before runtime work.
+- The next pass should place the actor in the editor, validate the Blueprint class paths load correctly, calibrate screen/projector orientation, and decide the visual convention for truss, tower, and AV-cart mount modes.
+- AV cart, truss tower, and hanging-truss support are first-pass generated geometry and still need Details-panel offset/rotation calibration against real event layout expectations.
+
+</details>
+
+<details open>
+<summary><strong>2026-05-12: TV tool direction and black-pipe support</strong></summary>
+
+### 2026-05-12
+
+Current direction:
+
+- Keep TV placement as its own runtime build tool.
+- Build projector screens and video walls as separate tools later instead of combining everything into one all-inclusive video tool.
+- Use one Altman base and one black pipe for TVs under 70 inches.
+- Use the working truss tower setup for TVs 70 inches and larger.
+- Keep separate TV placement offsets for black-pipe support and truss support because the physical support geometry lines up differently.
+
+What has been done:
+
+- Renamed the runtime tab/display wording from broad video placement toward TV placement.
+- Added automatic TV support selection by model size:
+  - under 70 inches: Altman base plus black pipe
+  - 70 inches and larger: truss tower
+- Added a single `Altman_Base` component and a single black-pipe component to the TV actor.
+- Added black-pipe length selection from the available `7`, `12`, `24`, `36`, `48`, `72`, `96`, and `120` inch pipe assets using the requested support height.
+- Added separate calibration fields:
+  - `BlackPipeSupportOffsetCm`
+  - `BlackPipeSupportRotation`
+  - `BlackPipeTVPlacementOffsetCm`
+  - `BlackPipeTVPlacementRotation`
+  - existing truss TV offset/rotation remain available for the truss support path.
+- Runtime pipe-and-drape placement and editing have been tested in workflow and are working well with the current static mesh path.
+- Added runtime TV editing through the Build Menu:
+  - look at a TV actor and press `E`
+  - click the highlighted TV actor
+  - change `TV Model`, `TV Center Height (ft)`, or `Support Height (ft)`
+  - changes rebuild the selected TV actor in place
+
+Notes:
+
+- Black-pipe support intentionally uses one base and one pipe, not a pair of bases.
+- UPM placement is still shared between support modes for now; final offset calibration can diverge later if the pipe path needs it.
+
+</details>
 
 <details open>
 <summary><strong>2026-05-11: First video placement pass and refreshed TV/rigging assets</strong></summary>
@@ -645,6 +735,7 @@ What has been done:
   - runtime item listing from `BuildItemDataAsset` assets
   - item selection that feeds the build manager
   - truss mode selection and mode-dependent size editing in the placeholder menu
+  - tower mode with a single height control
   - straight/rectangle hanging height controls
   - cube-arch side/depth spacer piece selection
   - shared create/update action path for later editor-placed truss editing

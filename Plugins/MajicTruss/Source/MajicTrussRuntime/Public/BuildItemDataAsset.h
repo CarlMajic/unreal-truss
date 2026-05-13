@@ -7,6 +7,7 @@
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
 #include "VideoPlacementActor.h"
+#include "ProjectionScreenActor.h"
 #include "BuildItemDataAsset.generated.h"
 
 class UTexture2D;
@@ -19,7 +20,8 @@ enum class EBuildItemType : uint8
 	MBPWall UMETA(DisplayName = "MBP Wall"),
 	StageDeck UMETA(DisplayName = "Stage Deck"),
 	DrapeRun UMETA(DisplayName = "Drape Run"),
-	VideoPlacement UMETA(DisplayName = "Video Placement")
+	VideoPlacement UMETA(DisplayName = "TV Placement"),
+	ProjectionScreen UMETA(DisplayName = "Projection Screen")
 };
 
 UCLASS(BlueprintType)
@@ -75,4 +77,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Video")
 	FVideoPlacementBuildDefinition DefaultVideoPlacementDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Projection")
+	FProjectionScreenBuildDefinition DefaultProjectionScreenDefinition;
 };

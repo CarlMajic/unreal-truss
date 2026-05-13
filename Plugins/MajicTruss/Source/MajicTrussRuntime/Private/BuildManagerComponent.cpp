@@ -8,6 +8,7 @@
 #include "StageDeckActor.h"
 #include "TrussStructureActor.h"
 #include "VideoPlacementActor.h"
+#include "ProjectionScreenActor.h"
 
 UBuildManagerComponent::UBuildManagerComponent()
 {
@@ -35,6 +36,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	ActiveStageDeckDefinition = BuildItem ? BuildItem->DefaultStageDeckDefinition : FStageDeckBuildDefinition();
 	ActiveDrapeRunDefinition = BuildItem ? BuildItem->DefaultDrapeRunDefinition : FDrapeRunBuildDefinition();
 	ActiveVideoPlacementDefinition = BuildItem ? BuildItem->DefaultVideoPlacementDefinition : FVideoPlacementBuildDefinition();
+	ActiveProjectionScreenDefinition = BuildItem ? BuildItem->DefaultProjectionScreenDefinition : FProjectionScreenBuildDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -99,6 +101,16 @@ void UBuildManagerComponent::SetActiveDrapeRunDefinition(const FDrapeRunBuildDef
 void UBuildManagerComponent::SetActiveVideoPlacementDefinition(const FVideoPlacementBuildDefinition& Definition)
 {
 	ActiveVideoPlacementDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveProjectionScreenDefinition(const FProjectionScreenBuildDefinition& Definition)
+{
+	ActiveProjectionScreenDefinition = Definition;
 
 	if (ActivePreviewActor)
 	{
@@ -329,6 +341,16 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 		{
 			VideoPlacementActor->bBuildOnConstruction = false;
 			VideoPlacementActor->ApplyBuildDefinition(ActiveVideoPlacementDefinition, true);
+		}
+		return;
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::ProjectionScreen)
+	{
+		if (AProjectionScreenActor* ProjectionScreenActor = Cast<AProjectionScreenActor>(Actor))
+		{
+			ProjectionScreenActor->bBuildOnConstruction = false;
+			ProjectionScreenActor->ApplyBuildDefinition(ActiveProjectionScreenDefinition, true);
 		}
 	}
 }
