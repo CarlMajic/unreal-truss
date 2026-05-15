@@ -101,6 +101,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FProjectionScreenBuildDefinition GetCurrentProjectionScreenDefinition() const;
 
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FAudioPlacementBuildDefinition GetCurrentAudioPlacementDefinition() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
 
@@ -143,6 +146,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	class AProjectionScreenActor* GetEditingProjectionTarget() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingAudioTarget(class AActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class AActor* GetEditingAudioTarget() const;
+
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	bool ShouldShowPointerForCurrentEdit() const;
 
@@ -175,6 +184,12 @@ private:
 	FProjectionScreenBuildDefinition CurrentProjectionScreenDefinition;
 
 	UPROPERTY(Transient)
+	FAudioPlacementBuildDefinition CurrentAudioPlacementDefinition;
+
+	UPROPERTY(Transient)
+	TSoftObjectPtr<class USoundBase> CurrentAudioSource;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UBuildManagerComponent> BuildManager = nullptr;
 
 	UPROPERTY(Transient)
@@ -203,6 +218,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> ProjectionTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> AudioTabButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HeaderText = nullptr;
@@ -357,6 +375,15 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AProjectionScreenActor> EditingProjectionTarget = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<class AAudioGroundSpeakerActor> EditingAudioGroundSpeakerTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class AAudioGroundLineArrayActor> EditingAudioGroundLineArrayTarget = nullptr;
+
+	TArray<FString> AudioSourceOptions;
+	TMap<FString, FSoftObjectPath> AudioSourcePathsByOption;
+
 	bool bRefreshingControls = false;
 	EBuildItemType ActiveMenuTab = EBuildItemType::TrussStructure;
 	EMBPRuntimeEditScope CurrentMBPEditScope = EMBPRuntimeEditScope::Panel;
@@ -379,6 +406,7 @@ private:
 	bool IsEditingDrape() const;
 	bool IsEditingVideo() const;
 	bool IsEditingProjection() const;
+	bool IsEditingAudio() const;
 	void RefreshTabButtons();
 	void RefreshTrussControls();
 	void RefreshMBPControls();
@@ -386,18 +414,24 @@ private:
 	void RefreshDrapeControls();
 	void RefreshVideoControls();
 	void RefreshProjectionControls();
+	void RefreshAudioControls();
 	void ApplyTrussDefinitionToBuildManager();
 	void ApplyMBPDefinitionToBuildManager();
 	void ApplyStageDefinitionToBuildManager();
 	void ApplyDrapeDefinitionToBuildManager();
 	void ApplyVideoDefinitionToBuildManager();
 	void ApplyProjectionDefinitionToBuildManager();
+	void ApplyAudioDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	void ApplyStageEditToTarget();
 	void ApplyDrapeEditToTarget();
 	void ApplyVideoEditToTarget();
 	void ApplyProjectionEditToTarget();
+	void ApplyAudioEditToTarget();
 	void SyncCurrentStageCellFromTarget();
+	void RefreshAudioSourceOptions();
+	FString AudioSourceToOption(const TSoftObjectPtr<USoundBase>& AudioSource) const;
+	TSoftObjectPtr<USoundBase> OptionToAudioSource(const FString& Option) const;
 	bool ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildItem) const;
 	static FString BuildModeToOption(ETrussBuildMode BuildMode);
 	static ETrussBuildMode OptionToBuildMode(const FString& Option);
@@ -421,6 +455,12 @@ private:
 	static EProjectionProjectorType OptionToProjectionProjector(const FString& Option);
 	static FString ProjectionLensToOption(EProjectionLensType LensType);
 	static EProjectionLensType OptionToProjectionLens(const FString& Option);
+	static FString AudioPlacementTypeToOption(EAudioPlacementRuntimeType PlacementType);
+	static EAudioPlacementRuntimeType OptionToAudioPlacementType(const FString& Option);
+	static FString AudioSpeakerModelToOption(EAudioGroundSpeakerModel SpeakerModel);
+	static EAudioGroundSpeakerModel OptionToAudioSpeakerModel(const FString& Option);
+	static FString AudioLineArrayModelToOption(EAudioGroundLineArrayModel LineArrayModel);
+	static EAudioGroundLineArrayModel OptionToAudioLineArrayModel(const FString& Option);
 	static void GetProjectionScreenDimensionsFt(EProjectionScreenKitSize ScreenKitSize, float& OutWidthFt, float& OutHeightFt);
 	static void GetProjectionLensShiftPercent(EProjectionLensType LensType, float& OutVerticalMinPercent, float& OutVerticalMaxPercent, float& OutHorizontalMinPercent, float& OutHorizontalMaxPercent, bool& bOutHasData);
 	UWidget* GenerateComboItemWidget(FString Item);
@@ -442,6 +482,9 @@ private:
 
 	UFUNCTION()
 	void HandleProjectionTabClicked();
+
+	UFUNCTION()
+	void HandleAudioTabClicked();
 
 	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);

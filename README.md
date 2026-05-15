@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Live-event build tools for Unreal Engine</strong><br>
-  A runtime-first toolkit for designing truss, stages, lighting, scenic walls, decor, bars, tables, and complete event setups.
+  A runtime-first toolkit for designing truss, stages, lighting, scenic walls, audio, decor, bars, tables, and complete event setups.
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
       </p>
       <p>
         The first foundation is truss built from real inventory lengths. From there, the same runtime
-        placement system can expand into stages, scenic walls, lighting fixtures, decor, bars, tables,
+        placement system can expand into stages, scenic walls, lighting fixtures, audio, decor, bars, tables,
         and future VR editing workflows.
       </p>
     </td>
@@ -40,7 +40,7 @@
 
 ## Mission
 
-Unreal Truss started as a runtime-first Unreal Engine 5.6 plugin for building event-production truss structures from real inventory lengths. The larger direction is a reusable live-event build toolkit: a shared runtime foundation for truss, stages, decor items, bars, tables, MBP scenic walls, lighting fixtures, and future VR placement/editing workflows.
+Unreal Truss started as a runtime-first Unreal Engine 5.6 plugin for building event-production truss structures from real inventory lengths. The larger direction is a reusable live-event build toolkit: a shared runtime foundation for truss, stages, decor items, bars, tables, MBP scenic walls, lighting fixtures, audio systems, and future VR placement/editing workflows.
 
 The first milestone is a straight truss run. The plugin keeps the truss math in runtime C++ so the same system can be used later by editor tools, Blueprint gameplay, in-game UI, and immersive event layout tools.
 
@@ -89,6 +89,11 @@ Core goals:
     <td><strong>Video</strong></td>
     <td>Separate TV, projection screen, and video wall tools. TV placement chooses black pipe or truss support by TV size.</td>
     <td>Runtime TV placement started with black-pipe and truss support paths.</td>
+  </tr>
+  <tr>
+    <td><strong>Audio</strong></td>
+    <td>Ground-supported speakers and ground-supported line arrays with imported speaker/stand assets, spatial sound sources, and runtime editing.</td>
+    <td>Editor and runtime create/edit workflow started.</td>
   </tr>
   <tr>
     <td><strong>Decor, Bars, Tables</strong></td>
@@ -163,20 +168,77 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 4. Improve MBP authoring with easier slot editing, pattern helpers, and mixed-style presets.
 5. Improve stage deck authoring, podium integration, and runtime placement/editing.
 6. Continue TV placement calibration, then add projector screen and video wall as separate runtime tools.
-7. Add decor, bars, tables, and other venue-ready build items.
-8. Add VR as a new input layer with controller-ray targeting and world-space UI.
+7. Calibrate audio cone preview direction against Unreal attenuation direction and tune per-speaker sound profiles.
+8. Add decor, bars, tables, and other venue-ready build items.
+9. Add VR as a new input layer with controller-ray targeting and world-space UI.
 
 ## Repository Map
 
 | Path | Purpose |
 | --- | --- |
-| `Plugins/MajicTruss/Source/MajicTrussRuntime` | Runtime plugin with truss generation, build placement support, fixture mounting, MBP wall generation, stage deck generation, and pipe-and-drape generation. |
+| `Plugins/MajicTruss/Source/MajicTrussRuntime` | Runtime plugin with truss generation, build placement support, fixture mounting, MBP wall generation, stage deck generation, pipe-and-drape generation, video/projection actors, and audio actors. |
 | `Source/UnrealTruss` | Code-first playable test path, build menu widget, light placement menu, targeting pointer, pawn, and game mode. |
 | `Content/Build` | Build item data assets used by the runtime placement workflow. |
-| `Content/Majic_Gear` | Imported truss, MBP, lighting, and event-gear assets used by the current tool pass. |
+| `Content/Majic_Gear` | Imported truss, MBP, lighting, audio, video, and event-gear assets used by the current tool pass. |
 | `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details open>
+<summary><strong>2026-05-15: Runtime audio placement and editing</strong></summary>
+
+### 2026-05-15
+
+Current direction:
+
+- Keep ground-supported speakers and ground-supported line arrays in one runtime `Audio` build-menu tool.
+- Use separate generated actors for small ground speakers and ground line arrays, but drive them through the same `AudioPlacement` build item.
+- Keep the editor actor calibration fields visible because imported audio assets use shared origins but still need per-model offset and rotation tuning.
+- Treat sound assignment as part of runtime editing so placed audio actors can be muted or assigned a test track without opening the Details panel.
+
+What has been done:
+
+- Added editor/runtime audio actors in `MajicTrussRuntime`:
+  - `AAudioGroundSpeakerActor`
+  - `AAudioGroundLineArrayActor`
+- Added ground-supported speaker support:
+  - TS-100 stand is always included for current small speaker models
+  - speaker options include QSC K8, QSC K10, QSC K12, QSC KW153, and CDD-LIVE 15
+  - TS-100 telescoping support moves `Upper_001`, `Pin_001`, and `Hand_Grip_001`
+  - stand extension adjusts down from the modeled tall position
+- Added ground-supported line array support:
+  - MLA Mini and MLA Compact share one actor
+  - Mini uses sub, telescoping pole, and stacked speakers
+  - Compact uses compact sub, flybar, and stacked compact speakers
+  - Compact speaker count is capped at 6
+  - `Sub Only` leaves only the sub visible for both Mini and Compact
+- Added spatial audio support on both audio actor types:
+  - optional assigned `USoundBase`
+  - auto-play support
+  - built-in distance falloff and speaker-model profiles
+  - directional cone attenuation
+  - audio virtualization set to keep playback alive when the listener leaves and re-enters range
+  - editor-only cone preview is hidden in play
+- Added runtime `Audio` build menu support:
+  - one `Audio` tab places either ground speakers or ground line arrays
+  - build preview swaps actor class when changing audio type
+  - placed actors use the same build definitions as the preview
+- Added runtime edit-menu support:
+  - `E` enters pointer edit-select mode
+  - left click a placed audio actor to open `Edit Audio`
+  - ground speaker edit can change speaker model and stand extension
+  - line array edit can change Mini/Compact, speaker count, pole extension, and Sub Only
+  - sound dropdown lists `USoundBase` assets from `/Game/Majic_Gear/Audio/Sound_Check`
+  - `No Audio` clears and stops the sound on that actor
+- Added imported audio assets under `Content/Majic_Gear/Audio`, including the `Sound_Check` test wave asset.
+- Build verified after the latest changes with:
+  - `Result: Succeeded`
+
+Current known issue:
+
+- Cone preview direction and audible cone attenuation direction do not appear to match closely enough yet. The next pass should calibrate Unreal cone orientation against the visible cone mesh before tuning per-speaker profiles further.
+
+</details>
 
 <details open>
 <summary><strong>2026-05-13: Projection runtime tool and pointer-based edit selection</strong></summary>

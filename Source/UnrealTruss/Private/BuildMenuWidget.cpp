@@ -1,5 +1,9 @@
 #include "BuildMenuWidget.h"
 
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "AudioGroundLineArrayActor.h"
+#include "AudioGroundSpeakerActor.h"
 #include "BuildItemDataAsset.h"
 #include "BuildManagerComponent.h"
 #include "Components/Border.h"
@@ -19,16 +23,21 @@
 #include "TrussStructureActor.h"
 #include "WhiteComboBoxString.h"
 #include "Blueprint/WidgetTree.h"
+#include "Sound/SoundBase.h"
 
 namespace
 {
+constexpr TCHAR NoAudioOption[] = TEXT("No Audio");
+constexpr TCHAR SoundCheckAssetPath[] = TEXT("/Game/Majic_Gear/Audio/Sound_Check");
+
 static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 {
 	if (ItemType == EBuildItemType::MBPWall ||
 		ItemType == EBuildItemType::StageDeck ||
 		ItemType == EBuildItemType::DrapeRun ||
 		ItemType == EBuildItemType::VideoPlacement ||
-		ItemType == EBuildItemType::ProjectionScreen)
+		ItemType == EBuildItemType::ProjectionScreen ||
+		ItemType == EBuildItemType::AudioPlacement)
 	{
 		return ItemType;
 	}
@@ -51,6 +60,24 @@ static UBuildItemDataAsset* FindMatchingBuildItemForActor(const TArray<TObjectPt
 		}
 
 		if (BuildItem->BuildActorClass && TrussActor->IsA(BuildItem->BuildActorClass))
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
+static UBuildItemDataAsset* FindMatchingBuildItemForAudioActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const AActor* AudioActor)
+{
+	if (!AudioActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && BuildItem->ItemType == EBuildItemType::AudioPlacement)
 		{
 			return BuildItem;
 		}
@@ -188,6 +215,7 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 		CurrentDrapeRunDefinition = SelectedBuildItem->DefaultDrapeRunDefinition;
 		CurrentVideoPlacementDefinition = SelectedBuildItem->DefaultVideoPlacementDefinition;
 		CurrentProjectionScreenDefinition = SelectedBuildItem->DefaultProjectionScreenDefinition;
+		CurrentAudioPlacementDefinition = SelectedBuildItem->DefaultAudioPlacementDefinition;
 		ActiveMenuTab = BuildTabForItemType(SelectedBuildItem->ItemType);
 	}
 
@@ -206,6 +234,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		CurrentDrapeRunDefinition = InSelectedItem->DefaultDrapeRunDefinition;
 		CurrentVideoPlacementDefinition = InSelectedItem->DefaultVideoPlacementDefinition;
 		CurrentProjectionScreenDefinition = InSelectedItem->DefaultProjectionScreenDefinition;
+		CurrentAudioPlacementDefinition = InSelectedItem->DefaultAudioPlacementDefinition;
 		ActiveMenuTab = BuildTabForItemType(InSelectedItem->ItemType);
 	}
 
@@ -218,6 +247,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		ApplyDrapeDefinitionToBuildManager();
 		ApplyVideoDefinitionToBuildManager();
 		ApplyProjectionDefinitionToBuildManager();
+		ApplyAudioDefinitionToBuildManager();
 	}
 
 	RefreshMenu();
@@ -251,6 +281,7 @@ void UBuildMenuWidget::RefreshMenu()
 	RefreshDrapeControls();
 	RefreshVideoControls();
 	RefreshProjectionControls();
+	RefreshAudioControls();
 	RefreshTabButtons();
 	RebuildItemButtons();
 }
@@ -290,6 +321,11 @@ FProjectionScreenBuildDefinition UBuildMenuWidget::GetCurrentProjectionScreenDef
 	return CurrentProjectionScreenDefinition;
 }
 
+FAudioPlacementBuildDefinition UBuildMenuWidget::GetCurrentAudioPlacementDefinition() const
+{
+	return CurrentAudioPlacementDefinition;
+}
+
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 {
 	EditingTarget = InEditingTarget;
@@ -298,6 +334,8 @@ void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
 	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
 
 	if (EditingTarget)
 	{
@@ -324,6 +362,8 @@ void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
 	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
 
 	if (EditingMBPTarget)
 	{
@@ -393,6 +433,8 @@ void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, i
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
 	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
 
 	if (EditingStageTarget)
 	{
@@ -435,6 +477,8 @@ void UBuildMenuWidget::SetEditingDrapeTarget(ADrapeRunActor* InEditingTarget)
 	EditingDrapeTarget = InEditingTarget;
 	EditingVideoTarget = nullptr;
 	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
 
 	if (EditingDrapeTarget)
 	{
@@ -462,6 +506,8 @@ void UBuildMenuWidget::SetEditingVideoTarget(AVideoPlacementActor* InEditingTarg
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = InEditingTarget;
 	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
 
 	if (EditingVideoTarget)
 	{
@@ -489,6 +535,8 @@ void UBuildMenuWidget::SetEditingProjectionTarget(AProjectionScreenActor* InEdit
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
 	EditingProjectionTarget = InEditingTarget;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
 
 	if (EditingProjectionTarget)
 	{
@@ -506,6 +554,57 @@ void UBuildMenuWidget::SetEditingProjectionTarget(AProjectionScreenActor* InEdit
 AProjectionScreenActor* UBuildMenuWidget::GetEditingProjectionTarget() const
 {
 	return EditingProjectionTarget;
+}
+
+void UBuildMenuWidget::SetEditingAudioTarget(AActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = Cast<AAudioGroundSpeakerActor>(InEditingTarget);
+	EditingAudioGroundLineArrayTarget = Cast<AAudioGroundLineArrayActor>(InEditingTarget);
+
+	if (EditingAudioGroundSpeakerTarget)
+	{
+		ActiveMenuTab = EBuildItemType::AudioPlacement;
+		CurrentAudioPlacementDefinition.PlacementType = EAudioPlacementRuntimeType::GroundSpeaker;
+		CurrentAudioPlacementDefinition.GroundSpeakerDefinition = EditingAudioGroundSpeakerTarget->GetBuildDefinition();
+		CurrentAudioSource = EditingAudioGroundSpeakerTarget->AudioSource;
+	}
+	else if (EditingAudioGroundLineArrayTarget)
+	{
+		ActiveMenuTab = EBuildItemType::AudioPlacement;
+		CurrentAudioPlacementDefinition.PlacementType = EAudioPlacementRuntimeType::GroundLineArray;
+		CurrentAudioPlacementDefinition.GroundLineArrayDefinition = EditingAudioGroundLineArrayTarget->GetBuildDefinition();
+		CurrentAudioSource = EditingAudioGroundLineArrayTarget->AudioSource;
+	}
+	else
+	{
+		CurrentAudioSource = nullptr;
+	}
+
+	if (IsEditingAudio())
+	{
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForAudioActor(BuildItems, InEditingTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+AActor* UBuildMenuWidget::GetEditingAudioTarget() const
+{
+	if (EditingAudioGroundSpeakerTarget)
+	{
+		return EditingAudioGroundSpeakerTarget;
+	}
+
+	return EditingAudioGroundLineArrayTarget;
 }
 
 bool UBuildMenuWidget::ShouldShowPointerForCurrentEdit() const
@@ -625,7 +724,18 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	ProjectionTabText->SetText(FText::FromString(TEXT("Projection")));
 	ProjectionTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	ProjectionTabButton->AddChild(ProjectionTabText);
-	TabButtonBox->AddChildToHorizontalBox(ProjectionTabButton);
+	if (UHorizontalBoxSlot* ProjectionTabSlot = TabButtonBox->AddChildToHorizontalBox(ProjectionTabButton))
+	{
+		ProjectionTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	AudioTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("AudioTabButton"));
+	AudioTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleAudioTabClicked);
+	UTextBlock* AudioTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("AudioTabText"));
+	AudioTabText->SetText(FText::FromString(TEXT("Audio")));
+	AudioTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	AudioTabButton->AddChild(AudioTabText);
+	TabButtonBox->AddChildToHorizontalBox(AudioTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -937,7 +1047,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ButtonProxies.Reset();
 	ItemListBox->ClearChildren();
 
-	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingProjection() && BuildItems.Num() > 1;
+	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingProjection() && !IsEditingAudio() && BuildItems.Num() > 1;
 	int32 VisibleItemCount = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
@@ -984,18 +1094,20 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::ProjectionScreen)
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::ProjectionScreen && ActiveMenuTab != EBuildItemType::AudioPlacement)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
 
 	const FText Name = SelectedBuildItem
 		? (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName)
-		: (ActiveMenuTab == EBuildItemType::ProjectionScreen
+		: (ActiveMenuTab == EBuildItemType::AudioPlacement
+			? FText::FromString(TEXT("Audio"))
+			: (ActiveMenuTab == EBuildItemType::ProjectionScreen
 			? FText::FromString(TEXT("Projection"))
 			: (ActiveMenuTab == EBuildItemType::VideoPlacement
 				? FText::FromString(TEXT("Video"))
-				: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall")))));
+				: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall"))))));
 
 	const TCHAR* TypeLabel = TEXT("MBP Wall");
 	if (ActiveMenuTab == EBuildItemType::TrussStructure)
@@ -1017,6 +1129,10 @@ FText UBuildMenuWidget::BuildDetailText() const
 	else if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
 	{
 		TypeLabel = TEXT("Projection Screen");
+	}
+	else if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		TypeLabel = TEXT("Audio Placement");
 	}
 
 	FString Detail = FString::Printf(
@@ -1138,6 +1254,23 @@ FText UBuildMenuWidget::BuildDetailText() const
 			Definition.ScreenCenterOffsetCm.X,
 			Definition.ScreenCenterOffsetCm.Z);
 	}
+	else if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		const bool bLineArray = CurrentAudioPlacementDefinition.PlacementType == EAudioPlacementRuntimeType::GroundLineArray;
+		Detail += bLineArray
+			? FString::Printf(
+				TEXT("\nAudio Type: Ground Line Array\nArray: %s\nSpeakers: %d\nPole Extension: %.1f in\nSub Only: %s\nSound: %s"),
+				*AudioLineArrayModelToOption(CurrentAudioPlacementDefinition.GroundLineArrayDefinition.LineArrayModel),
+				CurrentAudioPlacementDefinition.GroundLineArrayDefinition.SpeakerCount,
+				CurrentAudioPlacementDefinition.GroundLineArrayDefinition.PoleExtensionInches,
+				CurrentAudioPlacementDefinition.GroundLineArrayDefinition.bSubOnly ? TEXT("Yes") : TEXT("No"),
+				*AudioSourceToOption(CurrentAudioSource))
+			: FString::Printf(
+				TEXT("\nAudio Type: Ground Speaker\nSpeaker: %s\nStand Extension: %.1f ft\nSound: %s"),
+				*AudioSpeakerModelToOption(CurrentAudioPlacementDefinition.GroundSpeakerDefinition.SpeakerModel),
+				CurrentAudioPlacementDefinition.GroundSpeakerDefinition.StandExtensionFt,
+				*AudioSourceToOption(CurrentAudioSource));
+	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
 }
@@ -1174,12 +1307,17 @@ FText UBuildMenuWidget::BuildHeaderText() const
 		return FText::FromString(TEXT("Edit Projection"));
 	}
 
+	if (IsEditingAudio())
+	{
+		return FText::FromString(TEXT("Edit Audio"));
+	}
+
 	return FText::FromString(TEXT("Build Menu"));
 }
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingProjection())
+	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingProjection() || IsEditingAudio())
 		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
 }
@@ -1207,6 +1345,11 @@ bool UBuildMenuWidget::IsEditingVideo() const
 bool UBuildMenuWidget::IsEditingProjection() const
 {
 	return EditingProjectionTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingAudio() const
+{
+	return EditingAudioGroundSpeakerTarget != nullptr || EditingAudioGroundLineArrayTarget != nullptr;
 }
 
 void UBuildMenuWidget::RefreshTrussControls()
@@ -1381,6 +1524,11 @@ void UBuildMenuWidget::RefreshTabButtons()
 	if (ProjectionTabButton)
 	{
 		ProjectionTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::ProjectionScreen));
+	}
+
+	if (AudioTabButton)
+	{
+		AudioTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::AudioPlacement));
 	}
 }
 
@@ -1930,6 +2078,144 @@ void UBuildMenuWidget::RefreshProjectionControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshAudioControls()
+{
+	if (ActiveMenuTab != EBuildItemType::AudioPlacement)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	const bool bLineArray = CurrentAudioPlacementDefinition.PlacementType == EAudioPlacementRuntimeType::GroundLineArray;
+	RefreshAudioSourceOptions();
+
+	if (ModeLabelText)
+	{
+		ModeLabelText->SetText(FText::FromString(TEXT("Audio Type")));
+		ModeLabelText->SetVisibility(IsEditingAudio() ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	}
+
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(IsEditingAudio() ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		ModeComboBox->ClearOptions();
+		ModeComboBox->AddOption(AudioPlacementTypeToOption(EAudioPlacementRuntimeType::GroundSpeaker));
+		ModeComboBox->AddOption(AudioPlacementTypeToOption(EAudioPlacementRuntimeType::GroundLineArray));
+		ModeComboBox->SetSelectedOption(AudioPlacementTypeToOption(CurrentAudioPlacementDefinition.PlacementType));
+	}
+
+	if (SidePieceLabelText)
+	{
+		SidePieceLabelText->SetText(FText::FromString(bLineArray ? TEXT("Line Array") : TEXT("Speaker Model")));
+		SidePieceLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	if (SidePieceComboBox)
+	{
+		SidePieceComboBox->SetVisibility(ESlateVisibility::Visible);
+		SidePieceComboBox->ClearOptions();
+		if (bLineArray)
+		{
+			SidePieceComboBox->AddOption(AudioLineArrayModelToOption(EAudioGroundLineArrayModel::MLA_Mini));
+			SidePieceComboBox->AddOption(AudioLineArrayModelToOption(EAudioGroundLineArrayModel::MLA_Compact));
+			SidePieceComboBox->SetSelectedOption(AudioLineArrayModelToOption(CurrentAudioPlacementDefinition.GroundLineArrayDefinition.LineArrayModel));
+		}
+		else
+		{
+			for (EAudioGroundSpeakerModel SpeakerModel : {
+				EAudioGroundSpeakerModel::QSC_K8,
+				EAudioGroundSpeakerModel::QSC_K10,
+				EAudioGroundSpeakerModel::QSC_K12,
+				EAudioGroundSpeakerModel::QSC_KW153,
+				EAudioGroundSpeakerModel::CDD_LIVE_15})
+			{
+				SidePieceComboBox->AddOption(AudioSpeakerModelToOption(SpeakerModel));
+			}
+			SidePieceComboBox->SetSelectedOption(AudioSpeakerModelToOption(CurrentAudioPlacementDefinition.GroundSpeakerDefinition.SpeakerModel));
+		}
+	}
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, bool bShow)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(MaxValue);
+			if (bShow)
+			{
+				SpinBox->SetValue(Value);
+			}
+		}
+	};
+
+	SetNumericControl(
+		PrimaryValueLabelText,
+		PrimaryValueSpinBox,
+		bLineArray ? TEXT("Speaker Count") : TEXT("Stand Extension (ft)"),
+		bLineArray ? CurrentAudioPlacementDefinition.GroundLineArrayDefinition.SpeakerCount : CurrentAudioPlacementDefinition.GroundSpeakerDefinition.StandExtensionFt,
+		bLineArray ? 1.0f : 0.0f,
+		bLineArray ? (CurrentAudioPlacementDefinition.GroundLineArrayDefinition.LineArrayModel == EAudioGroundLineArrayModel::MLA_Compact ? 6.0f : 12.0f) : 3.0f,
+		true);
+
+	SetNumericControl(
+		SecondaryValueLabelText,
+		SecondaryValueSpinBox,
+		TEXT("Pole Extension (in)"),
+		CurrentAudioPlacementDefinition.GroundLineArrayDefinition.PoleExtensionInches,
+		0.0f,
+		17.0f,
+		bLineArray);
+
+	SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+	SetNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT(""), 0.0f, 0.0f, 0.0f, false);
+
+	if (DepthPieceLabelText)
+	{
+		DepthPieceLabelText->SetText(FText::FromString(TEXT("Sound")));
+		DepthPieceLabelText->SetVisibility(IsEditingAudio() ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (DepthPieceComboBox)
+	{
+		DepthPieceComboBox->SetVisibility(IsEditingAudio() ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		DepthPieceComboBox->ClearOptions();
+		for (const FString& Option : AudioSourceOptions)
+		{
+			DepthPieceComboBox->AddOption(Option);
+		}
+		DepthPieceComboBox->SetSelectedOption(AudioSourceToOption(CurrentAudioSource));
+	}
+
+	if (StageAutomaticSkirtLabelText)
+	{
+		StageAutomaticSkirtLabelText->SetText(FText::FromString(TEXT("Sub Only")));
+		StageAutomaticSkirtLabelText->SetVisibility(bLineArray ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (StageAutomaticSkirtCheckBox)
+	{
+		StageAutomaticSkirtCheckBox->SetVisibility(bLineArray ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (bLineArray)
+		{
+			StageAutomaticSkirtCheckBox->SetIsChecked(CurrentAudioPlacementDefinition.GroundLineArrayDefinition.bSubOnly);
+		}
+	}
+
+	if (!IsEditingAudio())
+	{
+		ApplyAudioDefinitionToBuildManager();
+	}
+	bRefreshingControls = false;
+}
+
 void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
@@ -1988,6 +2274,91 @@ void UBuildMenuWidget::ApplyProjectionDefinitionToBuildManager()
 	}
 
 	BuildManager->SetActiveProjectionScreenDefinition(CurrentProjectionScreenDefinition);
+}
+
+void UBuildMenuWidget::ApplyAudioDefinitionToBuildManager()
+{
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::AudioPlacement)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveAudioPlacementDefinition(CurrentAudioPlacementDefinition);
+}
+
+void UBuildMenuWidget::ApplyAudioEditToTarget()
+{
+	if (EditingAudioGroundSpeakerTarget)
+	{
+		EditingAudioGroundSpeakerTarget->ApplyBuildDefinition(CurrentAudioPlacementDefinition.GroundSpeakerDefinition, true);
+		EditingAudioGroundSpeakerTarget->SetAudioSource(CurrentAudioSource, true);
+	}
+	else if (EditingAudioGroundLineArrayTarget)
+	{
+		EditingAudioGroundLineArrayTarget->ApplyBuildDefinition(CurrentAudioPlacementDefinition.GroundLineArrayDefinition, true);
+		EditingAudioGroundLineArrayTarget->SetAudioSource(CurrentAudioSource, true);
+	}
+}
+
+void UBuildMenuWidget::RefreshAudioSourceOptions()
+{
+	AudioSourceOptions.Reset();
+	AudioSourcePathsByOption.Reset();
+	AudioSourceOptions.Add(NoAudioOption);
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TArray<FAssetData> Assets;
+	AssetRegistryModule.Get().GetAssetsByPath(*FString(SoundCheckAssetPath), Assets, false);
+	Assets.Sort([](const FAssetData& Left, const FAssetData& Right)
+	{
+		return Left.AssetName.LexicalLess(Right.AssetName);
+	});
+
+	for (const FAssetData& Asset : Assets)
+	{
+		if (!Cast<USoundBase>(Asset.GetAsset()))
+		{
+			continue;
+		}
+
+		const FString Option = Asset.AssetName.ToString();
+		AudioSourceOptions.Add(Option);
+		AudioSourcePathsByOption.Add(Option, Asset.ToSoftObjectPath());
+	}
+}
+
+FString UBuildMenuWidget::AudioSourceToOption(const TSoftObjectPtr<USoundBase>& AudioSource) const
+{
+	if (AudioSource.IsNull())
+	{
+		return NoAudioOption;
+	}
+
+	const FSoftObjectPath SourcePath = AudioSource.ToSoftObjectPath();
+	for (const TPair<FString, FSoftObjectPath>& Pair : AudioSourcePathsByOption)
+	{
+		if (Pair.Value == SourcePath)
+		{
+			return Pair.Key;
+		}
+	}
+
+	return AudioSource.GetAssetName();
+}
+
+TSoftObjectPtr<USoundBase> UBuildMenuWidget::OptionToAudioSource(const FString& Option) const
+{
+	if (Option == NoAudioOption)
+	{
+		return nullptr;
+	}
+
+	if (const FSoftObjectPath* AssetPath = AudioSourcePathsByOption.Find(Option))
+	{
+		return TSoftObjectPtr<USoundBase>(*AssetPath);
+	}
+
+	return nullptr;
 }
 
 void UBuildMenuWidget::ApplyDrapeEditToTarget()
@@ -2108,6 +2479,11 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
 	{
 		return BuildItem->ItemType == EBuildItemType::ProjectionScreen;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		return BuildItem->ItemType == EBuildItemType::AudioPlacement;
 	}
 
 	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
@@ -2488,6 +2864,53 @@ EProjectionLensType UBuildMenuWidget::OptionToProjectionLens(const FString& Opti
 	return EProjectionLensType::ILS116149HD;
 }
 
+FString UBuildMenuWidget::AudioPlacementTypeToOption(EAudioPlacementRuntimeType PlacementType)
+{
+	return PlacementType == EAudioPlacementRuntimeType::GroundLineArray ? TEXT("Ground Line Array") : TEXT("Ground Speaker");
+}
+
+EAudioPlacementRuntimeType UBuildMenuWidget::OptionToAudioPlacementType(const FString& Option)
+{
+	return Option == TEXT("Ground Line Array") ? EAudioPlacementRuntimeType::GroundLineArray : EAudioPlacementRuntimeType::GroundSpeaker;
+}
+
+FString UBuildMenuWidget::AudioSpeakerModelToOption(EAudioGroundSpeakerModel SpeakerModel)
+{
+	switch (SpeakerModel)
+	{
+	case EAudioGroundSpeakerModel::QSC_K10:
+		return TEXT("QSC K10");
+	case EAudioGroundSpeakerModel::QSC_K12:
+		return TEXT("QSC K12");
+	case EAudioGroundSpeakerModel::QSC_KW153:
+		return TEXT("QSC KW153");
+	case EAudioGroundSpeakerModel::CDD_LIVE_15:
+		return TEXT("CDD-LIVE 15");
+	case EAudioGroundSpeakerModel::QSC_K8:
+	default:
+		return TEXT("QSC K8");
+	}
+}
+
+EAudioGroundSpeakerModel UBuildMenuWidget::OptionToAudioSpeakerModel(const FString& Option)
+{
+	if (Option == TEXT("QSC K10")) return EAudioGroundSpeakerModel::QSC_K10;
+	if (Option == TEXT("QSC K12")) return EAudioGroundSpeakerModel::QSC_K12;
+	if (Option == TEXT("QSC KW153")) return EAudioGroundSpeakerModel::QSC_KW153;
+	if (Option == TEXT("CDD-LIVE 15")) return EAudioGroundSpeakerModel::CDD_LIVE_15;
+	return EAudioGroundSpeakerModel::QSC_K8;
+}
+
+FString UBuildMenuWidget::AudioLineArrayModelToOption(EAudioGroundLineArrayModel LineArrayModel)
+{
+	return LineArrayModel == EAudioGroundLineArrayModel::MLA_Compact ? TEXT("MLA Compact") : TEXT("MLA Mini");
+}
+
+EAudioGroundLineArrayModel UBuildMenuWidget::OptionToAudioLineArrayModel(const FString& Option)
+{
+	return Option == TEXT("MLA Compact") ? EAudioGroundLineArrayModel::MLA_Compact : EAudioGroundLineArrayModel::MLA_Mini;
+}
+
 void UBuildMenuWidget::GetProjectionScreenDimensionsFt(EProjectionScreenKitSize ScreenKitSize, float& OutWidthFt, float& OutHeightFt)
 {
 	switch (ScreenKitSize)
@@ -2666,6 +3089,25 @@ void UBuildMenuWidget::HandleProjectionTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleAudioTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::AudioPlacement;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
@@ -2724,6 +3166,21 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 		else
 		{
 			ApplyProjectionDefinitionToBuildManager();
+		}
+		RefreshMenu();
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		CurrentAudioPlacementDefinition.PlacementType = OptionToAudioPlacementType(SelectedItemOption);
+		if (IsEditingAudio())
+		{
+			ApplyAudioEditToTarget();
+		}
+		else
+		{
+			ApplyAudioDefinitionToBuildManager();
 		}
 		RefreshMenu();
 		return;
@@ -2856,6 +3313,32 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 		else
 		{
 			ApplyProjectionDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		if (CurrentAudioPlacementDefinition.PlacementType == EAudioPlacementRuntimeType::GroundLineArray)
+		{
+			const int32 MaxSpeakers = CurrentAudioPlacementDefinition.GroundLineArrayDefinition.LineArrayModel == EAudioGroundLineArrayModel::MLA_Compact ? 6 : 12;
+			CurrentAudioPlacementDefinition.GroundLineArrayDefinition.SpeakerCount = FMath::Clamp(FMath::RoundToInt(NewValue), 1, MaxSpeakers);
+		}
+		else
+		{
+			CurrentAudioPlacementDefinition.GroundSpeakerDefinition.StandExtensionFt = FMath::Clamp(NewValue, 0.0f, 3.0f);
+		}
+		if (IsEditingAudio())
+		{
+			ApplyAudioEditToTarget();
+		}
+		else
+		{
+			ApplyAudioDefinitionToBuildManager();
 		}
 		if (DetailText)
 		{
@@ -3024,6 +3507,27 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 		return;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		if (CurrentAudioPlacementDefinition.PlacementType == EAudioPlacementRuntimeType::GroundLineArray)
+		{
+			CurrentAudioPlacementDefinition.GroundLineArrayDefinition.PoleExtensionInches = FMath::Clamp(NewValue, 0.0f, 17.0f);
+			if (IsEditingAudio())
+			{
+				ApplyAudioEditToTarget();
+			}
+			else
+			{
+				ApplyAudioDefinitionToBuildManager();
+			}
+			if (DetailText)
+			{
+				DetailText->SetText(BuildDetailText());
+			}
+		}
+		return;
+	}
+
 	if (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
 	{
 		return;
@@ -3169,6 +3673,30 @@ void UBuildMenuWidget::HandleSidePieceChanged(FString SelectedItemOption, ESelec
 		return;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		if (CurrentAudioPlacementDefinition.PlacementType == EAudioPlacementRuntimeType::GroundLineArray)
+		{
+			CurrentAudioPlacementDefinition.GroundLineArrayDefinition.LineArrayModel = OptionToAudioLineArrayModel(SelectedItemOption);
+			const int32 MaxSpeakers = CurrentAudioPlacementDefinition.GroundLineArrayDefinition.LineArrayModel == EAudioGroundLineArrayModel::MLA_Compact ? 6 : 12;
+			CurrentAudioPlacementDefinition.GroundLineArrayDefinition.SpeakerCount = FMath::Clamp(CurrentAudioPlacementDefinition.GroundLineArrayDefinition.SpeakerCount, 1, MaxSpeakers);
+		}
+		else
+		{
+			CurrentAudioPlacementDefinition.GroundSpeakerDefinition.SpeakerModel = OptionToAudioSpeakerModel(SelectedItemOption);
+		}
+		if (IsEditingAudio())
+		{
+			ApplyAudioEditToTarget();
+		}
+		else
+		{
+			ApplyAudioDefinitionToBuildManager();
+		}
+		RefreshMenu();
+		return;
+	}
+
 	if (CurrentTrussDefinition.BuildMode != ETrussBuildMode::CubeArch)
 	{
 		return;
@@ -3201,6 +3729,20 @@ void UBuildMenuWidget::HandleDepthPieceChanged(FString SelectedItemOption, ESele
 			ApplyProjectionDefinitionToBuildManager();
 		}
 		RefreshMenu();
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		CurrentAudioSource = OptionToAudioSource(SelectedItemOption);
+		if (IsEditingAudio())
+		{
+			ApplyAudioEditToTarget();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
 		return;
 	}
 
@@ -3463,7 +4005,30 @@ void UBuildMenuWidget::HandleStageRightStepChanged(bool bIsChecked)
 
 void UBuildMenuWidget::HandleStageAutomaticSkirtChanged(bool bIsChecked)
 {
-	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
+	{
+		CurrentAudioPlacementDefinition.GroundLineArrayDefinition.bSubOnly = bIsChecked;
+		if (IsEditingAudio())
+		{
+			ApplyAudioEditToTarget();
+		}
+		else
+		{
+			ApplyAudioDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab != EBuildItemType::StageDeck)
 	{
 		return;
 	}

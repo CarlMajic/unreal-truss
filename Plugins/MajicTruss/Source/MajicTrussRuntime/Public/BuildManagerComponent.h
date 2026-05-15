@@ -6,6 +6,8 @@
 #include "BuildManagerComponent.generated.h"
 
 class ABuildPreviewActor;
+class AAudioGroundLineArrayActor;
+class AAudioGroundSpeakerActor;
 class ADrapeRunActor;
 class AMBPWallActor;
 class APlayerController;
@@ -71,6 +73,9 @@ public:
 	FProjectionScreenBuildDefinition ActiveProjectionScreenDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FAudioPlacementBuildDefinition ActiveAudioPlacementDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -99,6 +104,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveProjectionScreenDefinition(const FProjectionScreenBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveAudioPlacementDefinition(const FAudioPlacementBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);

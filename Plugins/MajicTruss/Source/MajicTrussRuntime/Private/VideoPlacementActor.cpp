@@ -8,8 +8,8 @@
 
 namespace
 {
-constexpr float CmPerFoot = 30.48f;
-constexpr float InchesPerFoot = 12.0f;
+constexpr float VideoCmPerFoot = 30.48f;
+constexpr float VideoInchesPerFoot = 12.0f;
 
 FSoftObjectPath GetTVMeshPath(EVideoTVModel Model)
 {
@@ -49,7 +49,7 @@ FSoftObjectPath GetTVMeshPath(EVideoTVModel Model)
 	}
 }
 
-UStaticMesh* LoadMesh(const TCHAR* AssetPath)
+UStaticMesh* LoadVideoMesh(const TCHAR* AssetPath)
 {
 	return Cast<UStaticMesh>(FSoftObjectPath(AssetPath).TryLoad());
 }
@@ -57,7 +57,7 @@ UStaticMesh* LoadMesh(const TCHAR* AssetPath)
 int32 PickBlackPipeLengthInches(float RequestedHeightFt)
 {
 	const int32 PipeLengths[] = {7, 12, 24, 36, 48, 72, 96, 120};
-	const int32 RequestedInches = FMath::RoundToInt(FMath::Max(0.0f, RequestedHeightFt) * InchesPerFoot);
+	const int32 RequestedInches = FMath::RoundToInt(FMath::Max(0.0f, RequestedHeightFt) * VideoInchesPerFoot);
 	for (int32 PipeLength : PipeLengths)
 	{
 		if (PipeLength >= RequestedInches)
@@ -181,7 +181,7 @@ void AVideoPlacementActor::RebuildVideoPlacement()
 	{
 		const FVector& ActiveTVOffset = CurrentSupportMode == EVideoTVSupportMode::TrussTower ? TVPlacementOffsetCm : BlackPipeTVPlacementOffsetCm;
 		const FRotator& ActiveTVRotation = CurrentSupportMode == EVideoTVSupportMode::TrussTower ? TVPlacementRotation : BlackPipeTVPlacementRotation;
-		const FVector TVLocation = FVector(0.0f, 0.0f, FMath::Max(1.0f, TVCenterHeightFt) * CmPerFoot) + ActiveTVOffset;
+		const FVector TVLocation = FVector(0.0f, 0.0f, FMath::Max(1.0f, TVCenterHeightFt) * VideoCmPerFoot) + ActiveTVOffset;
 		TVComponent->SetStaticMesh(TVMesh);
 		TVComponent->SetRelativeLocation(TVLocation);
 		TVComponent->SetRelativeRotation(ActiveTVRotation);
@@ -332,7 +332,7 @@ void AVideoPlacementActor::BuildTrussTowerSupport()
 		ExpandGeneratedBounds(FBox(BaseMin, BaseMin + BaseExtent));
 	}
 
-	const float RequestedTowerCm = FMath::Max(2.0f, TowerHeightFt) * CmPerFoot;
+	const float RequestedTowerCm = FMath::Max(2.0f, TowerHeightFt) * VideoCmPerFoot;
 	const FTrussCombinationResult TowerCombination = UTrussMathLibrary::FindBestTrussCombination(FMath::Max(0.0f, RequestedTowerCm - BaseHeightCm));
 	float CurrentZ = BaseHeightCm;
 	for (ETrussPieceType PieceType : TowerCombination.Pieces)
@@ -340,7 +340,7 @@ void AVideoPlacementActor::BuildTrussTowerSupport()
 		AddTowerPiece(PieceType, TowerPlacementOffsetCm + FVector(0.0f, 0.0f, CurrentZ), TowerRotation);
 		CurrentZ += UTrussMathLibrary::GetDefaultPieceLengthCm(PieceType);
 	}
-	CurrentActualTowerHeightFt = CurrentZ / CmPerFoot;
+	CurrentActualTowerHeightFt = CurrentZ / VideoCmPerFoot;
 }
 
 void AVideoPlacementActor::BuildBlackPipeSupport()
@@ -443,7 +443,7 @@ UStaticMesh* AVideoPlacementActor::LoadTVMesh(EVideoTVModel Model) const
 
 UStaticMesh* AVideoPlacementActor::LoadAltmanBaseMesh() const
 {
-	return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/Altman_Base/StaticMeshes/Altman_Base.Altman_Base"));
+	return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/Altman_Base/StaticMeshes/Altman_Base.Altman_Base"));
 }
 
 UStaticMesh* AVideoPlacementActor::LoadBlackPipeMesh(int32 PipeLengthInches) const
@@ -451,22 +451,22 @@ UStaticMesh* AVideoPlacementActor::LoadBlackPipeMesh(int32 PipeLengthInches) con
 	switch (PipeLengthInches)
 	{
 	case 7:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/7inch_Black_Pipe/StaticMeshes/7inch_Black_Pipe.7inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/7inch_Black_Pipe/StaticMeshes/7inch_Black_Pipe.7inch_Black_Pipe"));
 	case 12:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/12inch_Black_Pipe/StaticMeshes/12inch_Black_Pipe.12inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/12inch_Black_Pipe/StaticMeshes/12inch_Black_Pipe.12inch_Black_Pipe"));
 	case 24:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/24inch_Black_Pipe/StaticMeshes/24inch_Black_Pipe.24inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/24inch_Black_Pipe/StaticMeshes/24inch_Black_Pipe.24inch_Black_Pipe"));
 	case 36:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/36inch_Black_Pipe/StaticMeshes/36inch_Black_Pipe.36inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/36inch_Black_Pipe/StaticMeshes/36inch_Black_Pipe.36inch_Black_Pipe"));
 	case 48:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/48inch_Black_Pipe/StaticMeshes/48inch_Black_Pipe.48inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/48inch_Black_Pipe/StaticMeshes/48inch_Black_Pipe.48inch_Black_Pipe"));
 	case 72:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/72inch_Black_Pipe/StaticMeshes/72inch_Black_Pipe.72inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/72inch_Black_Pipe/StaticMeshes/72inch_Black_Pipe.72inch_Black_Pipe"));
 	case 96:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/96inch_Black_Pipe/StaticMeshes/96inch_Black_Pipe.96inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/96inch_Black_Pipe/StaticMeshes/96inch_Black_Pipe.96inch_Black_Pipe"));
 	case 120:
 	default:
-		return LoadMesh(TEXT("/Game/Majic_Gear/Rigging/120inch_Black_Pipe/StaticMeshes/120inch_Black_Pipe.120inch_Black_Pipe"));
+		return LoadVideoMesh(TEXT("/Game/Majic_Gear/Rigging/120inch_Black_Pipe/StaticMeshes/120inch_Black_Pipe.120inch_Black_Pipe"));
 	}
 }
 
@@ -486,7 +486,7 @@ void AVideoPlacementActor::LoadUPMMeshes()
 
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(UPMAssetPaths); ++Index)
 	{
-		UStaticMesh* Mesh = LoadMesh(UPMAssetPaths[Index]);
+		UStaticMesh* Mesh = LoadVideoMesh(UPMAssetPaths[Index]);
 		if (UpperUPMComponents.IsValidIndex(Index) && UpperUPMComponents[Index])
 		{
 			UpperUPMComponents[Index]->SetStaticMesh(Mesh);

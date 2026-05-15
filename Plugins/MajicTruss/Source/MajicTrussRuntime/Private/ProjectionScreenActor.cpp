@@ -12,8 +12,8 @@
 
 namespace
 {
-constexpr float CmPerFoot = 30.48f;
-constexpr float InchesPerFoot = 12.0f;
+constexpr float ProjectionCmPerFoot = 30.48f;
+constexpr float ProjectionInchesPerFoot = 12.0f;
 constexpr float ChristieM4K25IsoLumens = 25300.0f;
 constexpr float TrussBuilderArchCornerConnectionOffsetCm = 15.24f;
 constexpr float TrussBuilderArchLegYOffsetCm = 15.24f;
@@ -23,7 +23,7 @@ constexpr float TrussBuilderArchVerticalRotationXDeg = 0.0f;
 constexpr float TrussBuilderArchVerticalRotationYDeg = 90.0f;
 constexpr float TrussBuilderArchVerticalRotationZDeg = 0.0f;
 
-UStaticMesh* LoadMesh(const TCHAR* AssetPath)
+UStaticMesh* LoadProjectionMesh(const TCHAR* AssetPath)
 {
 	return Cast<UStaticMesh>(FSoftObjectPath(AssetPath).TryLoad());
 }
@@ -61,7 +61,7 @@ AProjectionScreenActor::AProjectionScreenActor()
 	ScreenCenterMarkerComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ScreenCenterMarkerComponent->SetHiddenInGame(false);
 	ScreenCenterMarkerComponent->bDisallowNanite = true;
-	ScreenCenterMarkerComponent->SetStaticMesh(LoadMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere")));
+	ScreenCenterMarkerComponent->SetStaticMesh(LoadProjectionMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere")));
 
 	ProjectionLightFunctionMaterial = Cast<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Majic_Gear/Projection/Projectors/LFM_Testpattern.LFM_Testpattern")).TryLoad());
 }
@@ -186,14 +186,14 @@ void AProjectionScreenActor::BuildProjector()
 	ClearProjectorComponents();
 	ClearMountComponents();
 
-	const FVector ScreenCenterLocation = FVector(0.0f, 0.0f, CurrentScreenHeightFt * CmPerFoot * 0.5f) + ScreenCenterOffsetCm;
-	CurrentScreenCenterHeightFt = ScreenCenterLocation.Z / CmPerFoot;
+	const FVector ScreenCenterLocation = FVector(0.0f, 0.0f, CurrentScreenHeightFt * ProjectionCmPerFoot * 0.5f) + ScreenCenterOffsetCm;
+	CurrentScreenCenterHeightFt = ScreenCenterLocation.Z / ProjectionCmPerFoot;
 	const float ResolvedProjectorHeightFt = ResolveProjectorHeightFt(CurrentScreenCenterHeightFt, CurrentScreenHeightFt);
 	const float ResolvedHorizontalOffsetFt = ResolveProjectorHorizontalOffsetFt(CurrentScreenWidthFt);
 	const FVector ProjectorLensLocation(
-		ScreenCenterLocation.X + (ResolvedHorizontalOffsetFt * CmPerFoot),
-		ScreenCenterLocation.Y - (CurrentThrowDistanceFt * CmPerFoot),
-		ResolvedProjectorHeightFt * CmPerFoot);
+		ScreenCenterLocation.X + (ResolvedHorizontalOffsetFt * ProjectionCmPerFoot),
+		ScreenCenterLocation.Y - (CurrentThrowDistanceFt * ProjectionCmPerFoot),
+		ResolvedProjectorHeightFt * ProjectionCmPerFoot);
 	const FVector ProjectorLocation = ProjectorLensLocation + FVector(0.0f, ProjectorPlacementOffsetCm.Y, ProjectorHeightOffsetCm);
 	const FRotator AimRotation = FRotationMatrix::MakeFromXZ((ScreenCenterLocation - ProjectorLocation).GetSafeNormal(), FVector::UpVector).Rotator();
 	const FRotator ProjectorRotation = SlingType == EProjectionProjectorSlingType::OverSlung
@@ -244,7 +244,7 @@ void AProjectionScreenActor::BuildMountSupport(const FVector& ProjectorLocation,
 		return;
 	}
 
-	const float RequestedRunCm = FMath::Max(2.0f, HangingTrussLengthFt) * CmPerFoot;
+	const float RequestedRunCm = FMath::Max(2.0f, HangingTrussLengthFt) * ProjectionCmPerFoot;
 	const FTrussCombinationResult RunCombination = UTrussMathLibrary::FindBestTrussCombination(RequestedRunCm);
 	float CurrentY = -RequestedRunCm * 0.5f;
 	for (ETrussPieceType PieceType : RunCombination.Pieces)
@@ -293,7 +293,7 @@ void AProjectionScreenActor::BuildTrussTowerSupport(const FVector& ProjectorLoca
 		AddStaticMeshComponent(MountComponents, BaseMesh, TEXT("ProjectorTowerBase"), BaseLocation, BaseRotation, FVector(TrussMeshScaleMultiplier));
 	}
 
-	const float RequestedTowerCm = FMath::Max(2.0f, CurrentActualBuildableProjectorHeightFt) * CmPerFoot;
+	const float RequestedTowerCm = FMath::Max(2.0f, CurrentActualBuildableProjectorHeightFt) * ProjectionCmPerFoot;
 	const FTrussCombinationResult TowerCombination = UTrussMathLibrary::FindBestTrussCombination(FMath::Max(0.0f, RequestedTowerCm - BaseHeightCm));
 	float CurrentZ = BaseHeightCm;
 	const float TowerLegX = TrussBuilderArchVerticalLegXOffsetCm - TrussBuilderArchCornerConnectionOffsetCm;
@@ -356,8 +356,8 @@ void AProjectionScreenActor::UpdateProjectionLight(const FVector& ProjectorLocat
 	const FVector LightLocation = ProjectorLocation + ProjectionLightPlacementOffsetCm;
 	const FVector LightTargetLocation = ScreenCenterLocation + ProjectionLightTargetOffsetCm;
 	const float LightThrowDistanceCm = FVector::Distance(LightLocation, LightTargetLocation);
-	const float HalfScreenWidthCm = CurrentScreenWidthFt * CmPerFoot * 0.5f;
-	const float HalfScreenHeightCm = CurrentScreenHeightFt * CmPerFoot * 0.5f;
+	const float HalfScreenWidthCm = CurrentScreenWidthFt * ProjectionCmPerFoot * 0.5f;
+	const float HalfScreenHeightCm = CurrentScreenHeightFt * ProjectionCmPerFoot * 0.5f;
 	const float AutoConeAngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(FMath::Max(HalfScreenWidthCm, HalfScreenHeightCm), FMath::Max(LightThrowDistanceCm, 1.0f)));
 	CurrentProjectionLightConeAngleDegrees = bAutoProjectionLightConeAngle
 		? FMath::Clamp(AutoConeAngleDegrees, 1.0f, 89.0f)
@@ -368,7 +368,7 @@ void AProjectionScreenActor::UpdateProjectionLight(const FVector& ProjectorLocat
 	ProjectionLightComponent->SetRelativeLocation(LightLocation);
 	ProjectionLightComponent->SetRelativeRotation((LightTargetLocation - LightLocation).Rotation());
 	ProjectionLightComponent->SetIntensity(ChristieM4K25IsoLumens * FMath::Max(0.0f, ProjectionLightIntensityScale));
-	ProjectionLightComponent->SetAttenuationRadius(FMath::Max(CurrentThrowDistanceFt * CmPerFoot * 1.25f, 100.0f));
+	ProjectionLightComponent->SetAttenuationRadius(FMath::Max(CurrentThrowDistanceFt * ProjectionCmPerFoot * 1.25f, 100.0f));
 	ProjectionLightComponent->SetInnerConeAngle(FMath::Clamp(CurrentProjectionLightConeAngleDegrees * 0.65f, 1.0f, 85.0f));
 	ProjectionLightComponent->SetOuterConeAngle(CurrentProjectionLightConeAngleDegrees);
 	ProjectionLightComponent->SetLightColor(FLinearColor(0.82f, 0.90f, 1.0f));
@@ -535,7 +535,7 @@ float AProjectionScreenActor::ResolveProjectorHorizontalOffsetFt(float ScreenWid
 
 void AProjectionScreenActor::ComputeThrowDistances(float ScreenWidthFt, float& OutMinFt, float& OutMaxFt) const
 {
-	const float WidthInches = ScreenWidthFt * InchesPerFoot;
+	const float WidthInches = ScreenWidthFt * ProjectionInchesPerFoot;
 	float MinInches = 0.0f;
 	float MaxInches = 0.0f;
 
@@ -556,8 +556,8 @@ void AProjectionScreenActor::ComputeThrowDistances(float ScreenWidthFt, float& O
 		break;
 	}
 
-	OutMinFt = MinInches / InchesPerFoot;
-	OutMaxFt = MaxInches / InchesPerFoot;
+	OutMinFt = MinInches / ProjectionInchesPerFoot;
+	OutMaxFt = MaxInches / ProjectionInchesPerFoot;
 }
 
 float AProjectionScreenActor::ResolveThrowDistanceFt() const
@@ -618,7 +618,7 @@ TArray<UStaticMesh*> AProjectionScreenActor::LoadChristieProjectorMeshes() const
 	Meshes.Reserve(UE_ARRAY_COUNT(AssetPaths));
 	for (const TCHAR* AssetPath : AssetPaths)
 	{
-		Meshes.Add(LoadMesh(AssetPath));
+		Meshes.Add(LoadProjectionMesh(AssetPath));
 	}
 	return Meshes;
 }
@@ -681,7 +681,7 @@ UStaticMesh* AProjectionScreenActor::LoadMajicGearDefaultMesh(ETrussPieceType Pi
 		break;
 	}
 
-	return AssetPath ? LoadMesh(AssetPath) : nullptr;
+	return AssetPath ? LoadProjectionMesh(AssetPath) : nullptr;
 }
 
 void AProjectionScreenActor::GetPieceDefinition(ETrussPieceType PieceType, UStaticMesh*& OutMesh, float& OutLengthCm) const

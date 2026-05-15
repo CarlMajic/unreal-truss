@@ -10,6 +10,8 @@ class UBuildManagerComponent;
 class UBuildMenuWidget;
 class ULightPlacementMenuWidget;
 class UTargetingPointerComponent;
+class AAudioGroundLineArrayActor;
+class AAudioGroundSpeakerActor;
 class ADrapeRunActor;
 class AMBPWallActor;
 class AProjectionScreenActor;
@@ -88,6 +90,9 @@ private:
 	TObjectPtr<AProjectionScreenActor> PendingProjectionEditActor;
 
 	UPROPERTY(Transient)
+	TObjectPtr<AActor> PendingAudioEditActor;
+
+	UPROPERTY(Transient)
 	TObjectPtr<ATrussStructureActor> HoveredTrussActor;
 
 	UPROPERTY(Transient)
@@ -132,6 +137,7 @@ private:
 	bool bDrapeEditSelectionModeActive = false;
 	bool bVideoEditSelectionModeActive = false;
 	bool bProjectionEditSelectionModeActive = false;
+	bool bAudioEditSelectionModeActive = false;
 	bool bEditSelectionModeActive = false;
 	float MoveForwardValue = 0.0f;
 	float MoveRightValue = 0.0f;
@@ -178,5 +184,5 @@ private:
 	UFUNCTION()
 	void HandleLightPlacementCanceled();
 	ATrussStructureActor* TraceForTrussActor() const;
-	bool TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor, AVideoPlacementActor*& OutVideoActor, AProjectionScreenActor*& OutProjectionActor) const;
+	bool TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor, AVideoPlacementActor*& OutVideoActor, AProjectionScreenActor*& OutProjectionActor, AActor*& OutAudioActor) const;
 };

@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "DrapeRunActor.h"
+#include "AudioGroundLineArrayActor.h"
+#include "AudioGroundSpeakerActor.h"
 #include "MBPWallActor.h"
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
@@ -21,7 +23,30 @@ enum class EBuildItemType : uint8
 	StageDeck UMETA(DisplayName = "Stage Deck"),
 	DrapeRun UMETA(DisplayName = "Drape Run"),
 	VideoPlacement UMETA(DisplayName = "TV Placement"),
-	ProjectionScreen UMETA(DisplayName = "Projection Screen")
+	ProjectionScreen UMETA(DisplayName = "Projection Screen"),
+	AudioPlacement UMETA(DisplayName = "Audio Placement")
+};
+
+UENUM(BlueprintType)
+enum class EAudioPlacementRuntimeType : uint8
+{
+	GroundSpeaker UMETA(DisplayName = "Ground Speaker"),
+	GroundLineArray UMETA(DisplayName = "Ground Line Array")
+};
+
+USTRUCT(BlueprintType)
+struct FAudioPlacementBuildDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
+	EAudioPlacementRuntimeType PlacementType = EAudioPlacementRuntimeType::GroundSpeaker;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
+	FAudioGroundSpeakerBuildDefinition GroundSpeakerDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
+	FAudioGroundLineArrayBuildDefinition GroundLineArrayDefinition;
 };
 
 UCLASS(BlueprintType)
@@ -80,4 +105,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Projection")
 	FProjectionScreenBuildDefinition DefaultProjectionScreenDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Audio")
+	FAudioPlacementBuildDefinition DefaultAudioPlacementDefinition;
 };

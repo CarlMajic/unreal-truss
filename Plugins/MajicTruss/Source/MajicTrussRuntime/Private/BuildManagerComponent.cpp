@@ -1,5 +1,7 @@
 #include "BuildManagerComponent.h"
 
+#include "AudioGroundLineArrayActor.h"
+#include "AudioGroundSpeakerActor.h"
 #include "BuildPreviewActor.h"
 #include "DrapeRunActor.h"
 #include "Engine/World.h"
@@ -37,6 +39,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	ActiveDrapeRunDefinition = BuildItem ? BuildItem->DefaultDrapeRunDefinition : FDrapeRunBuildDefinition();
 	ActiveVideoPlacementDefinition = BuildItem ? BuildItem->DefaultVideoPlacementDefinition : FVideoPlacementBuildDefinition();
 	ActiveProjectionScreenDefinition = BuildItem ? BuildItem->DefaultProjectionScreenDefinition : FProjectionScreenBuildDefinition();
+	ActiveAudioPlacementDefinition = BuildItem ? BuildItem->DefaultAudioPlacementDefinition : FAudioPlacementBuildDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -114,6 +117,17 @@ void UBuildManagerComponent::SetActiveProjectionScreenDefinition(const FProjecti
 
 	if (ActivePreviewActor)
 	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveAudioPlacementDefinition(const FAudioPlacementBuildDefinition& Definition)
+{
+	ActiveAudioPlacementDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ActivePreviewActor->SetPreviewActorClass(ResolveBuildActorClass());
 		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
 	}
 }
@@ -352,6 +366,21 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 			ProjectionScreenActor->bBuildOnConstruction = false;
 			ProjectionScreenActor->ApplyBuildDefinition(ActiveProjectionScreenDefinition, true);
 		}
+		return;
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::AudioPlacement)
+	{
+		if (AAudioGroundSpeakerActor* GroundSpeakerActor = Cast<AAudioGroundSpeakerActor>(Actor))
+		{
+			GroundSpeakerActor->bBuildOnConstruction = false;
+			GroundSpeakerActor->ApplyBuildDefinition(ActiveAudioPlacementDefinition.GroundSpeakerDefinition, true);
+		}
+		else if (AAudioGroundLineArrayActor* LineArrayActor = Cast<AAudioGroundLineArrayActor>(Actor))
+		{
+			LineArrayActor->bBuildOnConstruction = false;
+			LineArrayActor->ApplyBuildDefinition(ActiveAudioPlacementDefinition.GroundLineArrayDefinition, true);
+		}
 	}
 }
 
@@ -399,5 +428,12 @@ FRotator UBuildManagerComponent::MakePlacementRotation(const FVector& SurfaceNor
 
 TSubclassOf<AActor> UBuildManagerComponent::ResolveBuildActorClass() const
 {
+	if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::AudioPlacement)
+	{
+		return ActiveAudioPlacementDefinition.PlacementType == EAudioPlacementRuntimeType::GroundLineArray
+			? AAudioGroundLineArrayActor::StaticClass()
+			: AAudioGroundSpeakerActor::StaticClass();
+	}
+
 	return SelectedBuildItem ? SelectedBuildItem->BuildActorClass : nullptr;
 }
