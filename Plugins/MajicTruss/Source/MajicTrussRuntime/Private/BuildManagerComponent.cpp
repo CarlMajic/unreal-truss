@@ -10,6 +10,7 @@
 #include "StageDeckActor.h"
 #include "TrussStructureActor.h"
 #include "VideoPlacementActor.h"
+#include "VideoWallActor.h"
 #include "ProjectionScreenActor.h"
 
 UBuildManagerComponent::UBuildManagerComponent()
@@ -38,6 +39,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	ActiveStageDeckDefinition = BuildItem ? BuildItem->DefaultStageDeckDefinition : FStageDeckBuildDefinition();
 	ActiveDrapeRunDefinition = BuildItem ? BuildItem->DefaultDrapeRunDefinition : FDrapeRunBuildDefinition();
 	ActiveVideoPlacementDefinition = BuildItem ? BuildItem->DefaultVideoPlacementDefinition : FVideoPlacementBuildDefinition();
+	ActiveVideoWallDefinition = BuildItem ? BuildItem->DefaultVideoWallDefinition : FVideoWallBuildDefinition();
 	ActiveProjectionScreenDefinition = BuildItem ? BuildItem->DefaultProjectionScreenDefinition : FProjectionScreenBuildDefinition();
 	ActiveAudioPlacementDefinition = BuildItem ? BuildItem->DefaultAudioPlacementDefinition : FAudioPlacementBuildDefinition();
 	CurrentYawDegrees = 0.0f;
@@ -104,6 +106,16 @@ void UBuildManagerComponent::SetActiveDrapeRunDefinition(const FDrapeRunBuildDef
 void UBuildManagerComponent::SetActiveVideoPlacementDefinition(const FVideoPlacementBuildDefinition& Definition)
 {
 	ActiveVideoPlacementDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveVideoWallDefinition(const FVideoWallBuildDefinition& Definition)
+{
+	ActiveVideoWallDefinition = Definition;
 
 	if (ActivePreviewActor)
 	{
@@ -355,6 +367,16 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 		{
 			VideoPlacementActor->bBuildOnConstruction = false;
 			VideoPlacementActor->ApplyBuildDefinition(ActiveVideoPlacementDefinition, true);
+		}
+		return;
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::VideoWall)
+	{
+		if (AVideoWallActor* VideoWallActor = Cast<AVideoWallActor>(Actor))
+		{
+			VideoWallActor->bBuildOnConstruction = false;
+			VideoWallActor->ApplyBuildDefinition(ActiveVideoWallDefinition, true);
 		}
 		return;
 	}

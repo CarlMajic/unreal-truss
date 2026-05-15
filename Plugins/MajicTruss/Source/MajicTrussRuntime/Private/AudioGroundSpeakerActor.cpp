@@ -15,7 +15,7 @@ namespace
 constexpr TCHAR AudioStandPrefix[] = TEXT("AudioGroundStand");
 constexpr TCHAR AudioTelescopingPrefix[] = TEXT("AudioGroundTelescoping");
 constexpr TCHAR AudioSpeakerPrefix[] = TEXT("AudioGroundSpeaker");
-constexpr float CmPerFoot = 30.48f;
+constexpr float AudioGroundSpeakerCmPerFoot = 30.48f;
 }
 
 AAudioGroundSpeakerActor::AAudioGroundSpeakerActor()
@@ -74,7 +74,10 @@ void AAudioGroundSpeakerActor::BeginPlay()
 	Super::BeginPlay();
 
 	UpdateAudioEmitter();
-	PlayAssignedAudio();
+	if (bAutoPlayAudio)
+	{
+		PlayAssignedAudio();
+	}
 }
 
 #if WITH_EDITOR
@@ -91,7 +94,7 @@ void AAudioGroundSpeakerActor::RebuildAudioGroundSpeaker()
 
 	const float ClampedMaxExtensionFt = FMath::Max(0.0f, MaxStandExtensionFt);
 	const float ClampedExtensionFt = FMath::Clamp(StandExtensionFt, 0.0f, ClampedMaxExtensionFt);
-	CurrentStandExtensionCm = -(ClampedExtensionFt * CmPerFoot);
+	CurrentStandExtensionCm = -(ClampedExtensionFt * AudioGroundSpeakerCmPerFoot);
 
 	const FTransform StandTransform(StandPlacementRotation, StandPlacementOffsetCm, StandScale);
 	const FTransform TelescopingTransform(
@@ -395,12 +398,18 @@ void AAudioGroundSpeakerActor::UpdateAudioEmitter()
 		if (ResolvedAudioSource)
 		{
 			ResolvedAudioSource->VirtualizationMode = EVirtualizationMode::PlayWhenSilent;
-			AudioEmitterComponent->SetSound(ResolvedAudioSource);
+			if (AudioEmitterComponent->Sound != ResolvedAudioSource)
+			{
+				AudioEmitterComponent->SetSound(ResolvedAudioSource);
+			}
 		}
 	}
 	else
 	{
-		AudioEmitterComponent->SetSound(nullptr);
+		if (AudioEmitterComponent->Sound)
+		{
+			AudioEmitterComponent->SetSound(nullptr);
+		}
 	}
 	if (AudioEmitterComponent->Sound)
 	{
@@ -426,11 +435,11 @@ void AAudioGroundSpeakerActor::UpdateAudioEmitter()
 		AttenuationSettings.AttenuationShape = bUseConeForCurrentMode ? EAttenuationShape::Cone : EAttenuationShape::Sphere;
 		AttenuationSettings.AttenuationShapeExtents = bUseConeForCurrentMode
 			? FVector(
-				FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * CmPerFoot,
+				FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * AudioGroundSpeakerCmPerFoot,
 				FMath::Clamp(ResolvedConeAngleDegrees, 1.0f, 360.0f),
 				FMath::Clamp(ResolvedConeFalloffAngleDegrees, 0.0f, 360.0f))
-			: FVector(FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * CmPerFoot, 0.0f, 0.0f);
-		AttenuationSettings.FalloffDistance = FMath::Max(1.0f, ResolvedFalloffDistanceFt) * CmPerFoot;
+			: FVector(FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * AudioGroundSpeakerCmPerFoot, 0.0f, 0.0f);
+		AttenuationSettings.FalloffDistance = FMath::Max(1.0f, ResolvedFalloffDistanceFt) * AudioGroundSpeakerCmPerFoot;
 		AttenuationSettings.ConeSphereRadius = 0.0f;
 		AttenuationSettings.ConeSphereFalloffDistance = 0.0f;
 		AttenuationSettings.SpatializationAlgorithm = SPATIALIZATION_Default;
@@ -444,7 +453,7 @@ void AAudioGroundSpeakerActor::UpdateAudioEmitter()
 		AudioEmitterComponent->SetOverrideAttenuation(false);
 	}
 	AudioEmitterComponent->SetRelativeLocation(SpeakerPlacementOffsetCm + AudioSourceOffsetCm + FVector(0.0f, 0.0f, CurrentStandExtensionCm));
-	AudioEmitterComponent->SetRelativeRotation(AudioConeDirectionRotation);
+	AudioEmitterComponent->SetRelativeRotation(AudioSourceRotation);
 	UpdateAudioConePreview(ResolvedFullVolumeRadiusFt, ResolvedConeAngleDegrees, bUseConeForCurrentMode);
 }
 
@@ -539,7 +548,7 @@ void AAudioGroundSpeakerActor::UpdateAudioConePreview(float FullVolumeRadiusFt, 
 		return;
 	}
 
-	const float ConeLengthCm = FMath::Max(1.0f, FullVolumeRadiusFt) * CmPerFoot;
+	const float ConeLengthCm = FMath::Max(1.0f, FullVolumeRadiusFt) * AudioGroundSpeakerCmPerFoot;
 	const float ConeRadiusCm = ConeLengthCm * FMath::Tan(FMath::DegreesToRadians(FMath::Clamp(ConeAngleDegrees, 1.0f, 179.0f) * 0.5f));
 
 	AudioConePreviewComponent->SetRelativeLocation(AudioEmitterComponent->GetRelativeLocation());

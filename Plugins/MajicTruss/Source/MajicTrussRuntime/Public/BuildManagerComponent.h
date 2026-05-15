@@ -14,6 +14,7 @@ class APlayerController;
 class AStageDeckActor;
 class ATrussStructureActor;
 class AVideoPlacementActor;
+class AVideoWallActor;
 class AProjectionScreenActor;
 
 USTRUCT(BlueprintType)
@@ -70,6 +71,9 @@ public:
 	FVideoPlacementBuildDefinition ActiveVideoPlacementDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FVideoWallBuildDefinition ActiveVideoWallDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	FProjectionScreenBuildDefinition ActiveProjectionScreenDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
@@ -101,6 +105,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveVideoPlacementDefinition(const FVideoPlacementBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveVideoWallDefinition(const FVideoWallBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveProjectionScreenDefinition(const FProjectionScreenBuildDefinition& Definition);

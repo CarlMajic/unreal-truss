@@ -36,6 +36,7 @@ static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 		ItemType == EBuildItemType::StageDeck ||
 		ItemType == EBuildItemType::DrapeRun ||
 		ItemType == EBuildItemType::VideoPlacement ||
+		ItemType == EBuildItemType::VideoWall ||
 		ItemType == EBuildItemType::ProjectionScreen ||
 		ItemType == EBuildItemType::AudioPlacement)
 	{
@@ -155,6 +156,29 @@ static UBuildItemDataAsset* FindMatchingBuildItemForVideoActor(const TArray<TObj
 	return nullptr;
 }
 
+static UBuildItemDataAsset* FindMatchingBuildItemForVideoWallActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const AVideoWallActor* VideoWallActor)
+{
+	if (!VideoWallActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (!BuildItem || BuildItem->ItemType != EBuildItemType::VideoWall)
+		{
+			continue;
+		}
+
+		if (BuildItem->BuildActorClass && VideoWallActor->IsA(BuildItem->BuildActorClass))
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
 static UBuildItemDataAsset* FindMatchingBuildItemForProjectionActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const AProjectionScreenActor* ProjectionActor)
 {
 	if (!ProjectionActor)
@@ -214,6 +238,7 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 		CurrentStageDeckDefinition = SelectedBuildItem->DefaultStageDeckDefinition;
 		CurrentDrapeRunDefinition = SelectedBuildItem->DefaultDrapeRunDefinition;
 		CurrentVideoPlacementDefinition = SelectedBuildItem->DefaultVideoPlacementDefinition;
+		CurrentVideoWallDefinition = SelectedBuildItem->DefaultVideoWallDefinition;
 		CurrentProjectionScreenDefinition = SelectedBuildItem->DefaultProjectionScreenDefinition;
 		CurrentAudioPlacementDefinition = SelectedBuildItem->DefaultAudioPlacementDefinition;
 		ActiveMenuTab = BuildTabForItemType(SelectedBuildItem->ItemType);
@@ -233,6 +258,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		CurrentStageDeckDefinition = InSelectedItem->DefaultStageDeckDefinition;
 		CurrentDrapeRunDefinition = InSelectedItem->DefaultDrapeRunDefinition;
 		CurrentVideoPlacementDefinition = InSelectedItem->DefaultVideoPlacementDefinition;
+		CurrentVideoWallDefinition = InSelectedItem->DefaultVideoWallDefinition;
 		CurrentProjectionScreenDefinition = InSelectedItem->DefaultProjectionScreenDefinition;
 		CurrentAudioPlacementDefinition = InSelectedItem->DefaultAudioPlacementDefinition;
 		ActiveMenuTab = BuildTabForItemType(InSelectedItem->ItemType);
@@ -246,6 +272,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		ApplyStageDefinitionToBuildManager();
 		ApplyDrapeDefinitionToBuildManager();
 		ApplyVideoDefinitionToBuildManager();
+		ApplyVideoWallDefinitionToBuildManager();
 		ApplyProjectionDefinitionToBuildManager();
 		ApplyAudioDefinitionToBuildManager();
 	}
@@ -280,6 +307,7 @@ void UBuildMenuWidget::RefreshMenu()
 	RefreshStageControls();
 	RefreshDrapeControls();
 	RefreshVideoControls();
+	RefreshVideoWallControls();
 	RefreshProjectionControls();
 	RefreshAudioControls();
 	RefreshTabButtons();
@@ -316,6 +344,11 @@ FVideoPlacementBuildDefinition UBuildMenuWidget::GetCurrentVideoPlacementDefinit
 	return CurrentVideoPlacementDefinition;
 }
 
+FVideoWallBuildDefinition UBuildMenuWidget::GetCurrentVideoWallDefinition() const
+{
+	return CurrentVideoWallDefinition;
+}
+
 FProjectionScreenBuildDefinition UBuildMenuWidget::GetCurrentProjectionScreenDefinition() const
 {
 	return CurrentProjectionScreenDefinition;
@@ -333,6 +366,7 @@ void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
@@ -361,6 +395,7 @@ void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
@@ -432,6 +467,7 @@ void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, i
 	EditingStageTarget = InEditingTarget;
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
@@ -476,6 +512,7 @@ void UBuildMenuWidget::SetEditingDrapeTarget(ADrapeRunActor* InEditingTarget)
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = InEditingTarget;
 	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
@@ -505,6 +542,7 @@ void UBuildMenuWidget::SetEditingVideoTarget(AVideoPlacementActor* InEditingTarg
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = InEditingTarget;
+	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
@@ -527,6 +565,36 @@ AVideoPlacementActor* UBuildMenuWidget::GetEditingVideoTarget() const
 	return EditingVideoTarget;
 }
 
+void UBuildMenuWidget::SetEditingVideoWallTarget(AVideoWallActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = InEditingTarget;
+	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
+
+	if (EditingVideoWallTarget)
+	{
+		ActiveMenuTab = EBuildItemType::VideoWall;
+		CurrentVideoWallDefinition = EditingVideoWallTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForVideoWallActor(BuildItems, EditingVideoWallTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+AVideoWallActor* UBuildMenuWidget::GetEditingVideoWallTarget() const
+{
+	return EditingVideoWallTarget;
+}
+
 void UBuildMenuWidget::SetEditingProjectionTarget(AProjectionScreenActor* InEditingTarget)
 {
 	EditingTarget = nullptr;
@@ -534,6 +602,7 @@ void UBuildMenuWidget::SetEditingProjectionTarget(AProjectionScreenActor* InEdit
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = InEditingTarget;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
@@ -563,6 +632,7 @@ void UBuildMenuWidget::SetEditingAudioTarget(AActor* InEditingTarget)
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
 	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = Cast<AAudioGroundSpeakerActor>(InEditingTarget);
 	EditingAudioGroundLineArrayTarget = Cast<AAudioGroundLineArrayActor>(InEditingTarget);
@@ -716,6 +786,17 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	if (UHorizontalBoxSlot* VideoTabSlot = TabButtonBox->AddChildToHorizontalBox(VideoTabButton))
 	{
 		VideoTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	VideoWallTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("VideoWallTabButton"));
+	VideoWallTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleVideoWallTabClicked);
+	UTextBlock* VideoWallTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("VideoWallTabText"));
+	VideoWallTabText->SetText(FText::FromString(TEXT("Video Wall")));
+	VideoWallTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	VideoWallTabButton->AddChild(VideoWallTabText);
+	if (UHorizontalBoxSlot* VideoWallTabSlot = TabButtonBox->AddChildToHorizontalBox(VideoWallTabButton))
+	{
+		VideoWallTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
 	}
 
 	ProjectionTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ProjectionTabButton"));
@@ -1047,7 +1128,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ButtonProxies.Reset();
 	ItemListBox->ClearChildren();
 
-	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingProjection() && !IsEditingAudio() && BuildItems.Num() > 1;
+	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingVideoWall() && !IsEditingProjection() && !IsEditingAudio() && BuildItems.Num() > 1;
 	int32 VisibleItemCount = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
@@ -1094,7 +1175,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::ProjectionScreen && ActiveMenuTab != EBuildItemType::AudioPlacement)
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::VideoWall && ActiveMenuTab != EBuildItemType::ProjectionScreen && ActiveMenuTab != EBuildItemType::AudioPlacement)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
@@ -1105,9 +1186,11 @@ FText UBuildMenuWidget::BuildDetailText() const
 			? FText::FromString(TEXT("Audio"))
 			: (ActiveMenuTab == EBuildItemType::ProjectionScreen
 			? FText::FromString(TEXT("Projection"))
-			: (ActiveMenuTab == EBuildItemType::VideoPlacement
-				? FText::FromString(TEXT("Video"))
-				: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall"))))));
+			: (ActiveMenuTab == EBuildItemType::VideoWall
+				? FText::FromString(TEXT("Video Wall"))
+				: (ActiveMenuTab == EBuildItemType::VideoPlacement
+					? FText::FromString(TEXT("Video"))
+					: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall")))))));
 
 	const TCHAR* TypeLabel = TEXT("MBP Wall");
 	if (ActiveMenuTab == EBuildItemType::TrussStructure)
@@ -1125,6 +1208,10 @@ FText UBuildMenuWidget::BuildDetailText() const
 	else if (ActiveMenuTab == EBuildItemType::VideoPlacement)
 	{
 		TypeLabel = TEXT("TV Placement");
+	}
+	else if (ActiveMenuTab == EBuildItemType::VideoWall)
+	{
+		TypeLabel = TEXT("Video Wall");
 	}
 	else if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
 	{
@@ -1241,6 +1328,16 @@ FText UBuildMenuWidget::BuildDetailText() const
 			Definition.TVCenterHeightFt,
 			Definition.TowerHeightFt);
 	}
+	else if (ActiveMenuTab == EBuildItemType::VideoWall)
+	{
+		const FVideoWallBuildDefinition& Definition = CurrentVideoWallDefinition;
+		Detail += FString::Printf(
+			TEXT("\nRows: %d\nColumns: %d\nSupport: %s\nSupport Spacing: %s"),
+			Definition.Rows,
+			Definition.Columns,
+			*VideoWallSupportModeToOption(Definition.SupportMode),
+			*VideoWallSupportSpacingToOption(Definition.SupportSpacing));
+	}
 	else if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
 	{
 		const FProjectionScreenBuildDefinition& Definition = CurrentProjectionScreenDefinition;
@@ -1302,6 +1399,11 @@ FText UBuildMenuWidget::BuildHeaderText() const
 		return FText::FromString(TEXT("Edit TV"));
 	}
 
+	if (IsEditingVideoWall())
+	{
+		return FText::FromString(TEXT("Edit Video Wall"));
+	}
+
 	if (IsEditingProjection())
 	{
 		return FText::FromString(TEXT("Edit Projection"));
@@ -1317,7 +1419,7 @@ FText UBuildMenuWidget::BuildHeaderText() const
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingProjection() || IsEditingAudio())
+	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingVideoWall() || IsEditingProjection() || IsEditingAudio())
 		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
 }
@@ -1340,6 +1442,11 @@ bool UBuildMenuWidget::IsEditingDrape() const
 bool UBuildMenuWidget::IsEditingVideo() const
 {
 	return EditingVideoTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingVideoWall() const
+{
+	return EditingVideoWallTarget != nullptr;
 }
 
 bool UBuildMenuWidget::IsEditingProjection() const
@@ -1519,6 +1626,11 @@ void UBuildMenuWidget::RefreshTabButtons()
 	if (VideoTabButton)
 	{
 		VideoTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::VideoPlacement));
+	}
+
+	if (VideoWallTabButton)
+	{
+		VideoWallTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::VideoWall));
 	}
 
 	if (ProjectionTabButton)
@@ -1949,6 +2061,86 @@ void UBuildMenuWidget::RefreshVideoControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshVideoWallControls()
+{
+	if (ActiveMenuTab != EBuildItemType::VideoWall)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	if (ModeLabelText)
+	{
+		ModeLabelText->SetText(FText::FromString(TEXT("Support")));
+		ModeLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(ESlateVisibility::Visible);
+		ModeComboBox->ClearOptions();
+		ModeComboBox->AddOption(VideoWallSupportModeToOption(EVideoWallSupportMode::GroundStacked));
+		ModeComboBox->AddOption(VideoWallSupportModeToOption(EVideoWallSupportMode::Flown));
+		ModeComboBox->SetSelectedOption(VideoWallSupportModeToOption(CurrentVideoWallDefinition.SupportMode));
+	}
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, float SliderMax)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ESlateVisibility::Visible);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(SliderMax);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Rows"), CurrentVideoWallDefinition.Rows, 1.0f, 100.0f, 20.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Columns"), CurrentVideoWallDefinition.Columns, 1.0f, 100.0f, 20.0f);
+
+	if (TertiaryValueLabelText) TertiaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (TertiaryValueSpinBox) TertiaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	if (SidePieceLabelText)
+	{
+		SidePieceLabelText->SetText(FText::FromString(TEXT("Support Spacing")));
+		SidePieceLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	if (SidePieceComboBox)
+	{
+		SidePieceComboBox->SetVisibility(ESlateVisibility::Visible);
+		SidePieceComboBox->ClearOptions();
+		SidePieceComboBox->AddOption(VideoWallSupportSpacingToOption(EVideoWallSupportSpacing::OneMeter));
+		SidePieceComboBox->AddOption(VideoWallSupportSpacingToOption(EVideoWallSupportSpacing::OnePointFiveMeters));
+		SidePieceComboBox->SetSelectedOption(VideoWallSupportSpacingToOption(CurrentVideoWallDefinition.SupportSpacing));
+	}
+
+	if (DepthPieceLabelText) DepthPieceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (DepthPieceComboBox) DepthPieceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	if (IsEditingVideoWall())
+	{
+		ApplyVideoWallEditToTarget();
+	}
+	else
+	{
+		ApplyVideoWallDefinitionToBuildManager();
+	}
+	bRefreshingControls = false;
+}
+
 void UBuildMenuWidget::RefreshProjectionControls()
 {
 	if (ActiveMenuTab != EBuildItemType::ProjectionScreen)
@@ -2266,6 +2458,16 @@ void UBuildMenuWidget::ApplyVideoDefinitionToBuildManager()
 	BuildManager->SetActiveVideoPlacementDefinition(CurrentVideoPlacementDefinition);
 }
 
+void UBuildMenuWidget::ApplyVideoWallDefinitionToBuildManager()
+{
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::VideoWall)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveVideoWallDefinition(CurrentVideoWallDefinition);
+}
+
 void UBuildMenuWidget::ApplyProjectionDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::ProjectionScreen)
@@ -2377,6 +2579,14 @@ void UBuildMenuWidget::ApplyVideoEditToTarget()
 	}
 }
 
+void UBuildMenuWidget::ApplyVideoWallEditToTarget()
+{
+	if (EditingVideoWallTarget)
+	{
+		EditingVideoWallTarget->ApplyBuildDefinition(CurrentVideoWallDefinition, true);
+	}
+}
+
 void UBuildMenuWidget::ApplyProjectionEditToTarget()
 {
 	if (EditingProjectionTarget)
@@ -2474,6 +2684,11 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 	if (ActiveMenuTab == EBuildItemType::VideoPlacement)
 	{
 		return BuildItem->ItemType == EBuildItemType::VideoPlacement;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoWall)
+	{
+		return BuildItem->ItemType == EBuildItemType::VideoWall;
 	}
 
 	if (ActiveMenuTab == EBuildItemType::ProjectionScreen)
@@ -2804,6 +3019,26 @@ EVideoTVModel UBuildMenuWidget::OptionToTVModel(const FString& Option)
 	return EVideoTVModel::Samsung58;
 }
 
+FString UBuildMenuWidget::VideoWallSupportModeToOption(EVideoWallSupportMode SupportMode)
+{
+	return SupportMode == EVideoWallSupportMode::Flown ? TEXT("Flown") : TEXT("Ground Support");
+}
+
+EVideoWallSupportMode UBuildMenuWidget::OptionToVideoWallSupportMode(const FString& Option)
+{
+	return Option == TEXT("Flown") ? EVideoWallSupportMode::Flown : EVideoWallSupportMode::GroundStacked;
+}
+
+FString UBuildMenuWidget::VideoWallSupportSpacingToOption(EVideoWallSupportSpacing SupportSpacing)
+{
+	return SupportSpacing == EVideoWallSupportSpacing::OnePointFiveMeters ? TEXT("1500 mm") : TEXT("1000 mm");
+}
+
+EVideoWallSupportSpacing UBuildMenuWidget::OptionToVideoWallSupportSpacing(const FString& Option)
+{
+	return Option == TEXT("1500 mm") ? EVideoWallSupportSpacing::OnePointFiveMeters : EVideoWallSupportSpacing::OneMeter;
+}
+
 FString UBuildMenuWidget::ProjectionScreenSizeToOption(EProjectionScreenKitSize ScreenKitSize)
 {
 	switch (ScreenKitSize)
@@ -3070,6 +3305,25 @@ void UBuildMenuWidget::HandleVideoTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleVideoWallTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::VideoWall;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleProjectionTabClicked()
 {
 	ActiveMenuTab = EBuildItemType::ProjectionScreen;
@@ -3148,6 +3402,24 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 		else
 		{
 			ApplyVideoDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoWall)
+	{
+		CurrentVideoWallDefinition.SupportMode = OptionToVideoWallSupportMode(SelectedItemOption);
+		if (IsEditingVideoWall())
+		{
+			ApplyVideoWallEditToTarget();
+		}
+		else
+		{
+			ApplyVideoWallDefinitionToBuildManager();
 		}
 		if (DetailText)
 		{
@@ -3282,6 +3554,24 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 		else
 		{
 			ApplyVideoDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoWall)
+	{
+		CurrentVideoWallDefinition.Rows = FMath::Max(1, FMath::RoundToInt(NewValue));
+		if (IsEditingVideoWall())
+		{
+			ApplyVideoWallEditToTarget();
+		}
+		else
+		{
+			ApplyVideoWallDefinitionToBuildManager();
 		}
 		if (DetailText)
 		{
@@ -3468,6 +3758,24 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 		else
 		{
 			ApplyVideoDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoWall)
+	{
+		CurrentVideoWallDefinition.Columns = FMath::Max(1, FMath::RoundToInt(NewValue));
+		if (IsEditingVideoWall())
+		{
+			ApplyVideoWallEditToTarget();
+		}
+		else
+		{
+			ApplyVideoWallDefinitionToBuildManager();
 		}
 		if (DetailText)
 		{
@@ -3665,6 +3973,24 @@ void UBuildMenuWidget::HandleSidePieceChanged(FString SelectedItemOption, ESelec
 		else
 		{
 			ApplyProjectionDefinitionToBuildManager();
+		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::VideoWall)
+	{
+		CurrentVideoWallDefinition.SupportSpacing = OptionToVideoWallSupportSpacing(SelectedItemOption);
+		if (IsEditingVideoWall())
+		{
+			ApplyVideoWallEditToTarget();
+		}
+		else
+		{
+			ApplyVideoWallDefinitionToBuildManager();
 		}
 		if (DetailText)
 		{

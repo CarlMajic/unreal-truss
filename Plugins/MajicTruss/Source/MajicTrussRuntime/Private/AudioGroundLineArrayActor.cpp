@@ -17,7 +17,7 @@ constexpr TCHAR LineArrayPolePrefix[] = TEXT("AudioLineArrayPole");
 constexpr TCHAR LineArrayTelescopingPrefix[] = TEXT("AudioLineArrayTelescoping");
 constexpr TCHAR LineArraySpeakerPrefix[] = TEXT("AudioLineArraySpeaker");
 constexpr float CmPerInch = 2.54f;
-constexpr float CmPerFoot = 30.48f;
+constexpr float AudioLineArrayCmPerFoot = 30.48f;
 }
 
 AAudioGroundLineArrayActor::AAudioGroundLineArrayActor()
@@ -76,7 +76,10 @@ void AAudioGroundLineArrayActor::BeginPlay()
 	Super::BeginPlay();
 
 	UpdateAudioEmitter();
-	PlayAssignedAudio();
+	if (bAutoPlayAudio)
+	{
+		PlayAssignedAudio();
+	}
 }
 
 #if WITH_EDITOR
@@ -466,12 +469,18 @@ void AAudioGroundLineArrayActor::UpdateAudioEmitter()
 		if (ResolvedAudioSource)
 		{
 			ResolvedAudioSource->VirtualizationMode = EVirtualizationMode::PlayWhenSilent;
-			AudioEmitterComponent->SetSound(ResolvedAudioSource);
+			if (AudioEmitterComponent->Sound != ResolvedAudioSource)
+			{
+				AudioEmitterComponent->SetSound(ResolvedAudioSource);
+			}
 		}
 	}
 	else
 	{
-		AudioEmitterComponent->SetSound(nullptr);
+		if (AudioEmitterComponent->Sound)
+		{
+			AudioEmitterComponent->SetSound(nullptr);
+		}
 	}
 	if (AudioEmitterComponent->Sound)
 	{
@@ -497,11 +506,11 @@ void AAudioGroundLineArrayActor::UpdateAudioEmitter()
 		AttenuationSettings.AttenuationShape = bUseConeForCurrentMode ? EAttenuationShape::Cone : EAttenuationShape::Sphere;
 		AttenuationSettings.AttenuationShapeExtents = bUseConeForCurrentMode
 			? FVector(
-				FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * CmPerFoot,
+				FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * AudioLineArrayCmPerFoot,
 				FMath::Clamp(ResolvedConeAngleDegrees, 1.0f, 360.0f),
 				FMath::Clamp(ResolvedConeFalloffAngleDegrees, 0.0f, 360.0f))
-			: FVector(FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * CmPerFoot, 0.0f, 0.0f);
-		AttenuationSettings.FalloffDistance = FMath::Max(1.0f, ResolvedFalloffDistanceFt) * CmPerFoot;
+			: FVector(FMath::Max(0.0f, ResolvedFullVolumeRadiusFt) * AudioLineArrayCmPerFoot, 0.0f, 0.0f);
+		AttenuationSettings.FalloffDistance = FMath::Max(1.0f, ResolvedFalloffDistanceFt) * AudioLineArrayCmPerFoot;
 		AttenuationSettings.ConeSphereRadius = 0.0f;
 		AttenuationSettings.ConeSphereFalloffDistance = 0.0f;
 		AttenuationSettings.SpatializationAlgorithm = SPATIALIZATION_Default;
@@ -515,7 +524,7 @@ void AAudioGroundLineArrayActor::UpdateAudioEmitter()
 		AudioEmitterComponent->SetOverrideAttenuation(false);
 	}
 	AudioEmitterComponent->SetRelativeLocation(BaseAudioLocation + AudioSourceOffsetCm);
-	AudioEmitterComponent->SetRelativeRotation(AudioConeDirectionRotation);
+	AudioEmitterComponent->SetRelativeRotation(AudioSourceRotation);
 	UpdateAudioConePreview(ResolvedFullVolumeRadiusFt, ResolvedConeAngleDegrees, bUseConeForCurrentMode);
 }
 
@@ -598,7 +607,7 @@ void AAudioGroundLineArrayActor::UpdateAudioConePreview(float FullVolumeRadiusFt
 		return;
 	}
 
-	const float ConeLengthCm = FMath::Max(1.0f, FullVolumeRadiusFt) * CmPerFoot;
+	const float ConeLengthCm = FMath::Max(1.0f, FullVolumeRadiusFt) * AudioLineArrayCmPerFoot;
 	const float ConeRadiusCm = ConeLengthCm * FMath::Tan(FMath::DegreesToRadians(FMath::Clamp(ConeAngleDegrees, 1.0f, 179.0f) * 0.5f));
 
 	AudioConePreviewComponent->SetRelativeLocation(AudioEmitterComponent->GetRelativeLocation());

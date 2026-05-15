@@ -167,15 +167,15 @@ public:
 	bool bShowAudioConePreview = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound|Debug")
-	FRotator AudioConePreviewRotationOffset = FRotator(90.0f, -90.0f, 0.0f);
+	FRotator AudioConePreviewRotationOffset = FRotator(90.0f, 0.0f, 0.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound", meta = (Units = "cm"))
 	FVector AudioSourceOffsetCm = FVector(0.0f, 245.0f, 120.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound")
-	FRotator AudioSourceRotation = FRotator(0.0f, 180.0f, 0.0f);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound", meta = (DisplayName = "Audio Direction Rotation"))
+	FRotator AudioSourceRotation = FRotator(0.0f, 90.0f, 0.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound", meta = (DisplayName = "Audio Cone Direction Rotation"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound|Debug", meta = (DisplayName = "Deprecated Audio Cone Direction Rotation"))
 	FRotator AudioConeDirectionRotation = FRotator(0.0f, 180.0f, 0.0f);
 
 	UFUNCTION(BlueprintCallable, Category = "Audio")

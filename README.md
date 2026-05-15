@@ -185,6 +185,97 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 ## Project Log
 
 <details open>
+<summary><strong>2026-05-15: Editor-first video wall actor</strong></summary>
+
+### 2026-05-15
+
+Current direction:
+
+- Keep video walls separate from TV placement and projection screens.
+- Start editor-first so the InfiLED panel mesh, support hardware, rotations, and offsets can be calibrated in Details before runtime placement is added.
+- Model video walls as a configurable InfiLED panel grid rather than placing a fixed example-wall mesh.
+
+What has been done:
+
+- Scanned `Content/Majic_Gear/Video_Wall/InfiLED` and found the current usable parts:
+  - `InfiLED_Panel`
+  - `10x6_Example_Wall`
+  - `InfiLED_DB_1000mm_Hanging_Bracket`
+  - `Support_Sky`
+  - `Stacking_Stacker`
+  - `H_Tube`
+  - `Docking_Lock`
+- Added `AVideoWallActor` in `MajicTrussRuntime`.
+- Added a first `FVideoWallBuildDefinition` with:
+  - columns
+  - rows
+  - support mode
+  - support/stacker spacing
+  - panel width and height
+  - panel gap
+  - center-on-actor setting
+- Defaulted the wall model to a 10 x 6 grid of 50 cm x 50 cm InfiLED panels.
+- Added first support modes:
+  - `Ground Stacked`
+  - `Flown`
+- Reworked video wall generation around the newer InfiLED folder assemblies:
+  - `Single_Panel`
+  - `1000mm_Hanging_Bracket`
+  - `500mm_Hanging_Bracket`
+  - `Support_Sky`
+  - `Stacking_Stacker`
+  - `H_Tube`
+  - `H_Tube/StaticMeshes/Inner_Parts`
+- Ground support now derives the bracket run from panel count:
+  - use 1000 mm brackets first
+  - use one 500 mm bracket for an odd final panel column
+- Ground support can generate support/stacker towers at either `1000 mm` or `1500 mm` spacing.
+- Stackers are generated vertically by 100 cm levels, so a 6-panel-tall wall creates 3 stacker levels.
+- H tubes are generated between tower positions, with the outer H-tube folder and inner-parts folder placed separately so the extension can be calibrated by spacing mode.
+- Added calibratable Details-panel fields for panel, bracket, Support Sky, Stacking Stacker, and H-tube offsets, rotations, and scale.
+- Added separate H-tube inner-parts extension offsets for 1000 mm and 1500 mm support spacing.
+- Locked in the first editor-calibrated offsets:
+  - `Panel Placement Offset Cm = (-25.0, -4.5, -25.0)`
+  - `Bracket Placement Offset Cm = (-50.0, -4.5, 0.0)`
+  - `Flown Bracket Placement Offset Cm = (101.0, -4.5, 28.5)`
+  - `Flown Bracket Placement Rotation = FRotator(0.0, 180.0, 180.0)`, which appears in Details as `X=180, Y=0, Z=180`
+  - `H Tube Assembly Offset 1000mm Cm = (-50.0, 0.0, 0.0)`
+  - `H Tube Assembly Offset 1500mm Cm = (-75.0, 0.0, 0.0)`
+  - `H Tube Inner Parts Relative Offset 1500mm Cm = (50.0, 0.0, 0.0)`
+- H-tube placement now has two layers:
+  - assembly offset moves both the outer H-tube folder and `Inner_Parts`
+  - inner-parts relative offset moves only the telescoping inner folder for extension calibration
+- Video wall actors now default to `Center On Actor = false` so new walls build upward from the actor origin instead of half below the floor.
+- Disabled the automatic right-edge tower by default. A 10-panel-wide wall should now create 5 x 1000 mm brackets and no 500 mm bracket; the extra visible support was from the forced right-edge tower, not the half-bracket count.
+- Added selection bounds and `SetSelectionHighlighted` so the actor is ready for the existing pointer edit-select pattern later.
+- Fixed an audio unity-build collision exposed by the new source file by making the two audio `CmPerFoot` constants file-unique.
+- Build verified after the latest changes with:
+  - `Result: Succeeded`
+
+Immediate next steps:
+
+- Place `Video Wall Actor` in the editor and calibrate the shared-origin folder assemblies.
+- Validate that 1000 mm and 1500 mm tower spacing match the intended ground-support layout.
+- Calibrate H-tube inner-parts offsets for the two spacing modes.
+- Calibrate ground-stacked support hardware placement first, then revisit flown placement by flipping the bracket/wall logic and skipping H tubes, Support Skys, and Stacking Stackers.
+- After editor placement is reliable, add `VideoWall` as a runtime build item with create/edit menu controls.
+- Added first runtime build-menu placement support:
+  - new `Video Wall` build item type
+  - fallback `Video Wall` item if no data asset exists
+  - `Video Wall` tab in the build menu
+  - rows and columns controls
+  - ground support / flown support dropdown
+  - 1000 mm / 1500 mm support-spacing dropdown
+  - preview and placed actors use the same `FVideoWallBuildDefinition`
+- Added first runtime edit-menu support:
+  - `E` pointer edit-select can target placed `Video Wall Actor` instances
+  - edit menu loads the placed actor's current rows, columns, support mode, and support spacing
+  - changing any of those controls rebuilds the selected wall in place
+  - `Apply` clears the video wall edit target and selection highlight
+
+</details>
+
+<details open>
 <summary><strong>2026-05-15: Runtime audio placement and editing</strong></summary>
 
 ### 2026-05-15
@@ -219,6 +310,13 @@ What has been done:
   - directional cone attenuation
   - audio virtualization set to keep playback alive when the listener leaves and re-enters range
   - editor-only cone preview is hidden in play
+- Fixed audio cone direction calibration on both ground speaker and line array actors:
+  - `Audio Direction Rotation` now drives the real `UAudioComponent` rotation used by Unreal's attenuation cone
+  - the visible cone preview follows that real audio direction plus the preview-only mesh offset
+  - default audio direction now appears in Details as `X=0, Y=0, Z=90`
+  - default cone preview rotation offset now appears in Details as `X=0, Y=90, Z=0`
+  - `Play Audio On Begin Play` is now respected instead of always starting playback
+  - audio rebuilds no longer reset the assigned sound when the sound asset has not changed
 - Added runtime `Audio` build menu support:
   - one `Audio` tab places either ground speakers or ground line arrays
   - build preview swaps actor class when changing audio type

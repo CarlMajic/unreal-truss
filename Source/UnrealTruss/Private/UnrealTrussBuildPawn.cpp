@@ -26,6 +26,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "TrussStructureActor.h"
 #include "VideoPlacementActor.h"
+#include "VideoWallActor.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 
 namespace
@@ -116,6 +117,31 @@ static UBuildItemDataAsset* CreateFallbackVideoBuildItem(UObject* Outer)
 	BuildItem->DefaultVideoPlacementDefinition.TVModel = EVideoTVModel::Samsung58;
 	BuildItem->DefaultVideoPlacementDefinition.TVCenterHeightFt = 6.0f;
 	BuildItem->DefaultVideoPlacementDefinition.TowerHeightFt = 8.0f;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackVideoWallBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("VideoWallDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Video Wall"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime InfiLED video wall builder."));
+	BuildItem->Category = TEXT("Video");
+	BuildItem->ItemType = EBuildItemType::VideoWall;
+	BuildItem->BuildActorClass = AVideoWallActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 50.0f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	BuildItem->DefaultVideoWallDefinition.Columns = 10;
+	BuildItem->DefaultVideoWallDefinition.Rows = 6;
+	BuildItem->DefaultVideoWallDefinition.SupportMode = EVideoWallSupportMode::GroundStacked;
+	BuildItem->DefaultVideoWallDefinition.SupportSpacing = EVideoWallSupportSpacing::OneMeter;
 	return BuildItem;
 }
 
@@ -294,6 +320,10 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 		{
 			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
+		else if (!bBuildMenuVisible && !bLightMenuVisible && bVideoWallEditSelectionModeActive)
+		{
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bProjectionEditSelectionModeActive)
 		{
 			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
@@ -330,10 +360,11 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 			AMBPWallActor* HitMBPWallActor = nullptr;
 			AStageDeckActor* HitStageDeckActor = nullptr;
 			ADrapeRunActor* HitDrapeActor = nullptr;
-			AVideoPlacementActor* HitVideoActor = nullptr;
-			AProjectionScreenActor* HitProjectionActor = nullptr;
-			AActor* HitAudioActor = nullptr;
-			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitProjectionActor, HitAudioActor) && HitMBPWallActor == EditingMBPWall)
+		AVideoPlacementActor* HitVideoActor = nullptr;
+		AVideoWallActor* HitVideoWallActor = nullptr;
+		AProjectionScreenActor* HitProjectionActor = nullptr;
+		AActor* HitAudioActor = nullptr;
+			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) && HitMBPWallActor == EditingMBPWall)
 			{
 				int32 TargetRow = 0;
 				int32 TargetColumn = 0;
@@ -351,9 +382,10 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 			AStageDeckActor* HitStageDeckActor = nullptr;
 			ADrapeRunActor* HitDrapeActor = nullptr;
 			AVideoPlacementActor* HitVideoActor = nullptr;
+			AVideoWallActor* HitVideoWallActor = nullptr;
 			AProjectionScreenActor* HitProjectionActor = nullptr;
 			AActor* HitAudioActor = nullptr;
-			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitProjectionActor, HitAudioActor) && HitStageDeckActor == EditingStageDeck)
+			if (TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) && HitStageDeckActor == EditingStageDeck)
 			{
 				int32 TargetRow = 0;
 				int32 TargetColumn = 0;
@@ -472,6 +504,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 		{
 			EditingVideo->SetSelectionHighlighted(false);
 		}
+		if (AVideoWallActor* EditingVideoWall = BuildMenuWidget->GetEditingVideoWallTarget())
+		{
+			EditingVideoWall->SetSelectionHighlighted(false);
+		}
 		if (AProjectionScreenActor* EditingProjection = BuildMenuWidget->GetEditingProjectionTarget())
 		{
 			EditingProjection->SetSelectionHighlighted(false);
@@ -485,6 +521,7 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
 		BuildMenuWidget->SetEditingDrapeTarget(nullptr);
 		BuildMenuWidget->SetEditingVideoTarget(nullptr);
+		BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
 	}
@@ -492,6 +529,7 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	bStageEditSelectionModeActive = false;
 	bDrapeEditSelectionModeActive = false;
 	bVideoEditSelectionModeActive = false;
+	bVideoWallEditSelectionModeActive = false;
 	bProjectionEditSelectionModeActive = false;
 	bAudioEditSelectionModeActive = false;
 	bEditSelectionModeActive = false;
@@ -514,6 +552,11 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	{
 		PendingVideoEditActor->SetSelectionHighlighted(false);
 		PendingVideoEditActor = nullptr;
+	}
+	if (PendingVideoWallEditActor)
+	{
+		PendingVideoWallEditActor->SetSelectionHighlighted(false);
+		PendingVideoWallEditActor = nullptr;
 	}
 	if (PendingProjectionEditActor)
 	{
@@ -562,6 +605,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	{
 		BuildManagerComponent->SetActiveVideoPlacementDefinition(BuildMenuWidget->GetCurrentVideoPlacementDefinition());
 	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::VideoWall)
+	{
+		BuildManagerComponent->SetActiveVideoWallDefinition(BuildMenuWidget->GetCurrentVideoWallDefinition());
+	}
 	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::ProjectionScreen)
 	{
 		BuildManagerComponent->SetActiveProjectionScreenDefinition(BuildMenuWidget->GetCurrentProjectionScreenDefinition());
@@ -601,12 +648,13 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		AStageDeckActor* StageDeckActor = nullptr;
 		ADrapeRunActor* DrapeActor = nullptr;
 		AVideoPlacementActor* VideoActor = nullptr;
+		AVideoWallActor* VideoWallActor = nullptr;
 		AProjectionScreenActor* ProjectionActor = nullptr;
 		AActor* AudioActor = nullptr;
 		bEditSelectionModeActive = false;
 		ClearHoveredEditSelection();
 
-		if (!TraceForEditableActorHit(HitResult, TrussActor, MBPWallActor, StageDeckActor, DrapeActor, VideoActor, ProjectionActor, AudioActor) || !BuildManagerComponent)
+		if (!TraceForEditableActorHit(HitResult, TrussActor, MBPWallActor, StageDeckActor, DrapeActor, VideoActor, VideoWallActor, ProjectionActor, AudioActor) || !BuildManagerComponent)
 		{
 			if (GEngine)
 			{
@@ -673,6 +721,15 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 				BuildMenuWidget->SetEditingVideoTarget(VideoActor);
 			}
 		}
+		else if (VideoWallActor)
+		{
+			VideoWallActor->SetSelectionHighlighted(true);
+			PendingVideoWallEditActor = VideoWallActor;
+			if (BuildMenuWidget)
+			{
+				BuildMenuWidget->SetEditingVideoWallTarget(VideoWallActor);
+			}
+		}
 		else if (ProjectionActor)
 		{
 			ProjectionActor->SetSelectionHighlighted(true);
@@ -704,10 +761,11 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		AStageDeckActor* HitStageDeckActor = nullptr;
 		ADrapeRunActor* HitDrapeActor = nullptr;
 		AVideoPlacementActor* HitVideoActor = nullptr;
+		AVideoWallActor* HitVideoWallActor = nullptr;
 		AProjectionScreenActor* HitProjectionActor = nullptr;
 		AActor* HitAudioActor = nullptr;
 		if (PendingMBPEditWall &&
-			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitProjectionActor, HitAudioActor) &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) &&
 			HitMBPWallActor == PendingMBPEditWall)
 		{
 			int32 TargetRow = 0;
@@ -733,10 +791,11 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		AStageDeckActor* HitStageDeckActor = nullptr;
 		ADrapeRunActor* HitDrapeActor = nullptr;
 		AVideoPlacementActor* HitVideoActor = nullptr;
+		AVideoWallActor* HitVideoWallActor = nullptr;
 		AProjectionScreenActor* HitProjectionActor = nullptr;
 		AActor* HitAudioActor = nullptr;
 		if (PendingStageEditActor &&
-			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitProjectionActor, HitAudioActor) &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) &&
 			HitStageDeckActor == PendingStageEditActor)
 		{
 			int32 TargetRow = 0;
@@ -762,10 +821,11 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		AStageDeckActor* HitStageDeckActor = nullptr;
 		ADrapeRunActor* HitDrapeActor = nullptr;
 		AVideoPlacementActor* HitVideoActor = nullptr;
+		AVideoWallActor* HitVideoWallActor = nullptr;
 		AProjectionScreenActor* HitProjectionActor = nullptr;
 		AActor* HitAudioActor = nullptr;
 		if (PendingDrapeEditActor &&
-			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitProjectionActor, HitAudioActor) &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) &&
 			HitDrapeActor == PendingDrapeEditActor)
 		{
 			EnsureBuildMenuWidget();
@@ -788,10 +848,11 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		AStageDeckActor* HitStageDeckActor = nullptr;
 		ADrapeRunActor* HitDrapeActor = nullptr;
 		AVideoPlacementActor* HitVideoActor = nullptr;
+		AVideoWallActor* HitVideoWallActor = nullptr;
 		AProjectionScreenActor* HitProjectionActor = nullptr;
 		AActor* HitAudioActor = nullptr;
 		if (PendingVideoEditActor &&
-			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitProjectionActor, HitAudioActor) &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) &&
 			HitVideoActor == PendingVideoEditActor)
 		{
 			EnsureBuildMenuWidget();
@@ -806,6 +867,33 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		return;
 	}
 
+	if (bVideoWallEditSelectionModeActive)
+	{
+		FHitResult HitResult;
+		ATrussStructureActor* HitTrussActor = nullptr;
+		AMBPWallActor* HitMBPWallActor = nullptr;
+		AStageDeckActor* HitStageDeckActor = nullptr;
+		ADrapeRunActor* HitDrapeActor = nullptr;
+		AVideoPlacementActor* HitVideoActor = nullptr;
+		AVideoWallActor* HitVideoWallActor = nullptr;
+		AProjectionScreenActor* HitProjectionActor = nullptr;
+		AActor* HitAudioActor = nullptr;
+		if (PendingVideoWallEditActor &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) &&
+			HitVideoWallActor == PendingVideoWallEditActor)
+		{
+			EnsureBuildMenuWidget();
+			if (BuildMenuWidget)
+			{
+				BuildMenuWidget->SetEditingVideoWallTarget(HitVideoWallActor);
+			}
+			SetBuildMenuVisible(true);
+		}
+
+		bVideoWallEditSelectionModeActive = false;
+		return;
+	}
+
 	if (bProjectionEditSelectionModeActive)
 	{
 		FHitResult HitResult;
@@ -814,10 +902,11 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 		AStageDeckActor* HitStageDeckActor = nullptr;
 		ADrapeRunActor* HitDrapeActor = nullptr;
 		AVideoPlacementActor* HitVideoActor = nullptr;
+		AVideoWallActor* HitVideoWallActor = nullptr;
 		AProjectionScreenActor* HitProjectionActor = nullptr;
 		AActor* HitAudioActor = nullptr;
 		if (PendingProjectionEditActor &&
-			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitProjectionActor, HitAudioActor) &&
+			TraceForEditableActorHit(HitResult, HitTrussActor, HitMBPWallActor, HitStageDeckActor, HitDrapeActor, HitVideoActor, HitVideoWallActor, HitProjectionActor, HitAudioActor) &&
 			HitProjectionActor == PendingProjectionEditActor)
 		{
 			EnsureBuildMenuWidget();
@@ -873,6 +962,10 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		{
 			EditingVideo->SetSelectionHighlighted(false);
 		}
+		if (AVideoWallActor* EditingVideoWall = BuildMenuWidget->GetEditingVideoWallTarget())
+		{
+			EditingVideoWall->SetSelectionHighlighted(false);
+		}
 		if (AProjectionScreenActor* EditingProjection = BuildMenuWidget->GetEditingProjectionTarget())
 		{
 			EditingProjection->SetSelectionHighlighted(false);
@@ -886,6 +979,7 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
 		BuildMenuWidget->SetEditingDrapeTarget(nullptr);
 		BuildMenuWidget->SetEditingVideoTarget(nullptr);
+		BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
 	}
@@ -893,6 +987,7 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 	bStageEditSelectionModeActive = false;
 	bDrapeEditSelectionModeActive = false;
 	bVideoEditSelectionModeActive = false;
+	bVideoWallEditSelectionModeActive = false;
 	bProjectionEditSelectionModeActive = false;
 	bAudioEditSelectionModeActive = false;
 	bEditSelectionModeActive = false;
@@ -900,6 +995,7 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 	PendingStageEditActor = nullptr;
 	PendingDrapeEditActor = nullptr;
 	PendingVideoEditActor = nullptr;
+	PendingVideoWallEditActor = nullptr;
 	PendingProjectionEditActor = nullptr;
 	PendingAudioEditActor = nullptr;
 
@@ -928,6 +1024,7 @@ void AUnrealTrussBuildPawn::EditLookedAtTruss()
 	bStageEditSelectionModeActive = false;
 	bDrapeEditSelectionModeActive = false;
 	bVideoEditSelectionModeActive = false;
+	bVideoWallEditSelectionModeActive = false;
 	bProjectionEditSelectionModeActive = false;
 	bAudioEditSelectionModeActive = false;
 	if (GEngine)
@@ -983,6 +1080,10 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 		{
 			EditingVideo->SetSelectionHighlighted(false);
 		}
+		if (AVideoWallActor* EditingVideoWall = BuildMenuWidget->GetEditingVideoWallTarget())
+		{
+			EditingVideoWall->SetSelectionHighlighted(false);
+		}
 		if (AProjectionScreenActor* EditingProjection = BuildMenuWidget->GetEditingProjectionTarget())
 		{
 			EditingProjection->SetSelectionHighlighted(false);
@@ -996,6 +1097,7 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
 		BuildMenuWidget->SetEditingDrapeTarget(nullptr);
 		BuildMenuWidget->SetEditingVideoTarget(nullptr);
+		BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
 	}
@@ -1003,12 +1105,14 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 	PendingStageEditActor = nullptr;
 	PendingDrapeEditActor = nullptr;
 	PendingVideoEditActor = nullptr;
+	PendingVideoWallEditActor = nullptr;
 	PendingProjectionEditActor = nullptr;
 	PendingAudioEditActor = nullptr;
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
 	bDrapeEditSelectionModeActive = false;
 	bVideoEditSelectionModeActive = false;
+	bVideoWallEditSelectionModeActive = false;
 	bProjectionEditSelectionModeActive = false;
 	bAudioEditSelectionModeActive = false;
 
@@ -1127,6 +1231,14 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 		if (UBuildItemDataAsset* FallbackVideoItem = CreateFallbackVideoBuildItem(this))
 		{
 			AvailableBuildItems.Add(FallbackVideoItem);
+		}
+	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::VideoWall))
+	{
+		if (UBuildItemDataAsset* FallbackVideoWallItem = CreateFallbackVideoWallBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackVideoWallItem);
 		}
 	}
 
@@ -1410,10 +1522,11 @@ void AUnrealTrussBuildPawn::UpdateHoveredEditSelection()
 	AStageDeckActor* StageDeckActor = nullptr;
 	ADrapeRunActor* DrapeActor = nullptr;
 	AVideoPlacementActor* VideoActor = nullptr;
+	AVideoWallActor* VideoWallActor = nullptr;
 	AProjectionScreenActor* ProjectionActor = nullptr;
 	AActor* AudioActor = nullptr;
 
-	if (!TraceForEditableActorHit(HitResult, TrussActor, MBPWallActor, StageDeckActor, DrapeActor, VideoActor, ProjectionActor, AudioActor))
+	if (!TraceForEditableActorHit(HitResult, TrussActor, MBPWallActor, StageDeckActor, DrapeActor, VideoActor, VideoWallActor, ProjectionActor, AudioActor))
 	{
 		ClearHoveredEditSelection();
 		return;
@@ -1424,6 +1537,7 @@ void AUnrealTrussBuildPawn::UpdateHoveredEditSelection()
 	if (!EditableActor) EditableActor = StageDeckActor;
 	if (!EditableActor) EditableActor = DrapeActor;
 	if (!EditableActor) EditableActor = VideoActor;
+	if (!EditableActor) EditableActor = VideoWallActor;
 	if (!EditableActor) EditableActor = ProjectionActor;
 	if (!EditableActor) EditableActor = AudioActor;
 
@@ -1464,6 +1578,10 @@ void AUnrealTrussBuildPawn::SetEditableActorSelectionHighlighted(AActor* Actor, 
 	else if (AVideoPlacementActor* VideoActor = Cast<AVideoPlacementActor>(Actor))
 	{
 		VideoActor->SetSelectionHighlighted(bHighlighted);
+	}
+	else if (AVideoWallActor* VideoWallActor = Cast<AVideoWallActor>(Actor))
+	{
+		VideoWallActor->SetSelectionHighlighted(bHighlighted);
 	}
 	else if (AProjectionScreenActor* ProjectionActor = Cast<AProjectionScreenActor>(Actor))
 	{
@@ -1566,6 +1684,10 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 	{
 		BuildManagerComponent->SetActiveVideoPlacementDefinition(BuildMenuWidget->GetCurrentVideoPlacementDefinition());
 	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::VideoWall)
+	{
+		BuildManagerComponent->SetActiveVideoWallDefinition(BuildMenuWidget->GetCurrentVideoWallDefinition());
+	}
 	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::ProjectionScreen)
 	{
 		BuildManagerComponent->SetActiveProjectionScreenDefinition(BuildMenuWidget->GetCurrentProjectionScreenDefinition());
@@ -1614,6 +1736,14 @@ void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
 			EditingVideo->SetSelectionHighlighted(false);
 			BuildMenuWidget->SetEditingVideoTarget(nullptr);
 			PendingVideoEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
+		if (AVideoWallActor* EditingVideoWall = BuildMenuWidget->GetEditingVideoWallTarget())
+		{
+			EditingVideoWall->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
+			PendingVideoWallEditActor = nullptr;
 			SetBuildMenuVisible(false);
 			return;
 		}
@@ -1858,7 +1988,7 @@ ATrussStructureActor* AUnrealTrussBuildPawn::TraceForTrussActor() const
 	return TraceForTrussHit(HitResult, TrussActor) ? TrussActor : nullptr;
 }
 
-bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor, AVideoPlacementActor*& OutVideoActor, AProjectionScreenActor*& OutProjectionActor, AActor*& OutAudioActor) const
+bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor, AMBPWallActor*& OutMBPWallActor, AStageDeckActor*& OutStageDeckActor, ADrapeRunActor*& OutDrapeActor, AVideoPlacementActor*& OutVideoActor, AVideoWallActor*& OutVideoWallActor, AProjectionScreenActor*& OutProjectionActor, AActor*& OutAudioActor) const
 {
 	OutHitResult = FHitResult();
 	OutTrussActor = nullptr;
@@ -1866,6 +1996,7 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 	OutStageDeckActor = nullptr;
 	OutDrapeActor = nullptr;
 	OutVideoActor = nullptr;
+	OutVideoWallActor = nullptr;
 	OutProjectionActor = nullptr;
 	OutAudioActor = nullptr;
 
@@ -1929,6 +2060,13 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 			return true;
 		}
 
+		if (AVideoWallActor* HitVideoWallActor = Cast<AVideoWallActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutVideoWallActor = HitVideoWallActor;
+			return true;
+		}
+
 		if (AProjectionScreenActor* HitProjectionActor = Cast<AProjectionScreenActor>(HitResult.GetActor()))
 		{
 			OutHitResult = HitResult;
@@ -1984,6 +2122,13 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 			{
 				OutHitResult = HitResult;
 				OutVideoActor = OwnerVideoActor;
+				return true;
+			}
+
+			if (AVideoWallActor* OwnerVideoWallActor = Cast<AVideoWallActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutVideoWallActor = OwnerVideoWallActor;
 				return true;
 			}
 

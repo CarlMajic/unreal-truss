@@ -9,6 +9,7 @@
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
 #include "VideoPlacementActor.h"
+#include "VideoWallActor.h"
 #include "ProjectionScreenActor.h"
 #include "BuildMenuWidget.generated.h"
 
@@ -99,6 +100,9 @@ public:
 	FVideoPlacementBuildDefinition GetCurrentVideoPlacementDefinition() const;
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FVideoWallBuildDefinition GetCurrentVideoWallDefinition() const;
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FProjectionScreenBuildDefinition GetCurrentProjectionScreenDefinition() const;
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
@@ -141,6 +145,12 @@ public:
 	class AVideoPlacementActor* GetEditingVideoTarget() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingVideoWallTarget(class AVideoWallActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class AVideoWallActor* GetEditingVideoWallTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingProjectionTarget(class AProjectionScreenActor* InEditingTarget);
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
@@ -181,6 +191,9 @@ private:
 	FVideoPlacementBuildDefinition CurrentVideoPlacementDefinition;
 
 	UPROPERTY(Transient)
+	FVideoWallBuildDefinition CurrentVideoWallDefinition;
+
+	UPROPERTY(Transient)
 	FProjectionScreenBuildDefinition CurrentProjectionScreenDefinition;
 
 	UPROPERTY(Transient)
@@ -215,6 +228,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> VideoTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> VideoWallTabButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> ProjectionTabButton = nullptr;
@@ -373,6 +389,9 @@ private:
 	TObjectPtr<AVideoPlacementActor> EditingVideoTarget = nullptr;
 
 	UPROPERTY(Transient)
+	TObjectPtr<AVideoWallActor> EditingVideoWallTarget = nullptr;
+
+	UPROPERTY(Transient)
 	TObjectPtr<AProjectionScreenActor> EditingProjectionTarget = nullptr;
 
 	UPROPERTY(Transient)
@@ -405,6 +424,7 @@ private:
 	bool IsEditingStage() const;
 	bool IsEditingDrape() const;
 	bool IsEditingVideo() const;
+	bool IsEditingVideoWall() const;
 	bool IsEditingProjection() const;
 	bool IsEditingAudio() const;
 	void RefreshTabButtons();
@@ -413,6 +433,7 @@ private:
 	void RefreshStageControls();
 	void RefreshDrapeControls();
 	void RefreshVideoControls();
+	void RefreshVideoWallControls();
 	void RefreshProjectionControls();
 	void RefreshAudioControls();
 	void ApplyTrussDefinitionToBuildManager();
@@ -420,12 +441,14 @@ private:
 	void ApplyStageDefinitionToBuildManager();
 	void ApplyDrapeDefinitionToBuildManager();
 	void ApplyVideoDefinitionToBuildManager();
+	void ApplyVideoWallDefinitionToBuildManager();
 	void ApplyProjectionDefinitionToBuildManager();
 	void ApplyAudioDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	void ApplyStageEditToTarget();
 	void ApplyDrapeEditToTarget();
 	void ApplyVideoEditToTarget();
+	void ApplyVideoWallEditToTarget();
 	void ApplyProjectionEditToTarget();
 	void ApplyAudioEditToTarget();
 	void SyncCurrentStageCellFromTarget();
@@ -449,6 +472,10 @@ private:
 	static EStageRuntimeEditScope OptionToStageEditScope(const FString& Option);
 	static FString TVModelToOption(EVideoTVModel TVModel);
 	static EVideoTVModel OptionToTVModel(const FString& Option);
+	static FString VideoWallSupportModeToOption(EVideoWallSupportMode SupportMode);
+	static EVideoWallSupportMode OptionToVideoWallSupportMode(const FString& Option);
+	static FString VideoWallSupportSpacingToOption(EVideoWallSupportSpacing SupportSpacing);
+	static EVideoWallSupportSpacing OptionToVideoWallSupportSpacing(const FString& Option);
 	static FString ProjectionScreenSizeToOption(EProjectionScreenKitSize ScreenKitSize);
 	static EProjectionScreenKitSize OptionToProjectionScreenSize(const FString& Option);
 	static FString ProjectionProjectorToOption(EProjectionProjectorType ProjectorType);
@@ -479,6 +506,9 @@ private:
 
 	UFUNCTION()
 	void HandleVideoTabClicked();
+
+	UFUNCTION()
+	void HandleVideoWallTabClicked();
 
 	UFUNCTION()
 	void HandleProjectionTabClicked();

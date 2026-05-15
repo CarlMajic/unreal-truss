@@ -9,6 +9,7 @@
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
 #include "VideoPlacementActor.h"
+#include "VideoWallActor.h"
 #include "ProjectionScreenActor.h"
 #include "BuildItemDataAsset.generated.h"
 
@@ -23,6 +24,7 @@ enum class EBuildItemType : uint8
 	StageDeck UMETA(DisplayName = "Stage Deck"),
 	DrapeRun UMETA(DisplayName = "Drape Run"),
 	VideoPlacement UMETA(DisplayName = "TV Placement"),
+	VideoWall UMETA(DisplayName = "Video Wall"),
 	ProjectionScreen UMETA(DisplayName = "Projection Screen"),
 	AudioPlacement UMETA(DisplayName = "Audio Placement")
 };
@@ -102,6 +104,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Video")
 	FVideoPlacementBuildDefinition DefaultVideoPlacementDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Video Wall")
+	FVideoWallBuildDefinition DefaultVideoWallDefinition;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Projection")
 	FProjectionScreenBuildDefinition DefaultProjectionScreenDefinition;
