@@ -10,6 +10,7 @@
 #include "BuildPreviewActor.h"
 #include "DrapeRunActor.h"
 #include "LightPlacementMenuWidget.h"
+#include "LoungeLayoutActor.h"
 #include "MBPWallActor.h"
 #include "ProjectionScreenActor.h"
 #include "StageDeckActor.h"
@@ -191,6 +192,27 @@ static UBuildItemDataAsset* CreateFallbackAudioBuildItem(UObject* Outer)
 	BuildItem->bUseGridSnap = true;
 	BuildItem->bAlignToSurfaceNormal = false;
 	BuildItem->DefaultAudioPlacementDefinition.PlacementType = EAudioPlacementRuntimeType::GroundSpeaker;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackLoungeBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("LoungeLayoutDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Lounge"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime lounge furniture placement."));
+	BuildItem->Category = TEXT("Furniture");
+	BuildItem->ItemType = EBuildItemType::LoungeLayout;
+	BuildItem->BuildActorClass = ALoungeLayoutActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
 	return BuildItem;
 }
 
@@ -516,6 +538,14 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 		{
 			SetEditableActorSelectionHighlighted(EditingAudio, false);
 		}
+		if (ALoungeLayoutActor* EditingLounge = BuildMenuWidget->GetEditingLoungeTarget())
+		{
+			EditingLounge->SetSelectionHighlighted(false);
+		}
+		if (ALoungeLayoutActor* EditingLounge = BuildMenuWidget->GetEditingLoungeTarget())
+		{
+			EditingLounge->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
@@ -524,6 +554,8 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 		BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
+		BuildMenuWidget->SetEditingLoungeTarget(nullptr);
+		BuildMenuWidget->SetEditingLoungeTarget(nullptr);
 	}
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
@@ -616,6 +648,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::AudioPlacement)
 	{
 		BuildManagerComponent->SetActiveAudioPlacementDefinition(BuildMenuWidget->GetCurrentAudioPlacementDefinition());
+	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::LoungeLayout)
+	{
+		BuildManagerComponent->SetActiveLoungeLayoutDefinition(BuildMenuWidget->GetCurrentLoungeLayoutDefinition());
 	}
 	BuildManagerComponent->EnterBuildMode();
 }
@@ -745,7 +781,14 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 			PendingAudioEditActor = AudioActor;
 			if (BuildMenuWidget)
 			{
-				BuildMenuWidget->SetEditingAudioTarget(AudioActor);
+				if (ALoungeLayoutActor* LoungeActor = Cast<ALoungeLayoutActor>(AudioActor))
+				{
+					BuildMenuWidget->SetEditingLoungeTarget(LoungeActor);
+				}
+				else
+				{
+					BuildMenuWidget->SetEditingAudioTarget(AudioActor);
+				}
 			}
 		}
 
@@ -974,6 +1017,10 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		{
 			SetEditableActorSelectionHighlighted(EditingAudio, false);
 		}
+		if (ALoungeLayoutActor* EditingLounge = BuildMenuWidget->GetEditingLoungeTarget())
+		{
+			EditingLounge->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
@@ -982,6 +1029,7 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
+		BuildMenuWidget->SetEditingLoungeTarget(nullptr);
 	}
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
@@ -1255,6 +1303,14 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 		if (UBuildItemDataAsset* FallbackAudioItem = CreateFallbackAudioBuildItem(this))
 		{
 			AvailableBuildItems.Add(FallbackAudioItem);
+		}
+	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::LoungeLayout))
+	{
+		if (UBuildItemDataAsset* FallbackLoungeItem = CreateFallbackLoungeBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackLoungeItem);
 		}
 	}
 }
@@ -1595,6 +1651,10 @@ void AUnrealTrussBuildPawn::SetEditableActorSelectionHighlighted(AActor* Actor, 
 	{
 		AudioGroundLineArrayActor->SetSelectionHighlighted(bHighlighted);
 	}
+	else if (ALoungeLayoutActor* LoungeActor = Cast<ALoungeLayoutActor>(Actor))
+	{
+		LoungeActor->SetSelectionHighlighted(bHighlighted);
+	}
 }
 
 void AUnrealTrussBuildPawn::DrawEditSubSelectionPreview(const FHitResult& HitResult, AMBPWallActor* MBPWallActor, AStageDeckActor* StageDeckActor) const
@@ -1696,6 +1756,10 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 	{
 		BuildManagerComponent->SetActiveAudioPlacementDefinition(BuildMenuWidget->GetCurrentAudioPlacementDefinition());
 	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::LoungeLayout)
+	{
+		BuildManagerComponent->SetActiveLoungeLayoutDefinition(BuildMenuWidget->GetCurrentLoungeLayoutDefinition());
+	}
 	else
 	{
 		BuildManagerComponent->SetActiveTrussDefinition(SelectedItem->DefaultTrussDefinition);
@@ -1759,6 +1823,14 @@ void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
 		{
 			SetEditableActorSelectionHighlighted(EditingAudio, false);
 			BuildMenuWidget->SetEditingAudioTarget(nullptr);
+			PendingAudioEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
+		if (ALoungeLayoutActor* EditingLounge = BuildMenuWidget->GetEditingLoungeTarget())
+		{
+			EditingLounge->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingLoungeTarget(nullptr);
 			PendingAudioEditActor = nullptr;
 			SetBuildMenuVisible(false);
 			return;
@@ -2088,6 +2160,13 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 			return true;
 		}
 
+		if (ALoungeLayoutActor* HitLoungeActor = Cast<ALoungeLayoutActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutAudioActor = HitLoungeActor;
+			return true;
+		}
+
 		if (const UActorComponent* HitComponent = HitResult.GetComponent())
 		{
 			if (ATrussStructureActor* OwnerTrussActor = Cast<ATrussStructureActor>(HitComponent->GetOwner()))
@@ -2150,6 +2229,13 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 			{
 				OutHitResult = HitResult;
 				OutAudioActor = OwnerAudioGroundLineArrayActor;
+				return true;
+			}
+
+			if (ALoungeLayoutActor* OwnerLoungeActor = Cast<ALoungeLayoutActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutAudioActor = OwnerLoungeActor;
 				return true;
 			}
 		}

@@ -96,9 +96,14 @@ Core goals:
     <td>Editor and runtime create/edit workflow started.</td>
   </tr>
   <tr>
+    <td><strong>Lounge Furniture</strong></td>
+    <td>Folder-driven AFR lounge layouts using sofas, lounge chairs, cocktail tables, end tables, lamps, and accents.</td>
+    <td>Editor actor plus runtime create/edit workflow started.</td>
+  </tr>
+  <tr>
     <td><strong>Decor, Bars, Tables</strong></td>
     <td>Venue-ready build items that use the same preview, placement, editing, and save/load direction.</td>
-    <td>Planned expansion.</td>
+    <td>Planned expansion beyond the first lounge tool.</td>
   </tr>
 </table>
 
@@ -150,6 +155,28 @@ The first buildable system covers straight truss runs, standalone towers, rectan
 
 MBP wall generation is the first scenic system beyond truss. It uses mixed per-slot styles, blank slots, custom mesh slots, shimmer materials, depth offsets snapped in 12-inch steps, and instanced rendering by mesh/material bucket. Stage decks, decor placement, bars, tables, and other live-event items can follow the same runtime build framework.
 
+## Lounge Furniture Tool
+
+The first furniture-placement system is `ALoungeLayoutActor`, a shared-origin lounge layout builder for imported AFR furniture. It scans category folders under `/Game/Furniture` and builds dropdowns from whatever item folders are present:
+
+- `/Game/Furniture/Sofas`
+- `/Game/Furniture/Lounge_Chairs`
+- `/Game/Furniture/Cocktail_Tables`
+- `/Game/Furniture/End_Tables`
+- `/Game/Furniture/Lamps`
+- `/Game/Furniture/Accents`
+
+The current default layout places a cocktail table at the authored origin, sofas to the north, chairs to the south, and optional end tables, lamps, and accents using the same shared-origin authoring approach from Blender/USD. The actor supports two-sofa and four-chair layout modes, end-table X offset adjustment, mirrored-placement modes, and a mirrored-chair yaw offset for angled chair models.
+
+Runtime support is wired through the normal build menu:
+
+- `Lounge` tab in the build menu.
+- Runtime preview and placed actors use `FLoungeLayoutBuildDefinition`.
+- Dropdowns populate from the furniture folders instead of hard-coded item names.
+- Pointer edit-select can target a placed lounge actor, open `Edit Lounge`, and rebuild the selected actor in place.
+
+Mirroring note: Unreal negative-scale mirroring caused visible shading differences on imported furniture, so lounge "mirror" behavior now uses translated placement plus rotation with positive scale. X-only chair mirroring keeps the original facing direction and applies the mirrored-chair yaw offset; Y-side chair layouts use a 180-degree facing turn.
+
 ## Runtime Principles
 
 | Area | Direction |
@@ -180,9 +207,57 @@ MBP wall generation is the first scenic system beyond truss. It uses mixed per-s
 | `Source/UnrealTruss` | Code-first playable test path, build menu widget, light placement menu, targeting pointer, pawn, and game mode. |
 | `Content/Build` | Build item data assets used by the runtime placement workflow. |
 | `Content/Majic_Gear` | Imported truss, MBP, lighting, audio, video, and event-gear assets used by the current tool pass. |
+| `Content/Furniture` | Imported AFR lounge furniture organized by category for the lounge layout tool. |
 | `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details open>
+<summary><strong>2026-05-18: Lounge furniture placement tool</strong></summary>
+
+### 2026-05-18
+
+Current direction:
+
+- Start furniture placement with one lounge layout before adding additional layout presets.
+- Use AFR imported furniture organized by category folders.
+- Keep the actor compatible with assets authored around a shared Blender origin.
+- Avoid maintaining duplicate mirrored mesh files.
+
+What has been done:
+
+- Exported AFR lounge furniture from Blender as individual USD files by category and imported them under `Content/Furniture`.
+- Added `ALoungeLayoutActor` in `MajicTrussRuntime`.
+- Added `FLoungeLayoutBuildDefinition` for shared create/edit state.
+- The lounge actor scans category folders and populates item choices for sofas, chairs, cocktail tables, end tables, lamps, and accents.
+- Added editor-facing controls for:
+  - selected furniture item per category
+  - counts
+  - two-sofa and four-chair layout modes
+  - end-table X offset
+  - per-category mirror modes
+  - mirrored chair yaw offset
+- Added runtime `Lounge` build-menu support:
+  - fallback Lounge build item
+  - preview placement
+  - final placement
+  - dropdowns populated from `/Game/Furniture`
+- Added runtime edit support:
+  - `E` enters pointer edit-select
+  - left click a highlighted lounge actor to open `Edit Lounge`
+  - menu edits rebuild the selected lounge actor in place
+- Replaced negative-scale mirroring with translated placement plus rotation to avoid mirrored furniture shading changes.
+- Added bounds/selection highlighting so lounge actors participate in the shared pointer edit workflow.
+- Build verified after the latest changes with:
+  - `Result: Succeeded`
+
+Immediate next steps:
+
+- Test the edit menu against several AFR lounge combinations.
+- Add more lounge layout presets once this first north/south cocktail-table layout feels right.
+- Consider exposing mirror modes in the runtime UI if needed; currently the runtime panel focuses on item choices, counts, offsets, two-sofa/four-chair modes, and mirrored-chair yaw.
+
+</details>
 
 <details open>
 <summary><strong>2026-05-15: Editor-first video wall actor</strong></summary>

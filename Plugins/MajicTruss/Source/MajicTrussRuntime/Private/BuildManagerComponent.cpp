@@ -6,6 +6,7 @@
 #include "DrapeRunActor.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "LoungeLayoutActor.h"
 #include "MBPWallActor.h"
 #include "StageDeckActor.h"
 #include "TrussStructureActor.h"
@@ -42,6 +43,7 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	ActiveVideoWallDefinition = BuildItem ? BuildItem->DefaultVideoWallDefinition : FVideoWallBuildDefinition();
 	ActiveProjectionScreenDefinition = BuildItem ? BuildItem->DefaultProjectionScreenDefinition : FProjectionScreenBuildDefinition();
 	ActiveAudioPlacementDefinition = BuildItem ? BuildItem->DefaultAudioPlacementDefinition : FAudioPlacementBuildDefinition();
+	ActiveLoungeLayoutDefinition = BuildItem ? BuildItem->DefaultLoungeLayoutDefinition : FLoungeLayoutBuildDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -140,6 +142,16 @@ void UBuildManagerComponent::SetActiveAudioPlacementDefinition(const FAudioPlace
 	if (ActivePreviewActor)
 	{
 		ActivePreviewActor->SetPreviewActorClass(ResolveBuildActorClass());
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveLoungeLayoutDefinition(const FLoungeLayoutBuildDefinition& Definition)
+{
+	ActiveLoungeLayoutDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
 		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
 	}
 }
@@ -402,6 +414,15 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 		{
 			LineArrayActor->bBuildOnConstruction = false;
 			LineArrayActor->ApplyBuildDefinition(ActiveAudioPlacementDefinition.GroundLineArrayDefinition, true);
+		}
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::LoungeLayout)
+	{
+		if (ALoungeLayoutActor* LoungeActor = Cast<ALoungeLayoutActor>(Actor))
+		{
+			LoungeActor->bBuildOnConstruction = false;
+			LoungeActor->ApplyBuildDefinition(ActiveLoungeLayoutDefinition, true);
 		}
 	}
 }

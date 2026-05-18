@@ -55,7 +55,7 @@ FString GetShimmerMaterialPath(EMBPShimmerVariant Variant)
 	}
 }
 
-bool IsStaticMeshAsset(const FAssetData& AssetData)
+bool IsMBPStaticMeshAsset(const FAssetData& AssetData)
 {
 	return AssetData.AssetClassPath == UStaticMesh::StaticClass()->GetClassPathName();
 }
@@ -608,7 +608,7 @@ TArray<FSoftObjectPath> AMBPWallActor::GetMeshPathsForFolder(const FString& Asse
 
 	for (const FAssetData& AssetData : Assets)
 	{
-		if (IsStaticMeshAsset(AssetData))
+		if (IsMBPStaticMeshAsset(AssetData))
 		{
 			MeshPaths.Add(AssetData.ToSoftObjectPath());
 		}

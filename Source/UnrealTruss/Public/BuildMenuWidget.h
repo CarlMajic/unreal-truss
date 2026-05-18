@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "DrapeRunActor.h"
+#include "LoungeLayoutActor.h"
 #include "MBPWallActor.h"
 #include "StageDeckActor.h"
 #include "StageDeckBuildDefinition.h"
@@ -108,6 +109,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FAudioPlacementBuildDefinition GetCurrentAudioPlacementDefinition() const;
 
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FLoungeLayoutBuildDefinition GetCurrentLoungeLayoutDefinition() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
 
@@ -162,6 +166,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	class AActor* GetEditingAudioTarget() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingLoungeTarget(class ALoungeLayoutActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class ALoungeLayoutActor* GetEditingLoungeTarget() const;
+
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	bool ShouldShowPointerForCurrentEdit() const;
 
@@ -198,6 +208,9 @@ private:
 
 	UPROPERTY(Transient)
 	FAudioPlacementBuildDefinition CurrentAudioPlacementDefinition;
+
+	UPROPERTY(Transient)
+	FLoungeLayoutBuildDefinition CurrentLoungeLayoutDefinition;
 
 	UPROPERTY(Transient)
 	TSoftObjectPtr<class USoundBase> CurrentAudioSource;
@@ -237,6 +250,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> AudioTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> LoungeTabButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HeaderText = nullptr;
@@ -400,6 +416,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class AAudioGroundLineArrayActor> EditingAudioGroundLineArrayTarget = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<ALoungeLayoutActor> EditingLoungeTarget = nullptr;
+
 	TArray<FString> AudioSourceOptions;
 	TMap<FString, FSoftObjectPath> AudioSourcePathsByOption;
 
@@ -427,6 +446,7 @@ private:
 	bool IsEditingVideoWall() const;
 	bool IsEditingProjection() const;
 	bool IsEditingAudio() const;
+	bool IsEditingLounge() const;
 	void RefreshTabButtons();
 	void RefreshTrussControls();
 	void RefreshMBPControls();
@@ -436,6 +456,7 @@ private:
 	void RefreshVideoWallControls();
 	void RefreshProjectionControls();
 	void RefreshAudioControls();
+	void RefreshLoungeControls();
 	void ApplyTrussDefinitionToBuildManager();
 	void ApplyMBPDefinitionToBuildManager();
 	void ApplyStageDefinitionToBuildManager();
@@ -444,6 +465,7 @@ private:
 	void ApplyVideoWallDefinitionToBuildManager();
 	void ApplyProjectionDefinitionToBuildManager();
 	void ApplyAudioDefinitionToBuildManager();
+	void ApplyLoungeDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	void ApplyStageEditToTarget();
 	void ApplyDrapeEditToTarget();
@@ -451,6 +473,7 @@ private:
 	void ApplyVideoWallEditToTarget();
 	void ApplyProjectionEditToTarget();
 	void ApplyAudioEditToTarget();
+	void ApplyLoungeEditToTarget();
 	void SyncCurrentStageCellFromTarget();
 	void RefreshAudioSourceOptions();
 	FString AudioSourceToOption(const TSoftObjectPtr<USoundBase>& AudioSource) const;
@@ -515,6 +538,9 @@ private:
 
 	UFUNCTION()
 	void HandleAudioTabClicked();
+
+	UFUNCTION()
+	void HandleLoungeTabClicked();
 
 	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);

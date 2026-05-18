@@ -9,6 +9,7 @@ class ABuildPreviewActor;
 class AAudioGroundLineArrayActor;
 class AAudioGroundSpeakerActor;
 class ADrapeRunActor;
+class ALoungeLayoutActor;
 class AMBPWallActor;
 class APlayerController;
 class AStageDeckActor;
@@ -80,6 +81,9 @@ public:
 	FAudioPlacementBuildDefinition ActiveAudioPlacementDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FLoungeLayoutBuildDefinition ActiveLoungeLayoutDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -114,6 +118,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	void SetActiveAudioPlacementDefinition(const FAudioPlacementBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveLoungeLayoutDefinition(const FLoungeLayoutBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);

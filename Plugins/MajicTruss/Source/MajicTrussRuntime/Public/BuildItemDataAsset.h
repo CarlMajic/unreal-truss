@@ -5,6 +5,7 @@
 #include "DrapeRunActor.h"
 #include "AudioGroundLineArrayActor.h"
 #include "AudioGroundSpeakerActor.h"
+#include "LoungeLayoutActor.h"
 #include "MBPWallActor.h"
 #include "StageDeckBuildDefinition.h"
 #include "TrussStructureActor.h"
@@ -26,7 +27,8 @@ enum class EBuildItemType : uint8
 	VideoPlacement UMETA(DisplayName = "TV Placement"),
 	VideoWall UMETA(DisplayName = "Video Wall"),
 	ProjectionScreen UMETA(DisplayName = "Projection Screen"),
-	AudioPlacement UMETA(DisplayName = "Audio Placement")
+	AudioPlacement UMETA(DisplayName = "Audio Placement"),
+	LoungeLayout UMETA(DisplayName = "Lounge Layout")
 };
 
 UENUM(BlueprintType)
@@ -113,4 +115,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Audio")
 	FAudioPlacementBuildDefinition DefaultAudioPlacementDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build|Lounge")
+	FLoungeLayoutBuildDefinition DefaultLoungeLayoutDefinition;
 };

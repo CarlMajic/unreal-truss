@@ -21,7 +21,7 @@ const FString StackerFolder = TEXT("/Game/Majic_Gear/Video_Wall/InfiLED/Stacking
 const FString HTubeOuterFolder = TEXT("/Game/Majic_Gear/Video_Wall/InfiLED/H_Tube/StaticMeshes");
 const FString HTubeInnerFolder = TEXT("/Game/Majic_Gear/Video_Wall/InfiLED/H_Tube/StaticMeshes/Inner_Parts");
 
-bool IsStaticMeshAsset(const FAssetData& AssetData)
+bool IsVideoWallStaticMeshAsset(const FAssetData& AssetData)
 {
 	return AssetData.AssetClassPath == UStaticMesh::StaticClass()->GetClassPathName();
 }
@@ -359,7 +359,7 @@ TArray<FSoftObjectPath> AVideoWallActor::GetStaticMeshPathsForFolder(const FStri
 
 	for (const FAssetData& AssetData : Assets)
 	{
-		if (IsStaticMeshAsset(AssetData))
+		if (IsVideoWallStaticMeshAsset(AssetData))
 		{
 			MeshPaths.Add(AssetData.ToSoftObjectPath());
 		}

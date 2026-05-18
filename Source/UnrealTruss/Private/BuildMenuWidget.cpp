@@ -29,6 +29,12 @@ namespace
 {
 constexpr TCHAR NoAudioOption[] = TEXT("No Audio");
 constexpr TCHAR SoundCheckAssetPath[] = TEXT("/Game/Majic_Gear/Audio/Sound_Check");
+constexpr TCHAR LoungeSofaAssetPath[] = TEXT("/Game/Furniture/Sofas");
+constexpr TCHAR LoungeChairAssetPath[] = TEXT("/Game/Furniture/Lounge_Chairs");
+constexpr TCHAR LoungeCocktailTableAssetPath[] = TEXT("/Game/Furniture/Cocktail_Tables");
+constexpr TCHAR LoungeEndTableAssetPath[] = TEXT("/Game/Furniture/End_Tables");
+constexpr TCHAR LoungeLampAssetPath[] = TEXT("/Game/Furniture/Lamps");
+constexpr TCHAR LoungeAccentAssetPath[] = TEXT("/Game/Furniture/Accents");
 
 static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 {
@@ -38,7 +44,8 @@ static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 		ItemType == EBuildItemType::VideoPlacement ||
 		ItemType == EBuildItemType::VideoWall ||
 		ItemType == EBuildItemType::ProjectionScreen ||
-		ItemType == EBuildItemType::AudioPlacement)
+		ItemType == EBuildItemType::AudioPlacement ||
+		ItemType == EBuildItemType::LoungeLayout)
 	{
 		return ItemType;
 	}
@@ -79,6 +86,24 @@ static UBuildItemDataAsset* FindMatchingBuildItemForAudioActor(const TArray<TObj
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
 		if (BuildItem && BuildItem->ItemType == EBuildItemType::AudioPlacement)
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
+static UBuildItemDataAsset* FindMatchingBuildItemForLoungeActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ALoungeLayoutActor* LoungeActor)
+{
+	if (!LoungeActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && BuildItem->ItemType == EBuildItemType::LoungeLayout)
 		{
 			return BuildItem;
 		}
@@ -201,6 +226,55 @@ static UBuildItemDataAsset* FindMatchingBuildItemForProjectionActor(const TArray
 
 	return nullptr;
 }
+
+static TArray<FString> GetLoungeItemOptionsFromFolder(const FString& CategoryFolder)
+{
+	TSet<FString> Options;
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TArray<FAssetData> Assets;
+	AssetRegistryModule.Get().GetAssetsByPath(*CategoryFolder, Assets, true);
+
+	for (const FAssetData& Asset : Assets)
+	{
+		if (Asset.AssetClassPath.GetAssetName() != TEXT("StaticMesh"))
+		{
+			continue;
+		}
+
+		FString PackagePath = Asset.PackagePath.ToString();
+		PackagePath.RemoveFromStart(CategoryFolder);
+		PackagePath.RemoveFromStart(TEXT("/"));
+
+		FString ItemName;
+		if (PackagePath.Split(TEXT("/"), &ItemName, nullptr))
+		{
+			Options.Add(ItemName);
+		}
+		else if (!PackagePath.IsEmpty())
+		{
+			Options.Add(PackagePath);
+		}
+		else
+		{
+			Options.Add(Asset.AssetName.ToString());
+		}
+	}
+
+	TArray<FString> SortedOptions = Options.Array();
+	SortedOptions.Sort();
+	return SortedOptions;
+}
+
+static FString EnsureLoungeOption(FString CurrentOption, const TArray<FString>& Options)
+{
+	if (!CurrentOption.IsEmpty() && Options.Contains(CurrentOption))
+	{
+		return CurrentOption;
+	}
+
+	return Options.Num() > 0 ? Options[0] : FString();
+}
 }
 
 void UBuildMenuItemButtonProxy::Initialize(UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem)
@@ -241,6 +315,7 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 		CurrentVideoWallDefinition = SelectedBuildItem->DefaultVideoWallDefinition;
 		CurrentProjectionScreenDefinition = SelectedBuildItem->DefaultProjectionScreenDefinition;
 		CurrentAudioPlacementDefinition = SelectedBuildItem->DefaultAudioPlacementDefinition;
+		CurrentLoungeLayoutDefinition = SelectedBuildItem->DefaultLoungeLayoutDefinition;
 		ActiveMenuTab = BuildTabForItemType(SelectedBuildItem->ItemType);
 	}
 
@@ -261,6 +336,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		CurrentVideoWallDefinition = InSelectedItem->DefaultVideoWallDefinition;
 		CurrentProjectionScreenDefinition = InSelectedItem->DefaultProjectionScreenDefinition;
 		CurrentAudioPlacementDefinition = InSelectedItem->DefaultAudioPlacementDefinition;
+		CurrentLoungeLayoutDefinition = InSelectedItem->DefaultLoungeLayoutDefinition;
 		ActiveMenuTab = BuildTabForItemType(InSelectedItem->ItemType);
 	}
 
@@ -275,6 +351,7 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		ApplyVideoWallDefinitionToBuildManager();
 		ApplyProjectionDefinitionToBuildManager();
 		ApplyAudioDefinitionToBuildManager();
+		ApplyLoungeDefinitionToBuildManager();
 	}
 
 	RefreshMenu();
@@ -310,6 +387,7 @@ void UBuildMenuWidget::RefreshMenu()
 	RefreshVideoWallControls();
 	RefreshProjectionControls();
 	RefreshAudioControls();
+	RefreshLoungeControls();
 	RefreshTabButtons();
 	RebuildItemButtons();
 }
@@ -359,6 +437,11 @@ FAudioPlacementBuildDefinition UBuildMenuWidget::GetCurrentAudioPlacementDefinit
 	return CurrentAudioPlacementDefinition;
 }
 
+FLoungeLayoutBuildDefinition UBuildMenuWidget::GetCurrentLoungeLayoutDefinition() const
+{
+	return CurrentLoungeLayoutDefinition;
+}
+
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 {
 	EditingTarget = InEditingTarget;
@@ -370,6 +453,7 @@ void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 
 	if (EditingTarget)
 	{
@@ -399,6 +483,7 @@ void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 
 	if (EditingMBPTarget)
 	{
@@ -471,6 +556,7 @@ void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, i
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 
 	if (EditingStageTarget)
 	{
@@ -516,6 +602,7 @@ void UBuildMenuWidget::SetEditingDrapeTarget(ADrapeRunActor* InEditingTarget)
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 
 	if (EditingDrapeTarget)
 	{
@@ -546,6 +633,7 @@ void UBuildMenuWidget::SetEditingVideoTarget(AVideoPlacementActor* InEditingTarg
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 
 	if (EditingVideoTarget)
 	{
@@ -576,6 +664,7 @@ void UBuildMenuWidget::SetEditingVideoWallTarget(AVideoWallActor* InEditingTarge
 	EditingProjectionTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 
 	if (EditingVideoWallTarget)
 	{
@@ -606,6 +695,7 @@ void UBuildMenuWidget::SetEditingProjectionTarget(AProjectionScreenActor* InEdit
 	EditingProjectionTarget = InEditingTarget;
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 
 	if (EditingProjectionTarget)
 	{
@@ -634,6 +724,7 @@ void UBuildMenuWidget::SetEditingAudioTarget(AActor* InEditingTarget)
 	EditingVideoTarget = nullptr;
 	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
+	EditingLoungeTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = Cast<AAudioGroundSpeakerActor>(InEditingTarget);
 	EditingAudioGroundLineArrayTarget = Cast<AAudioGroundLineArrayActor>(InEditingTarget);
 
@@ -675,6 +766,37 @@ AActor* UBuildMenuWidget::GetEditingAudioTarget() const
 	}
 
 	return EditingAudioGroundLineArrayTarget;
+}
+
+void UBuildMenuWidget::SetEditingLoungeTarget(ALoungeLayoutActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
+	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = InEditingTarget;
+
+	if (EditingLoungeTarget)
+	{
+		ActiveMenuTab = EBuildItemType::LoungeLayout;
+		CurrentLoungeLayoutDefinition = EditingLoungeTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForLoungeActor(BuildItems, EditingLoungeTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+ALoungeLayoutActor* UBuildMenuWidget::GetEditingLoungeTarget() const
+{
+	return EditingLoungeTarget;
 }
 
 bool UBuildMenuWidget::ShouldShowPointerForCurrentEdit() const
@@ -816,7 +938,18 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	AudioTabText->SetText(FText::FromString(TEXT("Audio")));
 	AudioTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	AudioTabButton->AddChild(AudioTabText);
-	TabButtonBox->AddChildToHorizontalBox(AudioTabButton);
+	if (UHorizontalBoxSlot* AudioTabSlot = TabButtonBox->AddChildToHorizontalBox(AudioTabButton))
+	{
+		AudioTabSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+	}
+
+	LoungeTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("LoungeTabButton"));
+	LoungeTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleLoungeTabClicked);
+	UTextBlock* LoungeTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("LoungeTabText"));
+	LoungeTabText->SetText(FText::FromString(TEXT("Lounge")));
+	LoungeTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	LoungeTabButton->AddChild(LoungeTabText);
+	TabButtonBox->AddChildToHorizontalBox(LoungeTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -1128,7 +1261,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 	ButtonProxies.Reset();
 	ItemListBox->ClearChildren();
 
-	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingVideoWall() && !IsEditingProjection() && !IsEditingAudio() && BuildItems.Num() > 1;
+	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingVideoWall() && !IsEditingProjection() && !IsEditingAudio() && !IsEditingLounge() && BuildItems.Num() > 1;
 	int32 VisibleItemCount = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
@@ -1175,7 +1308,7 @@ void UBuildMenuWidget::RebuildItemButtons()
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::VideoWall && ActiveMenuTab != EBuildItemType::ProjectionScreen && ActiveMenuTab != EBuildItemType::AudioPlacement)
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::VideoWall && ActiveMenuTab != EBuildItemType::ProjectionScreen && ActiveMenuTab != EBuildItemType::AudioPlacement && ActiveMenuTab != EBuildItemType::LoungeLayout)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
@@ -1184,13 +1317,15 @@ FText UBuildMenuWidget::BuildDetailText() const
 		? (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName)
 		: (ActiveMenuTab == EBuildItemType::AudioPlacement
 			? FText::FromString(TEXT("Audio"))
+			: (ActiveMenuTab == EBuildItemType::LoungeLayout
+			? FText::FromString(TEXT("Lounge"))
 			: (ActiveMenuTab == EBuildItemType::ProjectionScreen
 			? FText::FromString(TEXT("Projection"))
 			: (ActiveMenuTab == EBuildItemType::VideoWall
 				? FText::FromString(TEXT("Video Wall"))
 				: (ActiveMenuTab == EBuildItemType::VideoPlacement
 					? FText::FromString(TEXT("Video"))
-					: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall")))))));
+					: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall"))))))));
 
 	const TCHAR* TypeLabel = TEXT("MBP Wall");
 	if (ActiveMenuTab == EBuildItemType::TrussStructure)
@@ -1220,6 +1355,10 @@ FText UBuildMenuWidget::BuildDetailText() const
 	else if (ActiveMenuTab == EBuildItemType::AudioPlacement)
 	{
 		TypeLabel = TEXT("Audio Placement");
+	}
+	else if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		TypeLabel = TEXT("Lounge Layout");
 	}
 
 	FString Detail = FString::Printf(
@@ -1368,6 +1507,27 @@ FText UBuildMenuWidget::BuildDetailText() const
 				CurrentAudioPlacementDefinition.GroundSpeakerDefinition.StandExtensionFt,
 				*AudioSourceToOption(CurrentAudioSource));
 	}
+	else if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		const FLoungeLayoutBuildDefinition& Definition = CurrentLoungeLayoutDefinition;
+		Detail += FString::Printf(
+			TEXT("\nSofa: %s\nChair: %s\nCocktail Table: %s\nEnd Table: %s\nLamp: %s\nAccent: %s\nSofas: %d\nChairs: %d\nEnd Tables: %d\nLamps: %d\nAccents: %d\nTwo Sofas: %s\nFour Chairs: %s\nEnd Table X Offset: %.1f cm\nMirrored Chair Yaw: %.1f deg"),
+			Definition.SofaItem.IsEmpty() ? TEXT("Auto") : *Definition.SofaItem,
+			Definition.ChairItem.IsEmpty() ? TEXT("Auto") : *Definition.ChairItem,
+			Definition.CocktailTableItem.IsEmpty() ? TEXT("Auto") : *Definition.CocktailTableItem,
+			Definition.EndTableItem.IsEmpty() ? TEXT("Auto") : *Definition.EndTableItem,
+			Definition.LampItem.IsEmpty() ? TEXT("Auto") : *Definition.LampItem,
+			Definition.AccentItem.IsEmpty() ? TEXT("Auto") : *Definition.AccentItem,
+			Definition.SofaCount,
+			Definition.ChairCount,
+			Definition.EndTableCount,
+			Definition.LampCount,
+			Definition.AccentCount,
+			Definition.bUseTwoSofas ? TEXT("Yes") : TEXT("No"),
+			Definition.bUseFourChairs ? TEXT("Yes") : TEXT("No"),
+			Definition.EndTableOffsetXCm,
+			Definition.MirroredChairYawOffsetDegrees);
+	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
 }
@@ -1414,12 +1574,17 @@ FText UBuildMenuWidget::BuildHeaderText() const
 		return FText::FromString(TEXT("Edit Audio"));
 	}
 
+	if (IsEditingLounge())
+	{
+		return FText::FromString(TEXT("Edit Lounge"));
+	}
+
 	return FText::FromString(TEXT("Build Menu"));
 }
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingVideoWall() || IsEditingProjection() || IsEditingAudio())
+	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingVideoWall() || IsEditingProjection() || IsEditingAudio() || IsEditingLounge())
 		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
 }
@@ -1457,6 +1622,11 @@ bool UBuildMenuWidget::IsEditingProjection() const
 bool UBuildMenuWidget::IsEditingAudio() const
 {
 	return EditingAudioGroundSpeakerTarget != nullptr || EditingAudioGroundLineArrayTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingLounge() const
+{
+	return EditingLoungeTarget != nullptr;
 }
 
 void UBuildMenuWidget::RefreshTrussControls()
@@ -1641,6 +1811,11 @@ void UBuildMenuWidget::RefreshTabButtons()
 	if (AudioTabButton)
 	{
 		AudioTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::AudioPlacement));
+	}
+
+	if (LoungeTabButton)
+	{
+		LoungeTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::LoungeLayout));
 	}
 }
 
@@ -2408,6 +2583,157 @@ void UBuildMenuWidget::RefreshAudioControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshLoungeControls()
+{
+	if (ActiveMenuTab != EBuildItemType::LoungeLayout)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	const TArray<FString> SofaOptions = GetLoungeItemOptionsFromFolder(LoungeSofaAssetPath);
+	const TArray<FString> ChairOptions = GetLoungeItemOptionsFromFolder(LoungeChairAssetPath);
+	const TArray<FString> CocktailOptions = GetLoungeItemOptionsFromFolder(LoungeCocktailTableAssetPath);
+	const TArray<FString> EndTableOptions = GetLoungeItemOptionsFromFolder(LoungeEndTableAssetPath);
+	const TArray<FString> LampOptions = GetLoungeItemOptionsFromFolder(LoungeLampAssetPath);
+	const TArray<FString> AccentOptions = GetLoungeItemOptionsFromFolder(LoungeAccentAssetPath);
+
+	CurrentLoungeLayoutDefinition.SofaItem = EnsureLoungeOption(CurrentLoungeLayoutDefinition.SofaItem, SofaOptions);
+	CurrentLoungeLayoutDefinition.ChairItem = EnsureLoungeOption(CurrentLoungeLayoutDefinition.ChairItem, ChairOptions);
+	CurrentLoungeLayoutDefinition.CocktailTableItem = EnsureLoungeOption(CurrentLoungeLayoutDefinition.CocktailTableItem, CocktailOptions);
+	CurrentLoungeLayoutDefinition.EndTableItem = EnsureLoungeOption(CurrentLoungeLayoutDefinition.EndTableItem, EndTableOptions);
+	CurrentLoungeLayoutDefinition.LampItem = EnsureLoungeOption(CurrentLoungeLayoutDefinition.LampItem, LampOptions);
+	CurrentLoungeLayoutDefinition.AccentItem = EnsureLoungeOption(CurrentLoungeLayoutDefinition.AccentItem, AccentOptions);
+
+	auto SetComboControl = [](UTextBlock* Label, UWhiteComboBoxString* ComboBox, const TCHAR* LabelText, const TArray<FString>& Options, const FString& SelectedOption)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (ComboBox)
+		{
+			ComboBox->SetVisibility(ESlateVisibility::Visible);
+			ComboBox->ClearOptions();
+			for (const FString& Option : Options)
+			{
+				ComboBox->AddOption(Option);
+			}
+			if (!SelectedOption.IsEmpty())
+			{
+				ComboBox->SetSelectedOption(SelectedOption);
+			}
+		}
+	};
+
+	SetComboControl(ModeLabelText, ModeComboBox, TEXT("Sofa"), SofaOptions, CurrentLoungeLayoutDefinition.SofaItem);
+	SetComboControl(SidePieceLabelText, SidePieceComboBox, TEXT("Chair"), ChairOptions, CurrentLoungeLayoutDefinition.ChairItem);
+	SetComboControl(DepthPieceLabelText, DepthPieceComboBox, TEXT("Cocktail Table"), CocktailOptions, CurrentLoungeLayoutDefinition.CocktailTableItem);
+	SetComboControl(MBPStyleLabelText, MBPStyleComboBox, TEXT("End Table"), EndTableOptions, CurrentLoungeLayoutDefinition.EndTableItem);
+	SetComboControl(StageHeightLabelText, StageHeightComboBox, TEXT("Lamp"), LampOptions, CurrentLoungeLayoutDefinition.LampItem);
+	SetComboControl(StageSurfaceLabelText, StageSurfaceComboBox, TEXT("Accent"), AccentOptions, CurrentLoungeLayoutDefinition.AccentItem);
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, float SliderMax)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ESlateVisibility::Visible);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(MinValue);
+			SpinBox->SetMaxSliderValue(SliderMax);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Sofa Count"), CurrentLoungeLayoutDefinition.SofaCount, 0.0f, 8.0f, 4.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Chair Count"), CurrentLoungeLayoutDefinition.ChairCount, 0.0f, 8.0f, 4.0f);
+	SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT("End Table X Offset (cm)"), CurrentLoungeLayoutDefinition.EndTableOffsetXCm, -500.0f, 500.0f, 250.0f);
+	SetNumericControl(QuaternaryValueLabelText, QuaternaryValueSpinBox, TEXT("Mirrored Chair Yaw (deg)"), CurrentLoungeLayoutDefinition.MirroredChairYawOffsetDegrees, -90.0f, 90.0f, 45.0f);
+
+	if (MBPRowsLabelText)
+	{
+		MBPRowsLabelText->SetText(FText::FromString(TEXT("End Table Count")));
+		MBPRowsLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (MBPRowsSpinBox)
+	{
+		MBPRowsSpinBox->SetVisibility(ESlateVisibility::Visible);
+		MBPRowsSpinBox->SetMinValue(0.0f);
+		MBPRowsSpinBox->SetMaxValue(8.0f);
+		MBPRowsSpinBox->SetMinSliderValue(0.0f);
+		MBPRowsSpinBox->SetMaxSliderValue(4.0f);
+		MBPRowsSpinBox->SetValue(CurrentLoungeLayoutDefinition.EndTableCount);
+	}
+	if (MBPColumnsLabelText)
+	{
+		MBPColumnsLabelText->SetText(FText::FromString(TEXT("Lamp Count")));
+		MBPColumnsLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (MBPColumnsSpinBox)
+	{
+		MBPColumnsSpinBox->SetVisibility(ESlateVisibility::Visible);
+		MBPColumnsSpinBox->SetMinValue(0.0f);
+		MBPColumnsSpinBox->SetMaxValue(8.0f);
+		MBPColumnsSpinBox->SetMinSliderValue(0.0f);
+		MBPColumnsSpinBox->SetMaxSliderValue(4.0f);
+		MBPColumnsSpinBox->SetValue(CurrentLoungeLayoutDefinition.LampCount);
+	}
+
+	if (StageFrontRailingLabelText)
+	{
+		StageFrontRailingLabelText->SetText(FText::FromString(TEXT("Two Sofas")));
+		StageFrontRailingLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (StageFrontRailingCheckBox)
+	{
+		StageFrontRailingCheckBox->SetVisibility(ESlateVisibility::Visible);
+		StageFrontRailingCheckBox->SetIsChecked(CurrentLoungeLayoutDefinition.bUseTwoSofas);
+	}
+	if (StageBackRailingLabelText)
+	{
+		StageBackRailingLabelText->SetText(FText::FromString(TEXT("Four Chairs")));
+		StageBackRailingLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (StageBackRailingCheckBox)
+	{
+		StageBackRailingCheckBox->SetVisibility(ESlateVisibility::Visible);
+		StageBackRailingCheckBox->SetIsChecked(CurrentLoungeLayoutDefinition.bUseFourChairs);
+	}
+
+	if (StageLeftRailingLabelText) StageLeftRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingCheckBox) StageLeftRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingLabelText) StageRightRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingCheckBox) StageRightRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepLabelText) StageLeftStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepCheckBox) StageLeftStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepLabelText) StageRightStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepCheckBox) StageRightStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtLabelText) StageAutomaticSkirtLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtCheckBox) StageAutomaticSkirtCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledLabelText) StageCellEnabledLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledCheckBox) StageCellEnabledCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	if (IsEditingLounge())
+	{
+		ApplyLoungeEditToTarget();
+	}
+	else
+	{
+		ApplyLoungeDefinitionToBuildManager();
+	}
+	bRefreshingControls = false;
+}
+
 void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
@@ -2486,6 +2812,30 @@ void UBuildMenuWidget::ApplyAudioDefinitionToBuildManager()
 	}
 
 	BuildManager->SetActiveAudioPlacementDefinition(CurrentAudioPlacementDefinition);
+}
+
+void UBuildMenuWidget::ApplyLoungeDefinitionToBuildManager()
+{
+	if (IsEditingLounge())
+	{
+		ApplyLoungeEditToTarget();
+		return;
+	}
+
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::LoungeLayout)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveLoungeLayoutDefinition(CurrentLoungeLayoutDefinition);
+}
+
+void UBuildMenuWidget::ApplyLoungeEditToTarget()
+{
+	if (EditingLoungeTarget)
+	{
+		EditingLoungeTarget->ApplyBuildDefinition(CurrentLoungeLayoutDefinition, true);
+	}
 }
 
 void UBuildMenuWidget::ApplyAudioEditToTarget()
@@ -2699,6 +3049,11 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 	if (ActiveMenuTab == EBuildItemType::AudioPlacement)
 	{
 		return BuildItem->ItemType == EBuildItemType::AudioPlacement;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		return BuildItem->ItemType == EBuildItemType::LoungeLayout;
 	}
 
 	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
@@ -3362,6 +3717,25 @@ void UBuildMenuWidget::HandleAudioTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleLoungeTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::LoungeLayout;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
@@ -3455,6 +3829,17 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 			ApplyAudioDefinitionToBuildManager();
 		}
 		RefreshMenu();
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.SofaItem = SelectedItemOption;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
 		return;
 	}
 
@@ -3630,6 +4015,17 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 		{
 			ApplyAudioDefinitionToBuildManager();
 		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.SofaCount = FMath::Clamp(FMath::RoundToInt(NewValue), 0, 8);
+		ApplyLoungeDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -3836,6 +4232,17 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 		return;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.ChairCount = FMath::Clamp(FMath::RoundToInt(NewValue), 0, 8);
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
 	{
 		return;
@@ -3909,6 +4316,17 @@ void UBuildMenuWidget::HandleTertiaryValueChanged(float NewValue)
 		return;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.EndTableOffsetXCm = FMath::Clamp(NewValue, -500.0f, 500.0f);
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
 	{
 		return;
@@ -3948,6 +4366,17 @@ void UBuildMenuWidget::HandleQuaternaryValueChanged(float NewValue)
 		{
 			ApplyProjectionDefinitionToBuildManager();
 		}
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.MirroredChairYawOffsetDegrees = FMath::Clamp(NewValue, -90.0f, 90.0f);
+		ApplyLoungeDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4023,6 +4452,17 @@ void UBuildMenuWidget::HandleSidePieceChanged(FString SelectedItemOption, ESelec
 		return;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.ChairItem = SelectedItemOption;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (CurrentTrussDefinition.BuildMode != ETrussBuildMode::CubeArch)
 	{
 		return;
@@ -4072,6 +4512,17 @@ void UBuildMenuWidget::HandleDepthPieceChanged(FString SelectedItemOption, ESele
 		return;
 	}
 
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.CocktailTableItem = SelectedItemOption;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (CurrentTrussDefinition.BuildMode != ETrussBuildMode::CubeArch)
 	{
 		return;
@@ -4087,6 +4538,22 @@ void UBuildMenuWidget::HandleDepthPieceChanged(FString SelectedItemOption, ESele
 
 void UBuildMenuWidget::HandleMBPRowsChanged(float NewValue)
 {
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.EndTableCount = FMath::Clamp(FMath::RoundToInt(NewValue), 0, 8);
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::MBPWall)
 	{
 		return;
@@ -4102,6 +4569,22 @@ void UBuildMenuWidget::HandleMBPRowsChanged(float NewValue)
 
 void UBuildMenuWidget::HandleMBPColumnsChanged(float NewValue)
 {
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.LampCount = FMath::Clamp(FMath::RoundToInt(NewValue), 0, 8);
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::MBPWall)
 	{
 		return;
@@ -4117,6 +4600,22 @@ void UBuildMenuWidget::HandleMBPColumnsChanged(float NewValue)
 
 void UBuildMenuWidget::HandleMBPStyleChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.EndTableItem = SelectedItemOption;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::MBPWall)
 	{
 		return;
@@ -4139,6 +4638,22 @@ void UBuildMenuWidget::HandleMBPStyleChanged(FString SelectedItemOption, ESelect
 
 void UBuildMenuWidget::HandleStageHeightChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.LampItem = SelectedItemOption;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::StageDeck)
 	{
 		return;
@@ -4169,6 +4684,22 @@ void UBuildMenuWidget::HandleStageHeightChanged(FString SelectedItemOption, ESel
 
 void UBuildMenuWidget::HandleStageSurfaceChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.AccentItem = SelectedItemOption;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (bRefreshingControls || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::StageDeck)
 	{
 		return;
@@ -4199,6 +4730,22 @@ void UBuildMenuWidget::HandleStageSurfaceChanged(FString SelectedItemOption, ESe
 
 void UBuildMenuWidget::HandleStageFrontRailingChanged(bool bIsChecked)
 {
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.bUseTwoSofas = bIsChecked;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
 	{
 		return;
@@ -4221,6 +4768,22 @@ void UBuildMenuWidget::HandleStageFrontRailingChanged(bool bIsChecked)
 
 void UBuildMenuWidget::HandleStageBackRailingChanged(bool bIsChecked)
 {
+	if (bRefreshingControls)
+	{
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	{
+		CurrentLoungeLayoutDefinition.bUseFourChairs = bIsChecked;
+		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (bRefreshingControls || ActiveMenuTab != EBuildItemType::StageDeck)
 	{
 		return;
