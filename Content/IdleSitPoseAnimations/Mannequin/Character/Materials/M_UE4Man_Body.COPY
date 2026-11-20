@@ -1,0 +1,223 @@
+Begin Object Class=/Script/Engine.Material Name="M_UE4Man_Body"
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_38"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_41"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_10"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_13"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_2"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_3"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_6"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_7"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_8"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_9"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_0"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_4"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSampleParameter2D Name="MaterialExpressionTextureSampleParameter2D_0"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_3"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_2"
+   End Object
+   Begin Object Name="MaterialExpressionComment_38"
+      SizeX=336
+      SizeY=304
+      Text="Material Masks packed into RGBA"
+      MaterialExpressionEditorX=-1344
+      MaterialExpressionEditorY=944
+      MaterialExpressionGuid=810C0A4845C34A28F320FCB432A2571F
+      Material=Material'"M_UE4Man_Body"'
+   End Object
+   Begin Object Name="MaterialExpressionComment_41"
+      SizeX=240
+      SizeY=256
+      Text="BakedNormalMap"
+      MaterialExpressionEditorX=-816
+      MaterialExpressionEditorY=1332
+      MaterialExpressionGuid=BFB040AF4D3437E2B0BFC28A6DA0208E
+      Material=Material'"M_UE4Man_Body"'
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_10"
+      MaterialFunction=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_NormalBlend.MatLayerBlend_NormalBlend"'
+      FunctionInputs(0)=(ExpressionInputId=4A443650447167CD06ACBB9A9BC19FB1,Input=(OutputIndex=-1,InputName="NormalMask"))
+      FunctionInputs(1)=(ExpressionInputId=B6A66478423F339DD914999E5208A17C,Input=(Expression=MaterialExpressionStaticSwitchParameter'"M_UE4Man_Body:MaterialExpressionStaticSwitchParameter_0"',InputName="Material"))
+      FunctionInputs(2)=(ExpressionInputId=F9FEFA684000E314746C9A8D4E3ECE8D,Input=(Expression=MaterialExpressionTextureSampleParameter2D'"M_UE4Man_Body:MaterialExpressionTextureSampleParameter2D_0"',InputName="Normal",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=2B75887C4FC1F11625A6F7A1F0176058,Output=(OutputName="Blended Material"))
+      MaterialExpressionEditorX=-206
+      MaterialExpressionEditorY=1368
+      MaterialExpressionGuid=CDEDD39744E5337F565AE8AACC0BA034
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Blended Material")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_13"
+      MaterialFunction=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_Plastic_Shiny_Beige.ML_Plastic_Shiny_Beige"'
+      FunctionInputs(0)=(ExpressionInputId=53AB995C43732DBFEB472EB12881D15C,Input=(Expression=MaterialExpressionVectorParameter'"M_UE4Man_Body:MaterialExpressionVectorParameter_3"',InputName="PlasticColor",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=9CE3E8334E850358E85C4D8B983C5493,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-704
+      MaterialExpressionEditorY=592
+      MaterialExpressionGuid=383C969846583F92CEA4C2992B8403FF
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_2"
+      MaterialFunction=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Simple.MatLayerBlend_Simple"'
+      FunctionInputs(0)=(ExpressionInputId=C7584F90430CF6040EDB439CB5D4E1EB,Input=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_13"',InputName="Base Material"))
+      FunctionInputs(1)=(ExpressionInputId=946C01B24CA2B966E33440A2D432CD3D,Input=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_13"',InputName="Top Material"))
+      FunctionInputs(2)=(ExpressionInputId=58AB44C64FD9086FC6AAB1B042B32C2E,Input=(Expression=MaterialExpressionTextureSample'"M_UE4Man_Body:MaterialExpressionTextureSample_4"',OutputIndex=2,InputName="Alpha",Mask=1,MaskG=1))
+      FunctionOutputs(0)=(ExpressionOutputId=ECFE303F499D1D38BBFE47A33281F97A,Output=(OutputName="Blended Material"))
+      MaterialExpressionEditorX=-272
+      MaterialExpressionEditorY=608
+      MaterialExpressionGuid=D7F96C1C4121D187E7097990AF76B1C4
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Blended Material")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_3"
+      MaterialFunction=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_Plastic_Shiny_Beige_LOGO.ML_Plastic_Shiny_Beige_LOGO"'
+      FunctionInputs(0)=(ExpressionInputId=878819C943BFEFF044040AAE3755842A,Input=(Expression=MaterialExpressionVectorParameter'"M_UE4Man_Body:MaterialExpressionVectorParameter_3"',InputName="LogoColor",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=9CE3E8334E850358E85C4D8B983C5493,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-496
+      MaterialExpressionEditorY=1120
+      MaterialExpressionGuid=C43FE3814FC0B662F46F84BEF8ACCEE9
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_6"
+      MaterialFunction=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Simple.MatLayerBlend_Simple"'
+      FunctionInputs(0)=(ExpressionInputId=C7584F90430CF6040EDB439CB5D4E1EB,Input=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_2"',InputName="Base Material"))
+      FunctionInputs(1)=(ExpressionInputId=946C01B24CA2B966E33440A2D432CD3D,Input=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_9"',InputName="Top Material"))
+      FunctionInputs(2)=(ExpressionInputId=58AB44C64FD9086FC6AAB1B042B32C2E,Input=(Expression=MaterialExpressionTextureSample'"M_UE4Man_Body:MaterialExpressionTextureSample_4"',OutputIndex=1,InputName="Alpha",Mask=1,MaskR=1))
+      FunctionOutputs(0)=(ExpressionOutputId=ECFE303F499D1D38BBFE47A33281F97A,Output=(OutputName="Blended Material"))
+      MaterialExpressionEditorX=-240
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=D7F96C1C4121D187E7097990AF76B1C4
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Blended Material")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_7"
+      MaterialFunction=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Simple.MatLayerBlend_Simple"'
+      FunctionInputs(0)=(ExpressionInputId=C7584F90430CF6040EDB439CB5D4E1EB,Input=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_6"',InputName="Base Material"))
+      FunctionInputs(1)=(ExpressionInputId=946C01B24CA2B966E33440A2D432CD3D,Input=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_8"',InputName="Top Material"))
+      FunctionInputs(2)=(ExpressionInputId=58AB44C64FD9086FC6AAB1B042B32C2E,Input=(Expression=MaterialExpressionTextureSample'"M_UE4Man_Body:MaterialExpressionTextureSample_4"',OutputIndex=3,InputName="Alpha",Mask=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=ECFE303F499D1D38BBFE47A33281F97A,Output=(OutputName="Blended Material"))
+      MaterialExpressionEditorX=-256
+      MaterialExpressionEditorY=896
+      MaterialExpressionGuid=D7F96C1C4121D187E7097990AF76B1C4
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Blended Material")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_8"
+      MaterialFunction=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_GlossyBlack_Latex_UE4.ML_GlossyBlack_Latex_UE4"'
+      FunctionInputs(0)=(ExpressionInputId=C53D54FC436A60C6AB1BBB890E2C1E1E,Input=(OutputIndex=-1,InputName="Tint"))
+      FunctionInputs(1)=(ExpressionInputId=043CD40542C548815A9DE1A1DD7AA65E,Input=(OutputIndex=-1,InputName="Tiling"))
+      FunctionOutputs(0)=(ExpressionOutputId=9CE3E8334E850358E85C4D8B983C5493,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-608
+      MaterialExpressionEditorY=944
+      MaterialExpressionGuid=9BB8F443463664495C86A980EF1F2357
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_9"
+      MaterialFunction=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_SoftMetal_UE4.ML_SoftMetal_UE4"'
+      FunctionInputs(0)=(ExpressionInputId=5E69605741068188FF56ED9EABA348C2,Input=(OutputIndex=-1,InputName="Tint"))
+      FunctionInputs(1)=(ExpressionInputId=ED8D11EB4B201740D41A3AA9C0B0C55D,Input=(OutputIndex=-1,InputName="Tiling"))
+      FunctionOutputs(0)=(ExpressionOutputId=9CE3E8334E850358E85C4D8B983C5493,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-528
+      MaterialExpressionEditorY=752
+      MaterialExpressionGuid=46FBDD15453C514203EDF2BBE9B2B8CC
+      Material=Material'"M_UE4Man_Body"'
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_0"
+      A=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_3"')
+      B=(Expression=MaterialExpressionMaterialFunctionCall'"M_UE4Man_Body:MaterialExpressionMaterialFunctionCall_7"')
+      ParameterName="PlasticOverride"
+      ExpressionGUID=3D562F7549EADF69F95509915A4BDF25
+      MaterialExpressionEditorX=-96
+      MaterialExpressionEditorY=1056
+      MaterialExpressionGuid=DA1DA6464431FD14B45601A777332F50
+      Material=Material'"M_UE4Man_Body"'
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_4"
+      Texture=Texture2D'"/Game/Mannequin/Character/Textures/UE4_Mannequin_MAT_MASKA.UE4_Mannequin_MAT_MASKA"'
+      SamplerType=SAMPLERTYPE_LinearColor
+      MaterialExpressionEditorX=-1280
+      MaterialExpressionEditorY=1040
+      MaterialExpressionGuid=992DE3904CEBC0267723AAABE8D0ECCA
+      Material=Material'"M_UE4Man_Body"'
+   End Object
+   Begin Object Name="MaterialExpressionTextureSampleParameter2D_0"
+      ParameterName="NormalMap"
+      ExpressionGUID=347A778B4FE646AE0492CDA239ED79BA
+      Texture=Texture2D'"/Game/Mannequin/Character/Textures/UE4_Mannequin__normals.UE4_Mannequin__normals"'
+      SamplerType=SAMPLERTYPE_Normal
+      MaterialExpressionEditorX=-784
+      MaterialExpressionEditorY=1392
+      MaterialExpressionGuid=F78106594F80A7504C69EF99390AD269
+      Material=Material'"M_UE4Man_Body"'
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_3"
+      DefaultValue=(R=0.450980,G=0.403922,B=0.360784,A=0.000000)
+      ParameterName="BodyColor"
+      ExpressionGUID=154012E5462B7CF9A1AA3C860AD69E31
+      MaterialExpressionEditorX=-1248
+      MaterialExpressionEditorY=704
+      MaterialExpressionGuid=E4023E3B4C13414F2E9428852011F7AE
+      Material=Material'"M_UE4Man_Body"'
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_2"
+   End Object
+   BaseColor=(Mask=1,MaskR=1,MaskG=1,MaskB=1)
+   Metallic=(OutputIndex=1,Mask=1,MaskR=1,MaskG=1,MaskB=1)
+   Specular=(OutputIndex=2,Mask=1,MaskR=1,MaskG=1,MaskB=1)
+   Roughness=(OutputIndex=3,Mask=1,MaskR=1,MaskG=1,MaskB=1)
+   Normal=(OutputIndex=7,Mask=1,MaskR=1,MaskG=1,MaskB=1)
+   EmissiveColor=(OutputIndex=4,Mask=1,MaskR=1,MaskG=1,MaskB=1)
+   BlendMode=BLEND_Masked
+   MaterialDecalResponse=MDR_None
+   MaterialAttributes=(Expression=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_10"')
+   bUsedWithSkeletalMesh=True
+   EditorX=992
+   EditorY=1440
+   Expressions(0)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_10"'
+   Expressions(1)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_8"'
+   Expressions(2)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_9"'
+   Expressions(3)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_13"'
+   Expressions(4)=MaterialExpressionTextureSample'"MaterialExpressionTextureSample_4"'
+   Expressions(5)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_2"'
+   Expressions(6)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_6"'
+   Expressions(7)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_7"'
+   Expressions(8)=MaterialExpressionVectorParameter'"MaterialExpressionVectorParameter_3"'
+   Expressions(9)=MaterialExpressionTextureSampleParameter2D'"MaterialExpressionTextureSampleParameter2D_0"'
+   Expressions(10)=MaterialExpressionStaticSwitchParameter'"MaterialExpressionStaticSwitchParameter_0"'
+   Expressions(11)=MaterialExpressionMaterialFunctionCall'"MaterialExpressionMaterialFunctionCall_3"'
+   EditorComments(0)=MaterialExpressionComment'"MaterialExpressionComment_41"'
+   EditorComments(1)=MaterialExpressionComment'"MaterialExpressionComment_38"'
+   MaterialFunctionInfos(0)=(StateId=F5C2D4774BA63455E32B4B960D7674B6,Function=MaterialFunction'"/Engine/Functions/Engine_MaterialFunctions02/Utility/BlendAngleCorrectedNormals.BlendAngleCorrectedNormals"')
+   MaterialFunctionInfos(1)=(StateId=8EDB22FA46340DE83359609B697BC94E,Function=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_NormalBlend.MatLayerBlend_NormalBlend"')
+   MaterialFunctionInfos(2)=(StateId=1EE84D294020BD42BDBCC49191F5CDA2,Function=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_GlossyBlack_Latex_UE4.ML_GlossyBlack_Latex_UE4"')
+   MaterialFunctionInfos(3)=(StateId=604D479F4D5086A9AAD7BBB0B1E15D43,Function=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_SoftMetal_UE4.ML_SoftMetal_UE4"')
+   MaterialFunctionInfos(4)=(StateId=0D0B59214472090A638D51B48C188EFF,Function=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_Plastic_Shiny_Beige.ML_Plastic_Shiny_Beige"')
+   MaterialFunctionInfos(5)=(StateId=0C658F15424C75AB798FB7A371D032D6,Function=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Simple.MatLayerBlend_Simple"')
+   MaterialFunctionInfos(6)=(StateId=0C658F15424C75AB798FB7A371D032D6,Function=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Simple.MatLayerBlend_Simple"')
+   MaterialFunctionInfos(7)=(StateId=0C658F15424C75AB798FB7A371D032D6,Function=MaterialFunction'"/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_Simple.MatLayerBlend_Simple"')
+   MaterialFunctionInfos(8)=(StateId=32901BA54911C4EA46D19997AD91498D,Function=MaterialFunction'"/Game/Mannequin/Character/Materials/MaterialLayers/ML_Plastic_Shiny_Beige_LOGO.ML_Plastic_Shiny_Beige_LOGO"')
+   bUseMaterialAttributes=True
+   StateId=E00E67C0466187A632D549A51A90BA58
+   ReferencedTextureGuids(0)=44879B5B4D7D73DAFFD57C89D66732AD
+   ReferencedTextureGuids(1)=04FDA1D746B86B4F8BA1E09D11D86961
+   ReferencedTextureGuids(2)=0DD0D4A04F9A3880C49936AA3E47712B
+   ReferencedTextureGuids(3)=698FAEBC42729AC5B134A0814B28AF2F
+   ThumbnailInfo=SceneThumbnailInfoWithPrimitive'"SceneThumbnailInfoWithPrimitive_2"'
+   ParameterOverviewExpansion=(("-12None", True))
+   LightingGuid=CBB87F3B4E6424F091A071BF657EF927
+End Object
