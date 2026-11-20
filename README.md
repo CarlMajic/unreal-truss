@@ -40,7 +40,7 @@
 
 ## Mission
 
-Unreal Truss started as a runtime-first Unreal Engine 5.6 plugin for building event-production truss structures from real inventory lengths. The larger direction is a reusable live-event build toolkit: a shared runtime foundation for truss, stages, decor items, bars, tables, MBP scenic walls, lighting fixtures, audio systems, and future VR placement/editing workflows.
+Unreal Truss started as a runtime-first Unreal Engine 5.8 plugin for building event-production truss structures from real inventory lengths. The larger direction is a reusable live-event build toolkit: a shared runtime foundation for truss, stages, decor items, bars, tables, MBP scenic walls, lighting fixtures, audio systems, and future VR placement/editing workflows.
 
 The first milestone is a straight truss run. The plugin keeps the truss math in runtime C++ so the same system can be used later by editor tools, Blueprint gameplay, in-game UI, and immersive event layout tools.
 
@@ -67,8 +67,8 @@ Core goals:
   </tr>
   <tr>
     <td><strong>Lighting</strong></td>
-    <td>Fixture selection, over/under-slung placement, truss-owned mounted fixture definitions.</td>
-    <td>First runtime and editor placement pass started.</td>
+    <td>Editor-placeable fixture actors, truss mounting, DMX patching, and per-light runtime controls.</td>
+    <td>Placement and patch reception working; runtime control sliders need fixture-level testing.</td>
   </tr>
   <tr>
     <td><strong>MBP Walls</strong></td>
@@ -211,6 +211,78 @@ Mirroring note: Unreal negative-scale mirroring caused visible shading differenc
 | `docs` | Supporting notes and project-page assets. |
 
 ## Project Log
+
+<details open>
+<summary><strong>2026-09-17: Light fixture placement, DMX patching, and runtime control first pass</strong></summary>
+
+### 2026-09-17
+
+What is in place:
+
+- Added `ALightFixtureActor` in `MajicTrussRuntime` and the `/Game/Majic_Gear/Lighting/BP_LightFixture` Blueprint so a fixture container can be dragged into a level. `Fixture Blueprint Class` selects the visible DMX fixture, including the supported Aura, Axiom, and Lustr Blueprints.
+- The container can snap to a nearby truss while being moved in the editor. It stores the mount and follows the truss when the truss moves or rebuilds. It can also be moved or deleted independently.
+- The wrapper's `DMX` component holds the fixture library and fixture patch. `RefreshDMXBinding` passes received patch values to the spawned fixture. The `DMX_MovingHead` library and a selected patch have been tested with the DMX Control Console; the user confirmed the light moved.
+- The runtime edit-select flow recognizes a placed light. `Edit Lighting` can change its fixture class and patch; patch choices display the universe, starting address, and channel span.
+- Added a first per-light control panel in `Edit Lighting`. It shows up to seven available patch-mode attributes, prioritizing dimmer, pan, tilt, and color. Sliders send DMX through the selected fixture patch; RGB/CMY modes show a color swatch. The panel is created in both the C++ fallback menu and the designer-widget path.
+- Tightened light and projector selection bounds and corrected static/movable attachment behavior encountered during this work.
+
+Verification and remaining work:
+
+- The latest control-panel C++ change compiled through Unreal Live Coding, and Play-in-Editor started without an immediate error. Individual slider response on each fixture has not yet been verified in-game.
+- Test dimmer, pan/tilt, and color with Aura, Axiom, and Lustr patches. Confirm how the in-game controls interact with an active DMX Control Console or external Art-Net sender; both can drive the same patch.
+- The controls send values to an existing patch. Changing fixture class or patch does **not** automatically readdress other fixtures, reserve channels, or prevent address overlap. Patch/address management and saved looks or cues remain future work.
+- Add gobo controls for moving lights that expose gobo DMX attributes. Separately, make the existing gobo inventory selectable for fixed fixtures such as lekos; the current lighting edit menu has neither workflow.
+- Retest editor drag/snap, moving a mounted truss, moving/deleting a light, and runtime fixture/patch changes after a clean editor restart and full build. These workflows have had fixes, but the complete regression pass is still outstanding.
+
+</details>
+
+<details open>
+<summary><strong>2026-06-26: WBP_TabMenu styled replacement for build menu — working cleanup pass</strong></summary>
+
+### 2026-06-26
+
+Current direction:
+
+- Replace `UBuildMenuWidget` (the plain C++ placeholder build menu) with a styled Blueprint widget `WBP_TabMenu`.
+- This is NOT a new HUD panel — it is a direct replacement for the existing Tab-key menu.
+- The project is entirely code-first. No Blueprint game mode, no Blueprint player controller. Everything routes through `AUnrealTrussGameMode` → `AUnrealTrussBuildPawn`.
+
+How the menu system works:
+
+- `AUnrealTrussGameMode` sets `DefaultPawnClass = AUnrealTrussBuildPawn::StaticClass()`.
+- `AUnrealTrussBuildPawn` owns `BuildMenuWidget` (a `UBuildMenuWidget*`) and `BuildMenuWidgetClass` (`TSubclassOf<UBuildMenuWidget>`).
+- Pressing `Tab` calls `ToggleBuildMenu()` → `EnsureBuildMenuWidget()`.
+- `EnsureBuildMenuWidget()` creates `BuildMenuWidgetClass` if set, otherwise falls back to `UBuildMenuWidget::StaticClass()` (the plain C++ menu).
+- To replace the menu, `WBP_TabMenu` must inherit from `UBuildMenuWidget` AND `BuildMenuWidgetClass` must be set to point at it.
+
+What has been done this session:
+
+- Reparented `WBP_TabMenu` from `UserWidget` to `UBuildMenuWidget`. Compiled successfully.
+- Added `ConstructorHelpers::FClassFinder<UBuildMenuWidget>` in `AUnrealTrussBuildPawn` constructor to set `BuildMenuWidgetClass` to `WBP_TabMenu` at startup:
+  ```cpp
+  static ConstructorHelpers::FClassFinder<UBuildMenuWidget> TabMenuClass(TEXT("/Game/UI/WBP_TabMenu"));
+  if (TabMenuClass.Succeeded())
+  {
+      BuildMenuWidgetClass = TabMenuClass.Class;
+  }
+  ```
+- As of 2026-09-15, the styled Tab menu appears in-editor with the current `/Game/UI/WBP_TabMenu` class finder path. Keep this path unless it stops loading in a clean editor restart.
+- The project is now associated with Unreal Engine 5.8. Use the UE 5.8 build tools for verification.
+- The abandoned AI/MetaHuman experiment has been parked by disabling `MajicEventAI`, SmartObjects/GameplayBehaviors, and MetaHuman-related plugins in `UnrealTruss.uproject`. The plugin files and content remain in the workspace if that work is ever revisited.
+
+Wrong things tried this session (avoid repeating):
+
+- Do NOT wire HUD code in `BP_ThirdPersonPlayerController` — that controller has no connection to this project's game mode.
+- Do NOT add a separate `HUDWidget` / `HUDWidgetClass` to the pawn as a new panel. The goal is replacing the existing menu, not adding a new one.
+- Do NOT call `LoadClass<UUserWidget>` as a fallback for `HUDWidgetClass`. Wrong class, wrong approach.
+
+Leftover cleanup needed:
+
+- `WBP_TabMenu` EventGraph has orphaned unused custom events: `OnConfirmClicked`, `OnCancelClicked`, `OnRotationChanged`, `OnValueChanged_Event_0`. These can be deleted in the Blueprint editor.
+- `HUDWidgetClass` and `HUDWidget` were removed from `UnrealTrussBuildPawn.h` after the styled menu was confirmed working.
+- If the rotation slider stops affecting placement yaw, check the `RotationSlider` `OnValueChanged` binding in `WBP_TabMenu`. The C++ handler is `HandleDesignerRotationChanged`.
+
+</details>
 
 <details open>
 <summary><strong>2026-05-18: Lounge furniture placement tool</strong></summary>
@@ -1050,7 +1122,7 @@ Why this direction:
 
 Immediate next steps:
 
-- Test the new runtime building framework in Unreal Engine 5.6 using the default C++ pawn.
+- Test the new runtime building framework in Unreal Engine 5.8 using the default C++ pawn.
 - Create one or more `Build Item Data Asset` assets for truss.
 - Add a basic UMG build menu that lets the player select a build item and tweak truss dimensions.
 - Add editing of additional truss-specific options like cube-arch spacing pieces and alignment offsets when needed.
@@ -1095,7 +1167,7 @@ Notes for future sessions:
 
 ## Testing
 
-Open `UnrealTruss.uproject` with Unreal Engine 5.6.
+Open `UnrealTruss.uproject` with Unreal Engine 5.8.
 
 Create a `Truss Inventory Data Asset`, assign meshes when available, place a `Truss Structure Actor`, and call `Build Straight Run` or enable `Build On Construction`.
 
@@ -1175,7 +1247,7 @@ Current direction:
 
 - Keep truss create/edit and light placement as separate workflows.
 - Keep the targeting layer shared across build systems.
-- Use truss-targeted runtime mounting for DMX fixtures next, then expand into better preview/edit tools for placed lights.
+- Continue testing truss-mounted DMX fixtures and the new per-light edit controls, then add address management and saved lighting looks.
 - Treat stage building as a separate system later, likely grid/cell based with per-section heights rather than a single repeated mesh array.
 
 Editor light placement first pass:
@@ -1190,7 +1262,7 @@ Editor light placement first pass:
 - `Clear Mounted Fixtures` removes all stored mounted-light definitions from that truss actor.
 - This is the first editor-side workflow. It uses a viewport handle plus `Call In Editor` buttons rather than a full custom editor mode.
 
-The plugin can also be copied into another Unreal Engine 5.6 project's `Plugins` folder.
+The plugin can also be copied into another Unreal Engine 5.8 project's `Plugins` folder.
 
 If no inventory asset is assigned, `Truss Structure Actor` attempts to use the migrated Majic Gear truss meshes at:
 

@@ -1,12 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AudioPlaybackMode.h"
 #include "GameFramework/Actor.h"
 #include "AudioGroundSpeakerActor.generated.h"
 
 class UBoxComponent;
 class UAudioComponent;
 class UInstancedStaticMeshComponent;
+class UMediaPlayer;
+class UMediaSoundComponent;
 class USoundAttenuation;
 class USoundBase;
 class UStaticMeshComponent;
@@ -51,6 +54,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio|Sound")
 	TObjectPtr<UAudioComponent> AudioEmitterComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio|Sound")
+	TObjectPtr<UMediaSoundComponent> MediaAudioEmitterComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio|Sound")
 	TObjectPtr<UStaticMeshComponent> AudioConePreviewComponent;
@@ -105,6 +111,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound", meta = (AllowedClasses = "/Script/Engine.SoundBase"))
 	TSoftObjectPtr<USoundBase> AudioSource;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound")
+	EAudioPlaybackMode PlaybackMode = EAudioPlaybackMode::SoundAsset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound", meta = (AllowedClasses = "/Script/MediaAssets.MediaPlayer", EditCondition = "PlaybackMode == EAudioPlaybackMode::ProjectorVideo", EditConditionHides))
+	TSoftObjectPtr<UMediaPlayer> VideoMediaPlayer;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio|Sound")
 	TObjectPtr<USoundAttenuation> AudioAttenuation;
@@ -171,6 +183,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Audio|Sound")
 	void SetAudioSource(TSoftObjectPtr<USoundBase> InAudioSource, bool bRestartIfPlaying = true);
+
+	UFUNCTION(BlueprintCallable, Category = "Audio|Sound")
+	void SetPlaybackMode(EAudioPlaybackMode InPlaybackMode, bool bRestartIfPlaying = true);
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;

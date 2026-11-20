@@ -7,6 +7,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "LightFixtureActor.h"
 #include "MBPWallActor.h"
 #include "MajicEventLayout.h"
 #include "MajicEventLayoutActor.h"
@@ -34,7 +35,7 @@ const TCHAR* SampleLayout = TEXT(R"JSON({
         "steps": [ { "side": "right", "style": "stage_right" } ], "skirt": true } },
     { "id": "truss-1", "type": "truss", "name": "Rect",
       "position": { "x_ft": -20, "y_ft": 8, "rotation_deg": 90 },
-      "params": { "shape": "rectangle", "length_ft": 20, "width_ft": 16, "height_ft": 10 } },
+      "params": { "shape": "rectangle", "length_ft": 20, "width_ft": 16, "height_ft": 10, "length_bays": 2, "width_bays": 1 } },
     { "id": "drape-1", "type": "drape", "name": "Back Drape",
       "position": { "x_ft": 0, "y_ft": 32, "rotation_deg": 0 },
       "params": { "kind": "regular", "length_ft": 40, "height_ft": 8, "fabric": true, "hardware": true } },
@@ -127,6 +128,200 @@ bool FMajicLayoutPlacementTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// A rectangle with bays has a corner block at every grid crossing, like the Fusion rectangle.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMajicTrussRectangleBaysTest, "Majic.Truss.RectangleBays", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMajicTrussRectangleBaysTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = nullptr;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		if (Context.WorldType == EWorldType::Editor && Context.World())
+		{
+			World = Context.World();
+		}
+	}
+	if (!TestNotNull(TEXT("editor world"), World))
+	{
+		return false;
+	}
+
+	ATrussStructureActor* Truss = World->SpawnActor<ATrussStructureActor>();
+	Truss->BuildMode = ETrussBuildMode::Rectangle;
+	Truss->RectangleLengthFt = 40.0f;
+	Truss->RectangleWidthFt = 16.0f;
+
+	auto CountDistinct = [](UInstancedStaticMeshComponent* Ism, bool bX)
+	{
+		TArray<int32> Values;
+		for (int32 I = 0; I < Ism->GetInstanceCount(); ++I)
+		{
+			FTransform Local;
+			Ism->GetInstanceTransform(I, Local, false);
+			Values.AddUnique(FMath::RoundToInt((bX ? Local.GetLocation().X : Local.GetLocation().Y) / 5.0));
+		}
+		return Values.Num();
+	};
+
+	Truss->RectangleLengthBays = 1;
+	Truss->RectangleWidthBays = 1;
+	Truss->BuildRectangle();
+	TestEqual(TEXT("1x1 has 4 corners"), Truss->CornerBlockInstances->GetInstanceCount(), 4);
+	const FBox Plain = Truss->SelectionBounds->Bounds.GetBox();
+
+	Truss->RectangleLengthBays = 2;
+	Truss->RectangleWidthBays = 1;
+	Truss->BuildRectangle();
+	TestEqual(TEXT("2x1 has 6 corners"), Truss->CornerBlockInstances->GetInstanceCount(), 6);
+	TestEqual(TEXT("2x1 has 3 corner columns"), CountDistinct(Truss->CornerBlockInstances, true), 3);
+	TestEqual(TEXT("2x1 has 2 corner rows"), CountDistinct(Truss->CornerBlockInstances, false), 2);
+	const FBox Bayed = Truss->SelectionBounds->Bounds.GetBox();
+	// Truss comes in fixed piece sizes, so each bay rounds to the nearest combination: the outer size
+	// may move by a couple of centimetres, never by a piece.
+	TestEqual(TEXT("bays keep the outer length"), Bayed.GetSize().X, Plain.GetSize().X, 15.0);
+	TestEqual(TEXT("bays keep the outer width"), Bayed.GetSize().Y, Plain.GetSize().Y, 15.0);
+
+	Truss->RectangleLengthBays = 3;
+	Truss->RectangleWidthBays = 2;
+	Truss->BuildRectangle();
+	TestEqual(TEXT("3x2 has 12 corners"), Truss->CornerBlockInstances->GetInstanceCount(), 12);
+
+	Truss->Destroy();
+	return true;
+}
+
+// ---- Free light mounting ------------------------------------------------------------------
+
+namespace
+{
+UWorld* EditorWorldForTests()
+{
+	UWorld* World = nullptr;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		if (Context.WorldType == EWorldType::Editor && Context.World())
+		{
+			World = Context.World();
+		}
+	}
+	return World;
+}
+
+ATrussStructureActor* SpawnBayedTruss(UWorld* World)
+{
+	ATrussStructureActor* Truss = World->SpawnActor<ATrussStructureActor>();
+	Truss->BuildMode = ETrussBuildMode::Rectangle;
+	Truss->RectangleLengthFt = 40.0f;
+	Truss->RectangleWidthFt = 16.0f;
+	Truss->RectangleHeightFt = 10.0f;
+	Truss->RectangleLengthBays = 2;
+	Truss->RectangleWidthBays = 1;
+	Truss->BuildRectangle();
+	return Truss;
+}
+}
+
+// A point at the middle of a 2x1 rectangle snaps to the center support run, not the front or back run.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMajicTrussRailMountTest, "Majic.Truss.RailMount", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMajicTrussRailMountTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = EditorWorldForTests();
+	if (!TestNotNull(TEXT("editor world"), World))
+	{
+		return false;
+	}
+	ATrussStructureActor* Truss = SpawnBayedTruss(World);
+	const FBox Bounds = Truss->SelectionBounds->Bounds.GetBox();
+	const FVector Middle = Bounds.GetCenter();
+
+	FTransform Top;
+	TestTrue(TEXT("over slung snap found"), Truss->FindNearestRailMount(FVector(Middle.X, Middle.Y, Bounds.Max.Z), ETrussSlingType::OverSlung, Top));
+	// The center run lies across the width, at the middle of the length: the mount is on it, a long way
+	// (about 8 ft) from the front and back runs and from either end.
+	TestEqual(TEXT("mount x is on the center run"), Top.GetLocation().X, Middle.X, 60.0);
+
+	FTransform Bottom;
+	TestTrue(TEXT("under slung snap found"), Truss->FindNearestRailMount(FVector(Middle.X, Middle.Y, Bounds.Min.Z), ETrussSlingType::UnderSlung, Bottom));
+	TestTrue(TEXT("under slung rail is lower than over slung"), Bottom.GetLocation().Z < Top.GetLocation().Z - 15.0);
+	TestTrue(TEXT("under slung light is turned over"), Bottom.GetUnitAxis(EAxis::Z).Z < -0.5);
+	TestTrue(TEXT("over slung light is upright"), Top.GetUnitAxis(EAxis::Z).Z > 0.5);
+
+	// A point at the far end snaps near that end, so the snap follows the point and not a fixed span.
+	FTransform End;
+	TestTrue(TEXT("end snap found"), Truss->FindNearestRailMount(FVector(Bounds.Min.X + 20.0, Middle.Y, Bounds.Max.Z), ETrussSlingType::OverSlung, End));
+	TestTrue(TEXT("end snap is near the end, not the center"), End.GetLocation().X < Middle.X - 300.0);
+
+	Truss->Destroy();
+	return true;
+}
+
+// A light keeps its place when the truss is resized, and moves with the truss when it is moved or turned.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMajicLightFreeMountTest, "Majic.Truss.LightFreeMount", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMajicLightFreeMountTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = EditorWorldForTests();
+	if (!TestNotNull(TEXT("editor world"), World))
+	{
+		return false;
+	}
+	ATrussStructureActor* Truss = SpawnBayedTruss(World);
+	const FBox Bounds = Truss->SelectionBounds->Bounds.GetBox();
+	const FVector Point(Bounds.GetCenter().X, Bounds.GetCenter().Y, Bounds.Max.Z);
+
+	ALightFixtureActor* Light = World->SpawnActor<ALightFixtureActor>();
+	TestTrue(TEXT("attach succeeds"), Light->AttachToTrussAtWorldLocation(Truss, Point));
+	TestTrue(TEXT("attach is a free mount"), Light->bFreeMount);
+	const FVector Placed = Light->GetActorLocation();
+	const FVector LocalPlaced = Truss->GetActorTransform().InverseTransformPosition(Placed);
+
+	// Resize: the light stays where it was.
+	Truss->RectangleLengthFt = 60.0f;
+	Truss->BuildRectangle();
+	Light->ApplyStoredMountTransform();
+	TestTrue(TEXT("light stays put when the truss is resized"), Light->GetActorLocation().Equals(Placed, 0.5));
+
+	// Move and turn: the light keeps its place relative to the truss.
+	Truss->SetActorTransform(FTransform(FRotator(0.0, 90.0, 0.0), FVector(500.0, 200.0, 0.0)));
+	Light->ApplyStoredMountTransform();
+	const FVector Expected = Truss->GetActorTransform().TransformPosition(LocalPlaced);
+	TestTrue(TEXT("light moves with the truss"), Light->GetActorLocation().Equals(Expected, 0.5));
+
+	Light->Destroy();
+	Truss->Destroy();
+	return true;
+}
+
+// A light saved with the old span and rail data still lands where the old code put it.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMajicLightLegacyMountTest, "Majic.Truss.LightLegacyMount", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FMajicLightLegacyMountTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = EditorWorldForTests();
+	if (!TestNotNull(TEXT("editor world"), World))
+	{
+		return false;
+	}
+	ATrussStructureActor* Truss = World->SpawnActor<ATrussStructureActor>();
+	Truss->BuildMode = ETrussBuildMode::Rectangle;
+	Truss->BuildRectangle();
+	const FBox Bounds = Truss->SelectionBounds->Bounds.GetBox();
+
+	FMountedFixtureDefinition Definition;
+	TestTrue(TEXT("legacy definition built"), Truss->BuildMountedFixtureDefinition(nullptr, ETrussSlingType::OverSlung, FVector(Bounds.GetCenter().X, Bounds.Min.Y, Bounds.Max.Z), Definition));
+	FTransform Expected;
+	TestTrue(TEXT("legacy transform found"), Truss->GetFixtureMountTransformFromDefinition(Definition, Expected));
+
+	ALightFixtureActor* Light = World->SpawnActor<ALightFixtureActor>();
+	Light->AttachedTruss = Truss;
+	Light->MountDefinition = Definition;
+	Light->bAttachedToTruss = true;
+	Light->bFreeMount = false;
+	TestTrue(TEXT("legacy apply succeeds"), Light->ApplyStoredMountTransform());
+	TestTrue(TEXT("legacy light lands where the old code put it"), Light->GetActorLocation().Equals(Expected.GetLocation(), 0.5));
+
+	Light->Destroy();
+	Truss->Destroy();
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMajicLayoutActorsTest, "Majic.EventLayout.Actors", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FMajicLayoutActorsTest::RunTest(const FString& Parameters)
 {
@@ -213,6 +408,11 @@ bool FMajicLayoutActorsTest::RunTest(const FString& Parameters)
 		TestEqual(*FString::Printf(TEXT("%s max y"), What), -Box.Min.Y / 30.48, MaxY, Tolerance);
 	};
 		for (TActorIterator<ATrussStructureActor> It(World); It; ++It) { ExpectFootprint(It->SelectionBounds, TEXT("truss"), -36.0, -20.0, 8.0, 28.0); }
+	for (TActorIterator<ATrussStructureActor> It(World); It; ++It)
+	{
+		TestEqual(TEXT("truss length bays imported"), It->RectangleLengthBays, 2);
+		TestEqual(TEXT("truss width bays imported"), It->RectangleWidthBays, 1);
+	}
 	for (TActorIterator<ADrapeRunActor> It(World); It; ++It) { ExpectFootprint(It->SelectionBounds, TEXT("drape"), 0.0, 40.0, 31.0, 33.0); }
 	for (TActorIterator<AMBPWallActor> It(World); It; ++It) { ExpectFootprint(It->SelectionBounds, TEXT("mbp wall"), 4.0, 10.0, 28.0, 32.0); }
 
@@ -240,6 +440,14 @@ bool FMajicLayoutActorsTest::RunTest(const FString& Parameters)
 			FMajicLayoutDoc In;
 			MajicEventLayout::Parse(SampleLayout, In, Error);
 			for (const FMajicLayoutItem& Candidate : In.Items) { if (Candidate.Id == Item.Id) { Original = &Candidate; } }
+			if (Item.Id == TEXT("truss-1"))
+			{
+				int32 LengthBays = 0, WidthBays = 0;
+				Item.Params->TryGetNumberField(TEXT("length_bays"), LengthBays);
+				Item.Params->TryGetNumberField(TEXT("width_bays"), WidthBays);
+				TestEqual(TEXT("truss length bays exported"), LengthBays, 2);
+				TestEqual(TEXT("truss width bays exported"), WidthBays, 1);
+			}
 			if (Original)
 			{
 				TestEqual(*FString::Printf(TEXT("%s x"), *Item.Id), Item.XFt, Original->XFt, 0.01);

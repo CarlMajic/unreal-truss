@@ -4,15 +4,21 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AudioGroundSpeakerActor.h"
 #include "AudioGroundLineArrayActor.h"
+#include "BarLayoutActor.h"
+#include "BarSeatingActor.h"
 #include "BuildItemDataAsset.h"
 #include "BuildManagerComponent.h"
 #include "BuildMenuWidget.h"
 #include "BuildPreviewActor.h"
+#include "CafeTableActor.h"
+#include "DiningTableActor.h"
 #include "DrapeRunActor.h"
 #include "LightPlacementMenuWidget.h"
+#include "LightFixtureActor.h"
 #include "LoungeLayoutActor.h"
 #include "MBPWallActor.h"
 #include "ProjectionScreenActor.h"
+#include "SectionalLayoutActor.h"
 #include "StageDeckActor.h"
 #include "TargetingPointerComponent.h"
 #include "InputCoreTypes.h"
@@ -32,6 +38,9 @@
 
 namespace
 {
+constexpr TCHAR BuildMenuWidgetGeneratedClassPath[] = TEXT("/Game/UI/WBP_TabMenu.WBP_TabMenu_C");
+constexpr TCHAR LightFixtureActorClassPath[] = TEXT("/Game/Majic_Gear/Lighting/BP_LightFixture.BP_LightFixture_C");
+
 static UBuildItemDataAsset* CreateFallbackMBPBuildItem(UObject* Outer)
 {
 	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
@@ -216,6 +225,97 @@ static UBuildItemDataAsset* CreateFallbackLoungeBuildItem(UObject* Outer)
 	return BuildItem;
 }
 
+static UBuildItemDataAsset* CreateFallbackSectionalBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("SectionalLayoutDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Sectional"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime sectional furniture placement."));
+	BuildItem->Category = TEXT("Furniture");
+	BuildItem->ItemType = EBuildItemType::SectionalLayout;
+	BuildItem->BuildActorClass = ASectionalLayoutActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackFurnitureSeatingBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("FurnitureSeatingDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Seating"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime bar and cafe seating placement."));
+	BuildItem->Category = TEXT("Furniture");
+	BuildItem->ItemType = EBuildItemType::FurnitureSeating;
+	BuildItem->BuildActorClass = ABarSeatingActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	BuildItem->DefaultFurnitureSeatingDefinition.SeatingType = EFurnitureSeatingRuntimeType::BarSeating;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackBarLayoutBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("BarLayoutDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Bars"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime front and back bar placement."));
+	BuildItem->Category = TEXT("Furniture");
+	BuildItem->ItemType = EBuildItemType::BarLayout;
+	BuildItem->BuildActorClass = ABarLayoutActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	BuildItem->DefaultBarLayoutDefinition.bUseFrontBar = true;
+	BuildItem->DefaultBarLayoutDefinition.bUseBackBar = true;
+	BuildItem->DefaultBarLayoutDefinition.LayoutShape = EBarLayoutShape::Single;
+	return BuildItem;
+}
+
+static UBuildItemDataAsset* CreateFallbackDiningTableBuildItem(UObject* Outer)
+{
+	UBuildItemDataAsset* BuildItem = NewObject<UBuildItemDataAsset>(Outer, NAME_None, RF_Transient);
+	if (!BuildItem)
+	{
+		return nullptr;
+	}
+
+	BuildItem->ItemId = TEXT("DiningTableDefault");
+	BuildItem->DisplayName = FText::FromString(TEXT("Dining"));
+	BuildItem->Description = FText::FromString(TEXT("Runtime AFR dining table and chair placement."));
+	BuildItem->Category = TEXT("Furniture");
+	BuildItem->ItemType = EBuildItemType::DiningTable;
+	BuildItem->BuildActorClass = ADiningTableActor::StaticClass();
+	BuildItem->GridSnapSizeCm = 30.48f;
+	BuildItem->RotationStepDegrees = 15.0f;
+	BuildItem->bUseGridSnap = true;
+	BuildItem->bAlignToSurfaceNormal = false;
+	BuildItem->DefaultDiningTableDefinition.ChairCount = EDiningChairCount::Four;
+	BuildItem->DefaultDiningTableDefinition.ChairArrangement = EDiningChairArrangement::Rectangular;
+	BuildItem->DefaultDiningTableDefinition.ChairGapCm = -120.0f;
+	return BuildItem;
+}
+
 static bool HasBuildItemType(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, EBuildItemType ItemType)
 {
 	for (const UBuildItemDataAsset* BuildItem : BuildItems)
@@ -237,6 +337,7 @@ AUnrealTrussBuildPawn::AUnrealTrussBuildPawn()
 	CollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComponent"));
 	CollisionComponent->InitSphereRadius(34.0f);
 	CollisionComponent->SetCollisionProfileName(TEXT("Pawn"));
+	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetRootComponent(CollisionComponent);
 
 	SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArmComponent"));
@@ -249,6 +350,7 @@ AUnrealTrussBuildPawn::AUnrealTrussBuildPawn()
 	CameraComponent->bUsePawnControlRotation = false;
 
 	MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("MovementComponent"));
+	MovementComponent->SetUpdatedComponent(CollisionComponent);
 	MovementComponent->MaxSpeed = 2400.0f;
 	MovementComponent->Acceleration = 8000.0f;
 	MovementComponent->Deceleration = 12000.0f;
@@ -257,6 +359,21 @@ AUnrealTrussBuildPawn::AUnrealTrussBuildPawn()
 	TargetingPointerComponent = CreateDefaultSubobject<UTargetingPointerComponent>(TEXT("TargetingPointerComponent"));
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
+
+	static ConstructorHelpers::FClassFinder<UBuildMenuWidget> TabMenuClass(TEXT("/Game/UI/WBP_TabMenu"));
+	if (TabMenuClass.Succeeded())
+	{
+		BuildMenuWidgetClass = TabMenuClass.Class;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UnrealTrussBuildPawn: Failed to load /Game/UI/WBP_TabMenu for the build menu; native fallback menu will be used."));
+	}
+}
+
+UPawnMovementComponent* AUnrealTrussBuildPawn::GetMovementComponent() const
+{
+	return MovementComponent;
 }
 
 void AUnrealTrussBuildPawn::BeginPlay()
@@ -269,6 +386,7 @@ void AUnrealTrussBuildPawn::BeginPlay()
 	EnsureBuildMenuWidget();
 	EnsureLightPlacementMenuWidget();
 	ShowControlsMessage();
+
 }
 
 void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
@@ -318,7 +436,20 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 		AActor* PreviewChildToIgnore = BuildManagerComponent && BuildManagerComponent->ActivePreviewActor
 			? BuildManagerComponent->ActivePreviewActor->GetPreviewActor()
 			: nullptr;
+		if (bEditMoveModeActive && MovingEditedActor)
+		{
+			PreviewActorToIgnore = MovingEditedActor;
+			PreviewChildToIgnore = nullptr;
+			if (const ALightFixtureActor* MovingLight = Cast<ALightFixtureActor>(MovingEditedActor))
+			{
+				PreviewChildToIgnore = MovingLight->GetSpawnedFixtureActor();
+			}
+		}
 		if (!bBuildMenuVisible && !bLightMenuVisible && BuildManagerComponent && BuildManagerComponent->bBuildModeActive)
+		{
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+		}
+		else if (!bBuildMenuVisible && !bLightMenuVisible && bEditMoveModeActive)
 		{
 			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
@@ -328,40 +459,45 @@ void AUnrealTrussBuildPawn::Tick(float DeltaSeconds)
 		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bMBPEditSelectionModeActive)
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bStageEditSelectionModeActive)
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bDrapeEditSelectionModeActive)
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bVideoEditSelectionModeActive)
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bVideoWallEditSelectionModeActive)
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bProjectionEditSelectionModeActive)
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else if (!bBuildMenuVisible && !bLightMenuVisible && bEditSelectionModeActive)
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else if (bBuildMenuVisible && BuildMenuWidget && BuildMenuWidget->ShouldShowPointerForCurrentEdit())
 		{
-			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::WorldPlacement, PreviewActorToIgnore, PreviewChildToIgnore);
+			TargetingPointerComponent->UpdatePointer(PlayerController, ETargetingPointerMode::EditableSelection, PreviewActorToIgnore, PreviewChildToIgnore);
 		}
 		else
 		{
 			TargetingPointerComponent->HidePointer();
 		}
+	}
+
+	if (bEditMoveModeActive)
+	{
+		UpdateMovingEditedActor();
 	}
 
 	if (bEditSelectionModeActive)
@@ -498,6 +634,7 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 
 	if (BuildManagerComponent->bBuildModeActive)
 	{
+		bBuildPreviewOnlyFromMenu = false;
 		BuildManagerComponent->ExitBuildMode();
 		return;
 	}
@@ -538,13 +675,29 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 		{
 			SetEditableActorSelectionHighlighted(EditingAudio, false);
 		}
-		if (ALoungeLayoutActor* EditingLounge = BuildMenuWidget->GetEditingLoungeTarget())
+		if (ALightFixtureActor* EditingLight = BuildMenuWidget->GetEditingLightTarget())
 		{
-			EditingLounge->SetSelectionHighlighted(false);
+			EditingLight->SetSelectionHighlighted(false);
 		}
 		if (ALoungeLayoutActor* EditingLounge = BuildMenuWidget->GetEditingLoungeTarget())
 		{
 			EditingLounge->SetSelectionHighlighted(false);
+		}
+		if (ASectionalLayoutActor* EditingSectional = BuildMenuWidget->GetEditingSectionalTarget())
+		{
+			EditingSectional->SetSelectionHighlighted(false);
+		}
+		if (AActor* EditingSeating = BuildMenuWidget->GetEditingFurnitureSeatingTarget())
+		{
+			SetEditableActorSelectionHighlighted(EditingSeating, false);
+		}
+		if (ABarLayoutActor* EditingBar = BuildMenuWidget->GetEditingBarLayoutTarget())
+		{
+			EditingBar->SetSelectionHighlighted(false);
+		}
+		if (ADiningTableActor* EditingDiningTable = BuildMenuWidget->GetEditingDiningTableTarget())
+		{
+			EditingDiningTable->SetSelectionHighlighted(false);
 		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
@@ -555,7 +708,10 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
 		BuildMenuWidget->SetEditingLoungeTarget(nullptr);
-		BuildMenuWidget->SetEditingLoungeTarget(nullptr);
+		BuildMenuWidget->SetEditingSectionalTarget(nullptr);
+		BuildMenuWidget->SetEditingFurnitureSeatingTarget(nullptr);
+		BuildMenuWidget->SetEditingBarLayoutTarget(nullptr);
+		BuildMenuWidget->SetEditingDiningTableTarget(nullptr);
 	}
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
@@ -653,6 +809,24 @@ void AUnrealTrussBuildPawn::ToggleBuildMode()
 	{
 		BuildManagerComponent->SetActiveLoungeLayoutDefinition(BuildMenuWidget->GetCurrentLoungeLayoutDefinition());
 	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::SectionalLayout)
+	{
+		BuildManagerComponent->SetActiveSectionalLayoutDefinition(BuildMenuWidget->GetCurrentSectionalLayoutDefinition());
+	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::FurnitureSeating)
+	{
+		BuildManagerComponent->SetActiveFurnitureSeatingDefinition(BuildMenuWidget->GetCurrentFurnitureSeatingDefinition());
+	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::BarLayout)
+	{
+		BuildManagerComponent->SetActiveBarLayoutDefinition(BuildMenuWidget->GetCurrentBarLayoutDefinition());
+	}
+	else if (BuildMenuWidget && DefaultBuildItem->ItemType == EBuildItemType::DiningTable)
+	{
+		BuildManagerComponent->SetActiveDiningTableDefinition(BuildMenuWidget->GetCurrentDiningTableDefinition());
+	}
+	bBuildPreviewOnlyFromMenu = false;
+	BuildManagerComponent->SetPreviewOnlyMode(false);
 	BuildManagerComponent->EnterBuildMode();
 }
 
@@ -670,6 +844,33 @@ void AUnrealTrussBuildPawn::ToggleBuildMenu()
 
 void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 {
+	if (bEditMoveModeActive)
+	{
+		if (ALightFixtureActor* MovingLight = Cast<ALightFixtureActor>(MovingEditedActor))
+		{
+			const bool bPreviousDetachSetting = MovingLight->bDetachWhenNoTrussInRange;
+			MovingLight->bDetachWhenNoTrussInRange = true;
+			MovingLight->AttachToNearestTruss();
+			MovingLight->bDetachWhenNoTrussInRange = bPreviousDetachSetting;
+		}
+		FinishMoveEditedActor(true);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("Actor moved."));
+		}
+		return;
+	}
+
+	if (bBuildPreviewOnlyFromMenu)
+	{
+		return;
+	}
+
+	if (BuildMenuWidget && BuildMenuWidget->IsInViewport() && BuildMenuWidget->GetVisibility() == ESlateVisibility::Visible)
+	{
+		return;
+	}
+
 	if (bLightPlacementModeActive)
 	{
 		HandleLightPlacementActionRequested();
@@ -781,9 +982,29 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 			PendingAudioEditActor = AudioActor;
 			if (BuildMenuWidget)
 			{
-				if (ALoungeLayoutActor* LoungeActor = Cast<ALoungeLayoutActor>(AudioActor))
+				if (ALightFixtureActor* LightActor = Cast<ALightFixtureActor>(AudioActor))
+				{
+					BuildMenuWidget->SetEditingLightTarget(LightActor);
+				}
+				else if (ALoungeLayoutActor* LoungeActor = Cast<ALoungeLayoutActor>(AudioActor))
 				{
 					BuildMenuWidget->SetEditingLoungeTarget(LoungeActor);
+				}
+				else if (ASectionalLayoutActor* SectionalActor = Cast<ASectionalLayoutActor>(AudioActor))
+				{
+					BuildMenuWidget->SetEditingSectionalTarget(SectionalActor);
+				}
+				else if (Cast<ABarSeatingActor>(AudioActor) || Cast<ACafeTableActor>(AudioActor))
+				{
+					BuildMenuWidget->SetEditingFurnitureSeatingTarget(AudioActor);
+				}
+				else if (ABarLayoutActor* BarLayoutActor = Cast<ABarLayoutActor>(AudioActor))
+				{
+					BuildMenuWidget->SetEditingBarLayoutTarget(BarLayoutActor);
+				}
+				else if (ADiningTableActor* DiningTableActor = Cast<ADiningTableActor>(AudioActor))
+				{
+					BuildMenuWidget->SetEditingDiningTableTarget(DiningTableActor);
 				}
 				else
 				{
@@ -981,6 +1202,20 @@ void AUnrealTrussBuildPawn::ConfirmBuildPlacement()
 
 void AUnrealTrussBuildPawn::CancelBuildMode()
 {
+	if (bEditMoveModeActive)
+	{
+		if (MovingEditedActor)
+		{
+			MovingEditedActor->SetActorTransform(MovingEditedActorOriginalTransform);
+		}
+		FinishMoveEditedActor(true);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("Move canceled."));
+		}
+		return;
+	}
+
 	if (BuildManagerComponent)
 	{
 		BuildManagerComponent->ExitBuildMode();
@@ -1017,9 +1252,29 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		{
 			SetEditableActorSelectionHighlighted(EditingAudio, false);
 		}
+		if (ALightFixtureActor* EditingLight = BuildMenuWidget->GetEditingLightTarget())
+		{
+			EditingLight->SetSelectionHighlighted(false);
+		}
 		if (ALoungeLayoutActor* EditingLounge = BuildMenuWidget->GetEditingLoungeTarget())
 		{
 			EditingLounge->SetSelectionHighlighted(false);
+		}
+		if (ASectionalLayoutActor* EditingSectional = BuildMenuWidget->GetEditingSectionalTarget())
+		{
+			EditingSectional->SetSelectionHighlighted(false);
+		}
+		if (AActor* EditingSeating = BuildMenuWidget->GetEditingFurnitureSeatingTarget())
+		{
+			SetEditableActorSelectionHighlighted(EditingSeating, false);
+		}
+		if (ABarLayoutActor* EditingBar = BuildMenuWidget->GetEditingBarLayoutTarget())
+		{
+			EditingBar->SetSelectionHighlighted(false);
+		}
+		if (ADiningTableActor* EditingDiningTable = BuildMenuWidget->GetEditingDiningTableTarget())
+		{
+			EditingDiningTable->SetSelectionHighlighted(false);
 		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
@@ -1030,6 +1285,10 @@ void AUnrealTrussBuildPawn::CancelBuildMode()
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
 		BuildMenuWidget->SetEditingLoungeTarget(nullptr);
+		BuildMenuWidget->SetEditingSectionalTarget(nullptr);
+		BuildMenuWidget->SetEditingFurnitureSeatingTarget(nullptr);
+		BuildMenuWidget->SetEditingBarLayoutTarget(nullptr);
+		BuildMenuWidget->SetEditingDiningTableTarget(nullptr);
 	}
 	bMBPEditSelectionModeActive = false;
 	bStageEditSelectionModeActive = false;
@@ -1064,6 +1323,12 @@ void AUnrealTrussBuildPawn::EditLookedAtTruss()
 	}
 
 	EnsureBuildMenuWidget();
+	if (BuildMenuWidget && BuildMenuWidget->GetEditingLightTarget())
+	{
+		BuildMenuWidget->GetEditingLightTarget()->SetSelectionHighlighted(false);
+		BuildMenuWidget->SetEditingLightTarget(nullptr);
+		PendingAudioEditActor = nullptr;
+	}
 	SetBuildMenuVisible(false);
 	BuildManagerComponent->ExitBuildMode();
 	BuildManagerComponent->ClearEditingTrussActor();
@@ -1140,6 +1405,26 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 		{
 			SetEditableActorSelectionHighlighted(EditingAudio, false);
 		}
+		if (ALightFixtureActor* EditingLight = BuildMenuWidget->GetEditingLightTarget())
+		{
+			EditingLight->SetSelectionHighlighted(false);
+		}
+		if (AActor* EditingSeating = BuildMenuWidget->GetEditingFurnitureSeatingTarget())
+		{
+			SetEditableActorSelectionHighlighted(EditingSeating, false);
+		}
+		if (ASectionalLayoutActor* EditingSectional = BuildMenuWidget->GetEditingSectionalTarget())
+		{
+			EditingSectional->SetSelectionHighlighted(false);
+		}
+		if (ABarLayoutActor* EditingBar = BuildMenuWidget->GetEditingBarLayoutTarget())
+		{
+			EditingBar->SetSelectionHighlighted(false);
+		}
+		if (ADiningTableActor* EditingDiningTable = BuildMenuWidget->GetEditingDiningTableTarget())
+		{
+			EditingDiningTable->SetSelectionHighlighted(false);
+		}
 		BuildMenuWidget->SetEditingTarget(nullptr);
 		BuildMenuWidget->SetEditingMBPTarget(nullptr);
 		BuildMenuWidget->SetEditingStageTarget(nullptr);
@@ -1148,6 +1433,10 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 		BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
 		BuildMenuWidget->SetEditingProjectionTarget(nullptr);
 		BuildMenuWidget->SetEditingAudioTarget(nullptr);
+		BuildMenuWidget->SetEditingSectionalTarget(nullptr);
+		BuildMenuWidget->SetEditingFurnitureSeatingTarget(nullptr);
+		BuildMenuWidget->SetEditingBarLayoutTarget(nullptr);
+		BuildMenuWidget->SetEditingDiningTableTarget(nullptr);
 	}
 	PendingMBPEditWall = nullptr;
 	PendingStageEditActor = nullptr;
@@ -1180,6 +1469,12 @@ void AUnrealTrussBuildPawn::ToggleLightPlacementMode()
 
 void AUnrealTrussBuildPawn::RotateBuildPositive()
 {
+	if (GetCurrentEditingActor())
+	{
+		RotateCurrentEditedActor(1.0f);
+		return;
+	}
+
 	if (BuildManagerComponent)
 	{
 		BuildManagerComponent->RotatePreviewYaw(15.0f);
@@ -1188,6 +1483,12 @@ void AUnrealTrussBuildPawn::RotateBuildPositive()
 
 void AUnrealTrussBuildPawn::RotateBuildNegative()
 {
+	if (GetCurrentEditingActor())
+	{
+		RotateCurrentEditedActor(-1.0f);
+		return;
+	}
+
 	if (BuildManagerComponent)
 	{
 		BuildManagerComponent->RotatePreviewYaw(-15.0f);
@@ -1313,6 +1614,38 @@ void AUnrealTrussBuildPawn::GatherBuildItems()
 			AvailableBuildItems.Add(FallbackLoungeItem);
 		}
 	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::SectionalLayout))
+	{
+		if (UBuildItemDataAsset* FallbackSectionalItem = CreateFallbackSectionalBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackSectionalItem);
+		}
+	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::FurnitureSeating))
+	{
+		if (UBuildItemDataAsset* FallbackSeatingItem = CreateFallbackFurnitureSeatingBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackSeatingItem);
+		}
+	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::BarLayout))
+	{
+		if (UBuildItemDataAsset* FallbackBarItem = CreateFallbackBarLayoutBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackBarItem);
+		}
+	}
+
+	if (!HasBuildItemType(AvailableBuildItems, EBuildItemType::DiningTable))
+	{
+		if (UBuildItemDataAsset* FallbackDiningItem = CreateFallbackDiningTableBuildItem(this))
+		{
+			AvailableBuildItems.Add(FallbackDiningItem);
+		}
+	}
 }
 
 void AUnrealTrussBuildPawn::GatherLightingBlueprints()
@@ -1341,7 +1674,7 @@ void AUnrealTrussBuildPawn::GatherLightingBlueprints()
 		{
 			if (UClass* GeneratedClass = BlueprintAsset->GeneratedClass)
 			{
-				if (GeneratedClass->IsChildOf(AActor::StaticClass()))
+				if (GeneratedClass->IsChildOf(AActor::StaticClass()) && !GeneratedClass->IsChildOf(ALightFixtureActor::StaticClass()))
 				{
 					AvailableLightingNames.Add(AssetName.RightChop(3));
 					AvailableLightingClasses.Add(GeneratedClass);
@@ -1367,13 +1700,25 @@ void AUnrealTrussBuildPawn::EnsureBuildMenuWidget()
 	TSubclassOf<UBuildMenuWidget> MenuClass = BuildMenuWidgetClass;
 	if (!MenuClass)
 	{
+		if (UClass* LoadedMenuClass = LoadClass<UBuildMenuWidget>(nullptr, BuildMenuWidgetGeneratedClassPath))
+		{
+			MenuClass = LoadedMenuClass;
+			BuildMenuWidgetClass = MenuClass;
+			UE_LOG(LogTemp, Warning, TEXT("UnrealTrussBuildPawn: Recovered build menu widget class %s."), *MenuClass->GetPathName());
+		}
+	}
+	if (!MenuClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UnrealTrussBuildPawn: Build menu Blueprint was unavailable; native fallback menu will be used."));
 		MenuClass = UBuildMenuWidget::StaticClass();
 	}
+	UE_LOG(LogTemp, Warning, TEXT("UnrealTrussBuildPawn: Creating build menu widget class %s."), *MenuClass->GetPathName());
 	BuildMenuWidget = CreateWidget<UBuildMenuWidget>(PlayerController, MenuClass);
 	if (!BuildMenuWidget)
 	{
 		return;
 	}
+	UE_LOG(LogTemp, Warning, TEXT("UnrealTrussBuildPawn: Created build menu widget instance class %s."), *BuildMenuWidget->GetClass()->GetPathName());
 
 	TArray<UBuildItemDataAsset*> BuildItemArray;
 	for (UBuildItemDataAsset* BuildItem : AvailableBuildItems)
@@ -1383,12 +1728,16 @@ void AUnrealTrussBuildPawn::EnsureBuildMenuWidget()
 
 	BuildMenuWidget->SetBuildManager(BuildManagerComponent);
 	BuildMenuWidget->SetBuildItems(BuildItemArray);
+	BuildMenuWidget->SetLightingFixtureOptions(AvailableLightingNames, AvailableLightingClasses);
 	if (DefaultBuildItem)
 	{
 		BuildMenuWidget->SetSelectedBuildItem(DefaultBuildItem);
 	}
 	BuildMenuWidget->OnBuildItemSelected.AddDynamic(this, &AUnrealTrussBuildPawn::HandleBuildItemSelected);
 	BuildMenuWidget->OnActionRequested.AddDynamic(this, &AUnrealTrussBuildPawn::HandleBuildMenuActionRequested);
+	BuildMenuWidget->OnMoveRequested.AddDynamic(this, &AUnrealTrussBuildPawn::HandleBuildMenuMoveRequested);
+	BuildMenuWidget->OnRotateRequested.AddDynamic(this, &AUnrealTrussBuildPawn::HandleBuildMenuRotateRequested);
+	BuildMenuWidget->OnDeleteRequested.AddDynamic(this, &AUnrealTrussBuildPawn::HandleBuildMenuDeleteRequested);
 	BuildMenuWidget->AddToViewport(10);
 	BuildMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
 }
@@ -1651,10 +2000,187 @@ void AUnrealTrussBuildPawn::SetEditableActorSelectionHighlighted(AActor* Actor, 
 	{
 		AudioGroundLineArrayActor->SetSelectionHighlighted(bHighlighted);
 	}
+	else if (ALightFixtureActor* LightActor = Cast<ALightFixtureActor>(Actor))
+	{
+		LightActor->SetSelectionHighlighted(bHighlighted);
+	}
 	else if (ALoungeLayoutActor* LoungeActor = Cast<ALoungeLayoutActor>(Actor))
 	{
 		LoungeActor->SetSelectionHighlighted(bHighlighted);
 	}
+	else if (ASectionalLayoutActor* SectionalActor = Cast<ASectionalLayoutActor>(Actor))
+	{
+		SectionalActor->SetSelectionHighlighted(bHighlighted);
+	}
+	else if (ABarLayoutActor* BarLayoutActor = Cast<ABarLayoutActor>(Actor))
+	{
+		BarLayoutActor->SetSelectionHighlighted(bHighlighted);
+	}
+	else if (ABarSeatingActor* BarSeatingActor = Cast<ABarSeatingActor>(Actor))
+	{
+		BarSeatingActor->SetSelectionHighlighted(bHighlighted);
+	}
+	else if (ACafeTableActor* CafeTableActor = Cast<ACafeTableActor>(Actor))
+	{
+		CafeTableActor->SetSelectionHighlighted(bHighlighted);
+	}
+	else if (ADiningTableActor* DiningTableActor = Cast<ADiningTableActor>(Actor))
+	{
+		DiningTableActor->SetSelectionHighlighted(bHighlighted);
+	}
+}
+
+void AUnrealTrussBuildPawn::BeginMoveEditedActor()
+{
+	AActor* EditedActor = GetCurrentEditingActor();
+	if (!EditedActor)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No actor selected to move."));
+		}
+		return;
+	}
+
+	MovingEditedActor = EditedActor;
+	MovingEditedActorOriginalTransform = EditedActor->GetActorTransform();
+	bEditMoveModeActive = true;
+	SetCurrentEditTargetHighlighted(true);
+
+	if (BuildManagerComponent)
+	{
+		BuildManagerComponent->ExitBuildMode();
+		BuildManagerComponent->ClearEditingTrussActor();
+	}
+
+	SetBuildMenuVisible(false);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("Move active. Aim with the pointer and left click to drop. Cancel to undo."));
+	}
+}
+
+void AUnrealTrussBuildPawn::UpdateMovingEditedActor()
+{
+	if (!MovingEditedActor || !TargetingPointerComponent || !TargetingPointerComponent->bHasValidHit)
+	{
+		return;
+	}
+
+	MovingEditedActor->SetActorLocation(SnapMoveLocationForCurrentEdit(TargetingPointerComponent->CurrentHitResult.ImpactPoint));
+}
+
+void AUnrealTrussBuildPawn::FinishMoveEditedActor(bool bReopenEditMenu)
+{
+	if (TargetingPointerComponent)
+	{
+		TargetingPointerComponent->HidePointer();
+	}
+
+	bEditMoveModeActive = false;
+	MovingEditedActor = nullptr;
+
+	if (bReopenEditMenu)
+	{
+		SetBuildMenuVisible(true);
+		SetCurrentEditTargetHighlighted(true);
+	}
+}
+
+AActor* AUnrealTrussBuildPawn::GetCurrentEditingActor() const
+{
+	return BuildMenuWidget ? BuildMenuWidget->GetEditingActor() : nullptr;
+}
+
+void AUnrealTrussBuildPawn::RotateCurrentEditedActor(float Direction)
+{
+	AActor* EditedActor = GetCurrentEditingActor();
+	if (!EditedActor)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No actor selected to rotate."));
+		}
+		return;
+	}
+
+	const UBuildItemDataAsset* SelectedItem = BuildMenuWidget ? BuildMenuWidget->GetSelectedBuildItem() : nullptr;
+	const float RotationStepDegrees = SelectedItem && SelectedItem->RotationStepDegrees > 0.0f
+		? SelectedItem->RotationStepDegrees
+		: 15.0f;
+
+	FRotator NewRotation = EditedActor->GetActorRotation();
+	NewRotation.Yaw += Direction * RotationStepDegrees;
+	if (ALightFixtureActor* LightActor = Cast<ALightFixtureActor>(EditedActor))
+	{
+		LightActor->FixturePlacementRotation.Yaw += Direction * RotationStepDegrees;
+		LightActor->RebuildFixture();
+	}
+	else
+	{
+		EditedActor->SetActorRotation(NewRotation);
+	}
+	SetCurrentEditTargetHighlighted(true);
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("Actor rotated."));
+	}
+}
+
+FVector AUnrealTrussBuildPawn::SnapMoveLocationForCurrentEdit(const FVector& Location) const
+{
+	const UBuildItemDataAsset* SelectedItem = BuildMenuWidget ? BuildMenuWidget->GetSelectedBuildItem() : nullptr;
+	if (!SelectedItem || !SelectedItem->bUseGridSnap || SelectedItem->GridSnapSizeCm <= 0.0f)
+	{
+		return Location;
+	}
+
+	const float GridSnapSizeCm = SelectedItem->GridSnapSizeCm;
+	return FVector(
+		FMath::GridSnap(Location.X, GridSnapSizeCm),
+		FMath::GridSnap(Location.Y, GridSnapSizeCm),
+		FMath::GridSnap(Location.Z, GridSnapSizeCm));
+}
+
+void AUnrealTrussBuildPawn::ClearCurrentEditTargets()
+{
+	if (!BuildMenuWidget)
+	{
+		return;
+	}
+
+	BuildMenuWidget->SetEditingTarget(nullptr);
+	BuildMenuWidget->SetEditingMBPTarget(nullptr);
+	BuildMenuWidget->SetEditingStageTarget(nullptr);
+	BuildMenuWidget->SetEditingDrapeTarget(nullptr);
+	BuildMenuWidget->SetEditingVideoTarget(nullptr);
+	BuildMenuWidget->SetEditingVideoWallTarget(nullptr);
+	BuildMenuWidget->SetEditingProjectionTarget(nullptr);
+	BuildMenuWidget->SetEditingAudioTarget(nullptr);
+	BuildMenuWidget->SetEditingLoungeTarget(nullptr);
+	BuildMenuWidget->SetEditingSectionalTarget(nullptr);
+	BuildMenuWidget->SetEditingFurnitureSeatingTarget(nullptr);
+	BuildMenuWidget->SetEditingBarLayoutTarget(nullptr);
+	BuildMenuWidget->SetEditingDiningTableTarget(nullptr);
+
+	PendingMBPEditWall = nullptr;
+	PendingStageEditActor = nullptr;
+	PendingDrapeEditActor = nullptr;
+	PendingVideoEditActor = nullptr;
+	PendingVideoWallEditActor = nullptr;
+	PendingProjectionEditActor = nullptr;
+	PendingAudioEditActor = nullptr;
+
+	if (BuildManagerComponent)
+	{
+		BuildManagerComponent->ClearEditingTrussActor();
+	}
+}
+
+void AUnrealTrussBuildPawn::SetCurrentEditTargetHighlighted(bool bHighlighted)
+{
+	SetEditableActorSelectionHighlighted(GetCurrentEditingActor(), bHighlighted);
 }
 
 void AUnrealTrussBuildPawn::DrawEditSubSelectionPreview(const FHitResult& HitResult, AMBPWallActor* MBPWallActor, AStageDeckActor* StageDeckActor) const
@@ -1760,10 +2286,28 @@ void AUnrealTrussBuildPawn::HandleBuildItemSelected(UBuildItemDataAsset* Selecte
 	{
 		BuildManagerComponent->SetActiveLoungeLayoutDefinition(BuildMenuWidget->GetCurrentLoungeLayoutDefinition());
 	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::SectionalLayout)
+	{
+		BuildManagerComponent->SetActiveSectionalLayoutDefinition(BuildMenuWidget->GetCurrentSectionalLayoutDefinition());
+	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::FurnitureSeating)
+	{
+		BuildManagerComponent->SetActiveFurnitureSeatingDefinition(BuildMenuWidget->GetCurrentFurnitureSeatingDefinition());
+	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::BarLayout)
+	{
+		BuildManagerComponent->SetActiveBarLayoutDefinition(BuildMenuWidget->GetCurrentBarLayoutDefinition());
+	}
+	else if (BuildMenuWidget && SelectedItem->ItemType == EBuildItemType::DiningTable)
+	{
+		BuildManagerComponent->SetActiveDiningTableDefinition(BuildMenuWidget->GetCurrentDiningTableDefinition());
+	}
 	else
 	{
 		BuildManagerComponent->SetActiveTrussDefinition(SelectedItem->DefaultTrussDefinition);
 	}
+	bBuildPreviewOnlyFromMenu = true;
+	BuildManagerComponent->SetPreviewOnlyMode(true);
 	BuildManagerComponent->EnterBuildMode();
 }
 
@@ -1771,6 +2315,14 @@ void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
 {
 	if (BuildMenuWidget)
 	{
+		if (ALightFixtureActor* EditingLight = BuildMenuWidget->GetEditingLightTarget())
+		{
+			EditingLight->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingLightTarget(nullptr);
+			PendingAudioEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
 		if (AMBPWallActor* EditingMBPWall = BuildMenuWidget->GetEditingMBPTarget())
 		{
 			EditingMBPWall->SetSelectionHighlighted(false);
@@ -1835,10 +2387,81 @@ void AUnrealTrussBuildPawn::HandleBuildMenuActionRequested()
 			SetBuildMenuVisible(false);
 			return;
 		}
+		if (ASectionalLayoutActor* EditingSectional = BuildMenuWidget->GetEditingSectionalTarget())
+		{
+			EditingSectional->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingSectionalTarget(nullptr);
+			PendingAudioEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
+		if (AActor* EditingSeating = BuildMenuWidget->GetEditingFurnitureSeatingTarget())
+		{
+			SetEditableActorSelectionHighlighted(EditingSeating, false);
+			BuildMenuWidget->SetEditingFurnitureSeatingTarget(nullptr);
+			PendingAudioEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
+		if (ABarLayoutActor* EditingBar = BuildMenuWidget->GetEditingBarLayoutTarget())
+		{
+			EditingBar->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingBarLayoutTarget(nullptr);
+			PendingAudioEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
+		if (ADiningTableActor* EditingDiningTable = BuildMenuWidget->GetEditingDiningTableTarget())
+		{
+			EditingDiningTable->SetSelectionHighlighted(false);
+			BuildMenuWidget->SetEditingDiningTableTarget(nullptr);
+			PendingAudioEditActor = nullptr;
+			SetBuildMenuVisible(false);
+			return;
+		}
 	}
 
-	ConfirmBuildPlacement();
+	if (BuildManagerComponent && BuildManagerComponent->bBuildModeActive)
+	{
+		BuildManagerComponent->ExitBuildMode();
+	}
+	bBuildPreviewOnlyFromMenu = false;
 	SetBuildMenuVisible(false);
+}
+
+void AUnrealTrussBuildPawn::HandleBuildMenuMoveRequested()
+{
+	BeginMoveEditedActor();
+}
+
+void AUnrealTrussBuildPawn::HandleBuildMenuRotateRequested()
+{
+	RotateCurrentEditedActor(1.0f);
+}
+
+void AUnrealTrussBuildPawn::HandleBuildMenuDeleteRequested()
+{
+	AActor* EditedActor = GetCurrentEditingActor();
+	if (!EditedActor)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, TEXT("No actor selected to delete."));
+		}
+		return;
+	}
+
+	SetCurrentEditTargetHighlighted(false);
+	ClearCurrentEditTargets();
+	SetBuildMenuVisible(false);
+	bEditMoveModeActive = false;
+	MovingEditedActor = nullptr;
+	EditedActor->Destroy();
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("Actor deleted."));
+	}
 }
 
 void AUnrealTrussBuildPawn::HandleLightPlacementActionRequested()
@@ -1895,9 +2518,24 @@ void AUnrealTrussBuildPawn::HandleLightPlacementActionRequested()
 
 	FActorSpawnParameters SpawnParameters;
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	if (PendingLightTargetTruss->AddMountedFixtureDefinition(ActiveLightFixtureClass, ActiveLightSlingType, PendingLightTargetWorldLocation, true))
+	SpawnParameters.ObjectFlags |= RF_Transactional;
+	UClass* WrapperClass = LoadClass<ALightFixtureActor>(nullptr, LightFixtureActorClassPath);
+	if (!WrapperClass)
 	{
-		PendingLightTargetTruss->Modify();
+		WrapperClass = ALightFixtureActor::StaticClass();
+	}
+	ALightFixtureActor* PlacedLight = World->SpawnActor<ALightFixtureActor>(WrapperClass, MountTransform, SpawnParameters);
+	if (!PlacedLight)
+	{
+		return;
+	}
+	PlacedLight->FixtureClass = ActiveLightFixtureClass;
+	PlacedLight->SlingType = ActiveLightSlingType;
+	PlacedLight->RebuildFixture();
+	if (!PlacedLight->AttachToTrussAtWorldLocation(PendingLightTargetTruss, PendingLightTargetWorldLocation))
+	{
+		PlacedLight->Destroy();
+		return;
 	}
 
 	if (GEngine)
@@ -2090,13 +2728,39 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
 	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
 
-	if (!World->LineTraceMultiByObjectType(HitResults, ViewLocation, TraceEnd, ObjectQueryParams, QueryParams))
+	for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+	{
+		HitResults.Reset();
+		if (!World->LineTraceMultiByObjectType(HitResults, ViewLocation, TraceEnd, ObjectQueryParams, QueryParams))
+		{
+			return false;
+		}
+		const FHitResult& FirstHit = HitResults[0];
+		if (!FirstHit.bStartPenetrating && FirstHit.Distance >= 40.0f)
+		{
+			break;
+		}
+		if (!FirstHit.GetActor())
+		{
+			return false;
+		}
+		QueryParams.AddIgnoredActor(FirstHit.GetActor());
+	}
+	if (HitResults.IsEmpty() || HitResults[0].bStartPenetrating || HitResults[0].Distance < 40.0f)
 	{
 		return false;
 	}
 
 	for (const FHitResult& HitResult : HitResults)
 	{
+		AActor* HitActor = HitResult.GetActor();
+		if (ALightFixtureActor* HitLightActor = Cast<ALightFixtureActor>(HitActor ? (HitActor->GetParentActor() ? HitActor->GetParentActor() : HitActor) : nullptr))
+		{
+			OutHitResult = HitResult;
+			OutAudioActor = HitLightActor;
+			return true;
+		}
+
 		if (ATrussStructureActor* HitTrussActor = Cast<ATrussStructureActor>(HitResult.GetActor()))
 		{
 			OutHitResult = HitResult;
@@ -2164,6 +2828,41 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 		{
 			OutHitResult = HitResult;
 			OutAudioActor = HitLoungeActor;
+			return true;
+		}
+
+		if (ASectionalLayoutActor* HitSectionalActor = Cast<ASectionalLayoutActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutAudioActor = HitSectionalActor;
+			return true;
+		}
+
+		if (ABarLayoutActor* HitBarLayoutActor = Cast<ABarLayoutActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutAudioActor = HitBarLayoutActor;
+			return true;
+		}
+
+		if (ABarSeatingActor* HitBarSeatingActor = Cast<ABarSeatingActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutAudioActor = HitBarSeatingActor;
+			return true;
+		}
+
+		if (ACafeTableActor* HitCafeTableActor = Cast<ACafeTableActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutAudioActor = HitCafeTableActor;
+			return true;
+		}
+
+		if (ADiningTableActor* HitDiningTableActor = Cast<ADiningTableActor>(HitResult.GetActor()))
+		{
+			OutHitResult = HitResult;
+			OutAudioActor = HitDiningTableActor;
 			return true;
 		}
 
@@ -2236,6 +2935,41 @@ bool AUnrealTrussBuildPawn::TraceForEditableActorHit(FHitResult& OutHitResult, A
 			{
 				OutHitResult = HitResult;
 				OutAudioActor = OwnerLoungeActor;
+				return true;
+			}
+
+			if (ASectionalLayoutActor* OwnerSectionalActor = Cast<ASectionalLayoutActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutAudioActor = OwnerSectionalActor;
+				return true;
+			}
+
+			if (ABarLayoutActor* OwnerBarLayoutActor = Cast<ABarLayoutActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutAudioActor = OwnerBarLayoutActor;
+				return true;
+			}
+
+			if (ABarSeatingActor* OwnerBarSeatingActor = Cast<ABarSeatingActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutAudioActor = OwnerBarSeatingActor;
+				return true;
+			}
+
+			if (ACafeTableActor* OwnerCafeTableActor = Cast<ACafeTableActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutAudioActor = OwnerCafeTableActor;
+				return true;
+			}
+
+			if (ADiningTableActor* OwnerDiningTableActor = Cast<ADiningTableActor>(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
+				OutAudioActor = OwnerDiningTableActor;
 				return true;
 			}
 		}

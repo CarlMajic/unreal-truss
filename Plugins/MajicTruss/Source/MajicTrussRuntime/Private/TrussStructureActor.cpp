@@ -3,6 +3,7 @@
 #include "Components/ActorComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "LightFixtureActor.h"
 #include "UObject/Field.h"
 #include "UObject/UnrealType.h"
 #include "TrussMathLibrary.h"
@@ -93,6 +94,16 @@ void ATrussStructureActor::OnConstruction(const FTransform& Transform)
 	}
 
 	RebuildMountedFixtures();
+
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors);
+	for (AActor* AttachedActor : AttachedActors)
+	{
+		if (ALightFixtureActor* LightFixtureActor = Cast<ALightFixtureActor>(AttachedActor))
+		{
+			LightFixtureActor->ApplyStoredMountTransform();
+		}
+	}
 }
 
 void ATrussStructureActor::BuildCurrentMode()
@@ -129,6 +140,8 @@ void ATrussStructureActor::ApplyBuildDefinition(const FTrussBuildDefinition& Def
 	RectangleLengthFt = Definition.RectangleLengthFt;
 	RectangleWidthFt = Definition.RectangleWidthFt;
 	RectangleHeightFt = Definition.RectangleHeightFt;
+	RectangleLengthBays = Definition.RectangleLengthBays;
+	RectangleWidthBays = Definition.RectangleWidthBays;
 	ArchHeightFt = Definition.ArchHeightFt;
 	ArchWidthFt = Definition.ArchWidthFt;
 	TowerHeightFt = Definition.TowerHeightFt;
@@ -155,6 +168,8 @@ FTrussBuildDefinition ATrussStructureActor::GetBuildDefinition() const
 	Definition.RectangleLengthFt = RectangleLengthFt;
 	Definition.RectangleWidthFt = RectangleWidthFt;
 	Definition.RectangleHeightFt = RectangleHeightFt;
+	Definition.RectangleLengthBays = RectangleLengthBays;
+	Definition.RectangleWidthBays = RectangleWidthBays;
 	Definition.ArchHeightFt = ArchHeightFt;
 	Definition.ArchWidthFt = ArchWidthFt;
 	Definition.TowerHeightFt = TowerHeightFt;
@@ -198,8 +213,13 @@ void ATrussStructureActor::BuildRectangle()
 	const float HeightCm = UTrussMathLibrary::FeetToCentimeters(RectangleHeightFt);
 	const float TargetLengthCm = UTrussMathLibrary::FeetToCentimeters(RectangleLengthFt);
 	const float TargetWidthCm = UTrussMathLibrary::FeetToCentimeters(RectangleWidthFt);
-	const float InnerLengthCm = TargetLengthCm - (2.0f * CornerX);
-	const float InnerWidthCm = TargetWidthCm - (2.0f * CornerY);
+
+	// Bays split each side into equal sections with a corner block at every grid crossing, like the
+	// Fusion rectangle. One bay each way is the plain four-corner rectangle.
+	const int32 LengthBays = FMath::Clamp(RectangleLengthBays, 1, 20);
+	const int32 WidthBays = FMath::Clamp(RectangleWidthBays, 1, 20);
+	const float InnerLengthCm = (TargetLengthCm - ((LengthBays + 1) * CornerX)) / LengthBays;
+	const float InnerWidthCm = (TargetWidthCm - ((WidthBays + 1) * CornerY)) / WidthBays;
 
 	if (InnerLengthCm <= 0.0f || InnerWidthCm <= 0.0f)
 	{
@@ -209,20 +229,45 @@ void ATrussStructureActor::BuildRectangle()
 	const FTrussCombinationResult LengthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerLengthCm);
 	const FTrussCombinationResult WidthCombination = UTrussMathLibrary::FindBestTrussCombination(InnerWidthCm);
 
-	const float RightX = CornerX + LengthCombination.ActualLengthCm;
-	const float BackY = CornerY + WidthCombination.ActualLengthCm;
+	TArray<float> XLines;
+	for (int32 Index = 0; Index <= LengthBays; ++Index)
+	{
+		XLines.Add(Index * (CornerX + LengthCombination.ActualLengthCm));
+	}
+	TArray<float> YLines;
+	for (int32 Index = 0; Index <= WidthBays; ++Index)
+	{
+		YLines.Add(Index * (CornerY + WidthCombination.ActualLengthCm));
+	}
 
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(0.0f, 0.0f, HeightCm), FRotator::ZeroRotator);
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX, 0.0f, HeightCm), FRotator::ZeroRotator);
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(RightX, BackY, HeightCm), FRotator::ZeroRotator);
-	AddPieceInstance(ETrussPieceType::CornerBlock, FVector(0.0f, BackY, HeightCm), FRotator::ZeroRotator);
+	for (const float X : XLines)
+	{
+		for (const float Y : YLines)
+		{
+			AddPieceInstance(ETrussPieceType::CornerBlock, FVector(X, Y, HeightCm), FRotator::ZeroRotator);
+		}
+	}
 
-	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, 0.0f, HeightCm), FRotator::ZeroRotator);
-	AddStraightRun(LengthCombination.Pieces, FVector(CornerX, BackY, HeightCm), FRotator::ZeroRotator);
-	AddStraightRun(WidthCombination.Pieces, FVector(RectangleYRunXOffsetCm, CornerY, HeightCm), FRotator(0.0f, 90.0f, 0.0f));
-	AddStraightRun(WidthCombination.Pieces, FVector(RightX + RectangleYRunXOffsetCm, CornerY, HeightCm), FRotator(0.0f, 90.0f, 0.0f));
+	for (const float Y : YLines)
+	{
+		for (int32 Index = 0; Index < LengthBays; ++Index)
+		{
+			AddStraightRun(LengthCombination.Pieces, FVector(XLines[Index] + CornerX, Y, HeightCm), FRotator::ZeroRotator);
+		}
+	}
 
-	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet((2.0f * (CornerX + CornerY)) + (2.0f * LengthCombination.ActualLengthCm) + (2.0f * WidthCombination.ActualLengthCm));
+	for (const float X : XLines)
+	{
+		for (int32 Index = 0; Index < WidthBays; ++Index)
+		{
+			AddStraightRun(WidthCombination.Pieces, FVector(X + RectangleYRunXOffsetCm, YLines[Index] + CornerY, HeightCm), FRotator(0.0f, 90.0f, 0.0f));
+		}
+	}
+
+	const int32 CornerCount = (LengthBays + 1) * (WidthBays + 1);
+	const int32 LengthRunCount = LengthBays * (WidthBays + 1);
+	const int32 WidthRunCount = WidthBays * (LengthBays + 1);
+	LastBuiltLengthFt = UTrussMathLibrary::CentimetersToFeet((CornerCount * 0.5f * (CornerX + CornerY)) + (LengthRunCount * LengthCombination.ActualLengthCm) + (WidthRunCount * WidthCombination.ActualLengthCm));
 	UpdateSelectionBounds();
 }
 
@@ -653,22 +698,34 @@ void ATrussStructureActor::SetSelectionHighlighted(bool bHighlighted)
 
 bool ATrussStructureActor::GetFixtureMountTransform(const FVector& WorldHitLocation, ETrussSlingType SlingType, FTransform& OutWorldTransform) const
 {
+	FMountedFixtureDefinition FixtureDefinition;
+	if (!BuildMountedFixtureDefinition(nullptr, SlingType, WorldHitLocation, FixtureDefinition))
+	{
+		return false;
+	}
+
+	return GetFixtureMountTransformFromDefinition(FixtureDefinition, OutWorldTransform);
+}
+
+bool ATrussStructureActor::BuildMountedFixtureDefinition(TSubclassOf<AActor> FixtureClass, ETrussSlingType SlingType, const FVector& WorldHitLocation, FMountedFixtureDefinition& OutDefinition) const
+{
 	const FBox Bounds = GetGeneratedBounds();
 	if (!Bounds.IsValid)
 	{
 		return false;
 	}
 
+	OutDefinition = FMountedFixtureDefinition();
 	const FTransform ActorTransform = GetActorTransform();
 	const FVector LocalHitLocation = ActorTransform.InverseTransformPosition(WorldHitLocation);
-	FMountedFixtureDefinition FixtureDefinition;
-	FixtureDefinition.SlingType = SlingType;
-	FixtureDefinition.bUseExplicitSpan = true;
-	FixtureDefinition.FixtureSpan = GetClosestFixtureSpan(LocalHitLocation);
-	FixtureDefinition.bUseExplicitRail = true;
-	FixtureDefinition.FixtureRail = GetClosestFixtureRail(LocalHitLocation, SlingType);
-	FixtureDefinition.LocalHitLocation = LocalHitLocation;
-	return GetFixtureMountTransformFromDefinition(FixtureDefinition, OutWorldTransform);
+	OutDefinition.FixtureClass = FixtureClass;
+	OutDefinition.SlingType = SlingType;
+	OutDefinition.bUseExplicitSpan = true;
+	OutDefinition.FixtureSpan = GetClosestFixtureSpan(LocalHitLocation);
+	OutDefinition.bUseExplicitRail = true;
+	OutDefinition.FixtureRail = GetClosestFixtureRail(LocalHitLocation, SlingType);
+	OutDefinition.LocalHitLocation = LocalHitLocation;
+	return true;
 }
 
 bool ATrussStructureActor::GetFixtureMountTransformFromDefinition(const FMountedFixtureDefinition& FixtureDefinition, FTransform& OutWorldTransform) const
@@ -735,6 +792,88 @@ bool ATrussStructureActor::GetFixtureMountTransformFromDefinition(const FMounted
 	return true;
 }
 
+bool ATrussStructureActor::FindNearestRailMount(const FVector& WorldPoint, ETrussSlingType SlingType, FTransform& OutLocalTransform) const
+{
+	const FTransform ActorTransform = GetActorTransform();
+	const FTransform WorldToActor = ActorTransform.Inverse();
+	const FVector Point = ActorTransform.InverseTransformPosition(WorldPoint);
+	const bool bUnderSlung = SlingType == ETrussSlingType::UnderSlung;
+
+	float BestDistanceSquared = TNumericLimits<float>::Max();
+	bool bFound = false;
+
+	// Straight pieces only: each is a box whose long axis (mesh X) runs along the floor. Its rails are the
+	// four chords at the corners of the cross-section, pulled in by RailInsetCm like the old mount.
+	for (UInstancedStaticMeshComponent* Component : {
+		TenFootTrussInstances.Get(),
+		EightFootTrussInstances.Get(),
+		FiveFootTrussInstances.Get(),
+		FourFootTrussInstances.Get(),
+		TwoFootTrussInstances.Get()
+	})
+	{
+		if (!Component || !Component->GetStaticMesh())
+		{
+			continue;
+		}
+
+		const FBox MeshBox = Component->GetStaticMesh()->GetBounds().GetBox();
+		const FTransform ComponentToActor = Component->GetComponentTransform() * WorldToActor;
+		for (int32 InstanceIndex = 0; InstanceIndex < Component->GetInstanceCount(); ++InstanceIndex)
+		{
+			FTransform Instance;
+			if (!Component->GetInstanceTransform(InstanceIndex, Instance, false))
+			{
+				continue;
+			}
+
+			const FTransform PieceToActor = Instance * ComponentToActor;
+			const float Scale = PieceToActor.GetScale3D().X;
+			if (Scale <= KINDA_SMALL_NUMBER || FMath::Abs(PieceToActor.GetUnitAxis(EAxis::X).Z) > 0.3f)
+			{
+				continue;
+			}
+
+			const float Inset = RailInsetCm / Scale;
+			const float RailZ = bUnderSlung ? MeshBox.Min.Z + Inset : MeshBox.Max.Z - Inset;
+			const FVector PieceLocalPoint = PieceToActor.InverseTransformPosition(Point);
+			const float RailX = FMath::Clamp(PieceLocalPoint.X, MeshBox.Min.X, MeshBox.Max.X);
+			for (const float RailY : { MeshBox.Min.Y + Inset, MeshBox.Max.Y - Inset })
+			{
+				const FVector Candidate = PieceToActor.TransformPosition(FVector(RailX, RailY, RailZ));
+				const float DistanceSquared = FVector::DistSquared(Candidate, Point);
+				if (DistanceSquared < BestDistanceSquared)
+				{
+					BestDistanceSquared = DistanceSquared;
+					FQuat Rotation = PieceToActor.GetRotation();
+					if (bUnderSlung)
+					{
+						Rotation = Rotation * FQuat(FVector::XAxisVector, UE_PI);
+					}
+					OutLocalTransform = FTransform(Rotation, Candidate, FVector::OneVector);
+					bFound = true;
+				}
+			}
+		}
+	}
+
+	return bFound;
+}
+
+void ATrussStructureActor::ResnapLights()
+{
+	TArray<AActor*> AttachedActors;
+	GetAttachedActors(AttachedActors);
+	for (AActor* AttachedActor : AttachedActors)
+	{
+		if (ALightFixtureActor* Light = Cast<ALightFixtureActor>(AttachedActor))
+		{
+			Light->Modify();
+			Light->AttachToTrussAtWorldLocation(this, Light->GetActorLocation());
+		}
+	}
+}
+
 bool ATrussStructureActor::AddMountedFixtureDefinition(TSubclassOf<AActor> FixtureClass, ETrussSlingType SlingType, const FVector& WorldHitLocation, bool bRespawnFixtures)
 {
 	if (!FixtureClass)
@@ -742,14 +881,13 @@ bool ATrussStructureActor::AddMountedFixtureDefinition(TSubclassOf<AActor> Fixtu
 		return false;
 	}
 
-	FMountedFixtureDefinition& NewFixture = MountedFixtures.AddDefaulted_GetRef();
-	NewFixture.FixtureClass = FixtureClass;
-	NewFixture.SlingType = SlingType;
-	NewFixture.LocalHitLocation = GetActorTransform().InverseTransformPosition(WorldHitLocation);
-	NewFixture.bUseExplicitSpan = true;
-	NewFixture.FixtureSpan = GetClosestFixtureSpan(NewFixture.LocalHitLocation);
-	NewFixture.bUseExplicitRail = true;
-	NewFixture.FixtureRail = GetClosestFixtureRail(NewFixture.LocalHitLocation, SlingType);
+	FMountedFixtureDefinition NewFixture;
+	if (!BuildMountedFixtureDefinition(FixtureClass, SlingType, WorldHitLocation, NewFixture))
+	{
+		return false;
+	}
+
+	MountedFixtures.Add(NewFixture);
 
 	if (bRespawnFixtures)
 	{

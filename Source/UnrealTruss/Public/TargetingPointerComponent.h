@@ -13,7 +13,8 @@ enum class ETargetingPointerMode : uint8
 {
 	Disabled,
 	WorldPlacement,
-	TrussSelection
+	TrussSelection,
+	EditableSelection
 };
 
 UCLASS(ClassGroup = (UnrealTruss), BlueprintType, Blueprintable, meta = (BlueprintSpawnableComponent))
@@ -71,5 +72,6 @@ private:
 	void DrawPointerDebug(const FVector& Start, const FVector& End, bool bHitTarget) const;
 	bool TraceWorldPlacement(APlayerController* PlayerController, AActor* PrimaryIgnoredActor, AActor* SecondaryIgnoredActor, FHitResult& OutHitResult);
 	bool TraceTrussSelection(APlayerController* PlayerController, AActor* PrimaryIgnoredActor, AActor* SecondaryIgnoredActor, FHitResult& OutHitResult, ATrussStructureActor*& OutTrussActor);
+	bool TraceEditableSelection(APlayerController* PlayerController, AActor* PrimaryIgnoredActor, AActor* SecondaryIgnoredActor, FHitResult& OutHitResult);
 	void ConfigureMeshAppearance(UStaticMeshComponent* MeshComponent, const FLinearColor& Color) const;
 };

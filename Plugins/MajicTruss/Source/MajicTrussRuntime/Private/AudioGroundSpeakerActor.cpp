@@ -7,6 +7,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "MediaPlayer.h"
+#include "MediaSoundComponent.h"
 #include "Modules/ModuleManager.h"
 #include "Sound/SoundAttenuation.h"
 
@@ -41,6 +43,12 @@ AAudioGroundSpeakerActor::AAudioGroundSpeakerActor()
 	AudioEmitterComponent->bAutoActivate = false;
 	AudioEmitterComponent->bAllowSpatialization = true;
 	AudioEmitterComponent->bShouldRemainActiveIfDropped = true;
+
+	MediaAudioEmitterComponent = CreateDefaultSubobject<UMediaSoundComponent>(TEXT("MediaAudioEmitter"));
+	MediaAudioEmitterComponent->SetupAttachment(SceneRoot);
+	MediaAudioEmitterComponent->SetAutoActivate(false);
+	MediaAudioEmitterComponent->bAllowSpatialization = true;
+	VideoMediaPlayer = TSoftObjectPtr<UMediaPlayer>(FSoftObjectPath(TEXT("/Game/Video_Files/Projection_Screen.Projection_Screen")));
 
 	AudioConePreviewComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AudioConePreview"));
 	AudioConePreviewComponent->SetupAttachment(SceneRoot);
@@ -156,7 +164,11 @@ FAudioGroundSpeakerBuildDefinition AAudioGroundSpeakerActor::GetBuildDefinition(
 void AAudioGroundSpeakerActor::PlayAssignedAudio()
 {
 	UpdateAudioEmitter();
-	if (AudioEmitterComponent && AudioEmitterComponent->Sound)
+	if (PlaybackMode == EAudioPlaybackMode::ProjectorVideo && MediaAudioEmitterComponent && MediaAudioEmitterComponent->GetMediaPlayer())
+	{
+		MediaAudioEmitterComponent->Start();
+	}
+	else if (PlaybackMode == EAudioPlaybackMode::SoundAsset && AudioEmitterComponent && AudioEmitterComponent->Sound)
 	{
 		AudioEmitterComponent->Play();
 	}
@@ -167,6 +179,10 @@ void AAudioGroundSpeakerActor::StopAssignedAudio()
 	if (AudioEmitterComponent)
 	{
 		AudioEmitterComponent->Stop();
+	}
+	if (MediaAudioEmitterComponent)
+	{
+		MediaAudioEmitterComponent->Stop();
 	}
 }
 
@@ -186,6 +202,19 @@ void AAudioGroundSpeakerActor::SetAudioSource(TSoftObjectPtr<USoundBase> InAudio
 		{
 			AudioEmitterComponent->Stop();
 		}
+	}
+}
+
+void AAudioGroundSpeakerActor::SetPlaybackMode(EAudioPlaybackMode InPlaybackMode, bool bRestartIfPlaying)
+{
+	const bool bWasPlaying = (AudioEmitterComponent && AudioEmitterComponent->IsPlaying()) ||
+		(MediaAudioEmitterComponent && MediaAudioEmitterComponent->IsPlaying());
+	PlaybackMode = InPlaybackMode;
+	UpdateAudioEmitter();
+
+	if (bRestartIfPlaying && (bWasPlaying || bAutoPlayAudio))
+	{
+		PlayAssignedAudio();
 	}
 }
 
@@ -387,12 +416,14 @@ FString AAudioGroundSpeakerActor::GetSpeakerAssetFolder() const
 
 void AAudioGroundSpeakerActor::UpdateAudioEmitter()
 {
-	if (!AudioEmitterComponent)
+	if (!AudioEmitterComponent || !MediaAudioEmitterComponent)
 	{
 		return;
 	}
 
-	if (!AudioSource.IsNull())
+	const bool bUseSoundAsset = PlaybackMode == EAudioPlaybackMode::SoundAsset;
+	const bool bUseProjectorVideo = PlaybackMode == EAudioPlaybackMode::ProjectorVideo;
+	if (bUseSoundAsset && !AudioSource.IsNull())
 	{
 		USoundBase* ResolvedAudioSource = AudioSource.LoadSynchronous();
 		if (ResolvedAudioSource)
@@ -404,12 +435,10 @@ void AAudioGroundSpeakerActor::UpdateAudioEmitter()
 			}
 		}
 	}
-	else
+	else if (AudioEmitterComponent->Sound)
 	{
-		if (AudioEmitterComponent->Sound)
-		{
-			AudioEmitterComponent->SetSound(nullptr);
-		}
+		AudioEmitterComponent->Stop();
+		AudioEmitterComponent->SetSound(nullptr);
 	}
 	if (AudioEmitterComponent->Sound)
 	{
@@ -417,6 +446,14 @@ void AAudioGroundSpeakerActor::UpdateAudioEmitter()
 	}
 	AudioEmitterComponent->SetAttenuationSettings(AudioAttenuation);
 	AudioEmitterComponent->bAllowSpatialization = bSpatializeAudio;
+	MediaAudioEmitterComponent->AttenuationSettings = AudioAttenuation;
+	MediaAudioEmitterComponent->bAllowSpatialization = bSpatializeAudio;
+	UMediaPlayer* ResolvedMediaPlayer = bUseProjectorVideo ? VideoMediaPlayer.LoadSynchronous() : nullptr;
+	if (MediaAudioEmitterComponent->GetMediaPlayer() != ResolvedMediaPlayer)
+	{
+		MediaAudioEmitterComponent->Stop();
+		MediaAudioEmitterComponent->SetMediaPlayer(ResolvedMediaPlayer);
+	}
 	float ResolvedFullVolumeRadiusFt = AudioFullVolumeRadiusFt;
 	float ResolvedConeAngleDegrees = AudioConeAngleDegrees;
 	bool bUseConeForCurrentMode = bUseDirectionalAudioCone;
@@ -447,13 +484,19 @@ void AAudioGroundSpeakerActor::UpdateAudioEmitter()
 		AttenuationSettings.StereoSpread = 0.0f;
 		AudioEmitterComponent->SetOverrideAttenuation(true);
 		AudioEmitterComponent->AdjustAttenuation(AttenuationSettings);
+		MediaAudioEmitterComponent->bOverrideAttenuation = true;
+		MediaAudioEmitterComponent->AttenuationOverrides = AttenuationSettings;
 	}
 	else
 	{
 		AudioEmitterComponent->SetOverrideAttenuation(false);
+		MediaAudioEmitterComponent->bOverrideAttenuation = false;
 	}
-	AudioEmitterComponent->SetRelativeLocation(SpeakerPlacementOffsetCm + AudioSourceOffsetCm + FVector(0.0f, 0.0f, CurrentStandExtensionCm));
+	const FVector ResolvedAudioLocation = SpeakerPlacementOffsetCm + AudioSourceOffsetCm + FVector(0.0f, 0.0f, CurrentStandExtensionCm);
+	AudioEmitterComponent->SetRelativeLocation(ResolvedAudioLocation);
 	AudioEmitterComponent->SetRelativeRotation(AudioSourceRotation);
+	MediaAudioEmitterComponent->SetRelativeLocation(ResolvedAudioLocation);
+	MediaAudioEmitterComponent->SetRelativeRotation(AudioSourceRotation);
 	UpdateAudioConePreview(ResolvedFullVolumeRadiusFt, ResolvedConeAngleDegrees, bUseConeForCurrentMode);
 }
 

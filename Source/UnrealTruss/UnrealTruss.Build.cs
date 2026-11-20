@@ -21,7 +21,8 @@ public class UnrealTruss : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new[]
 		{
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"DMXRuntime"
 		});
 	}
 }

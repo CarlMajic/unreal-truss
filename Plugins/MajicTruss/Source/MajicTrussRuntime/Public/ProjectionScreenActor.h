@@ -8,6 +8,8 @@
 class UBoxComponent;
 class UChildActorComponent;
 class UMaterialInterface;
+class UMediaPlayer;
+class UMediaSource;
 class USpotLightComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
@@ -110,6 +112,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projection")
 	TObjectPtr<UBoxComponent> SelectionBounds;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projection")
+	TObjectPtr<UBoxComponent> ScreenSelectionBounds;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projection|Generated")
 	TObjectPtr<UChildActorComponent> ScreenKitComponent;
 
@@ -118,6 +123,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projection|Generated")
 	TObjectPtr<UStaticMeshComponent> ScreenCenterMarkerComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projection|Generated")
+	TObjectPtr<UStaticMeshComponent> VideoSurfaceComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection")
 	EProjectionScreenKitSize ScreenKitSize = EProjectionScreenKitSize::Screen9x16;
@@ -233,6 +241,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Visualization", meta = (Units = "cm"))
 	FVector ProjectionLightTargetOffsetCm = FVector::ZeroVector;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video")
+	bool bShowVideoSurface = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video")
+	bool bAutoPlayVideo = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video")
+	bool bLoopVideo = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video", meta = (DisplayName = "Client Video File", FilePathFilter = "Video files (*.mp4;*.mov;*.webm)|*.mp4;*.mov;*.webm"))
+	FFilePath ClientVideoFile;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video", meta = (AllowedClasses = "/Script/MediaAssets.MediaSource"))
+	TSoftObjectPtr<UMediaSource> VideoSource;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video", meta = (AllowedClasses = "/Script/MediaAssets.MediaPlayer"))
+	TSoftObjectPtr<UMediaPlayer> VideoMediaPlayer;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video")
+	TObjectPtr<UMaterialInterface> VideoSurfaceMaterial = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video", meta = (Units = "cm"))
+	FVector VideoSurfaceOffsetCm = FVector(0.0f, -1.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video")
+	FRotator VideoSurfaceRotation = FRotator(0.0f, 0.0f, 90.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projection|Video")
+	FVector VideoSurfaceScaleMultiplier = FVector::OneVector;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projection|Debug", meta = (DisplayName = "Min Throw Distance (ft)"))
 	float CurrentMinThrowDistanceFt = 0.0f;
 
@@ -305,7 +343,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Projection")
 	void SetSelectionHighlighted(bool bHighlighted);
 
+	UFUNCTION(BlueprintCallable, Category = "Projection|Video")
+	void PlayProjectionVideo();
+
+	UFUNCTION(BlueprintCallable, Category = "Projection|Video")
+	void PauseProjectionVideo();
+
+	UFUNCTION(BlueprintCallable, Category = "Projection|Video")
+	void StopProjectionVideo();
+
+	UFUNCTION(BlueprintPure, Category = "Projection|Video")
+	UMediaPlayer* GetResolvedVideoMediaPlayer() const;
+
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void BeginPlay() override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -323,6 +374,7 @@ private:
 	void BuildTrussTowerSupport(const FVector& ProjectorLocation);
 	void AddTrussTowerPiece(ETrussPieceType PieceType, const FVector& TargetMinLocation, const FRotator& Rotation);
 	void AddStaticMeshComponent(TArray<TObjectPtr<UStaticMeshComponent>>& ComponentArray, UStaticMesh* Mesh, const FString& NamePrefix, const FVector& Location, const FRotator& Rotation, const FVector& Scale, bool bDisallowNanite = true);
+	void UpdateVideoSurface(const FVector& ScreenCenterLocation);
 	void UpdateProjectionLight(const FVector& ProjectorLocation, const FVector& ScreenCenterLocation);
 	void UpdateScreenCenterMarker(const FVector& ScreenCenterLocation);
 	void UpdateSelectionBounds();
@@ -335,6 +387,7 @@ private:
 	UClass* LoadScreenKitClass() const;
 	TArray<UStaticMesh*> LoadChristieProjectorMeshes() const;
 	TArray<UStaticMesh*> LoadAVCartMeshes() const;
+	UStaticMesh* LoadVideoSurfaceMesh() const;
 	UStaticMesh* LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const;
 	void GetPieceDefinition(ETrussPieceType PieceType, UStaticMesh*& OutMesh, float& OutLengthCm) const;
 	FVector GetTrussMeshPlacementLocation(UStaticMesh* StaticMesh, const FVector& TargetMinLocation, const FRotator& Rotation) const;

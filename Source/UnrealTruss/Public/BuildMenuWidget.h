@@ -3,6 +3,10 @@
 #include "BuildItemDataAsset.h"
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "BarLayoutActor.h"
+#include "BarSeatingActor.h"
+#include "CafeTableActor.h"
+#include "DiningTableActor.h"
 #include "DrapeRunActor.h"
 #include "LoungeLayoutActor.h"
 #include "MBPWallActor.h"
@@ -12,6 +16,7 @@
 #include "VideoPlacementActor.h"
 #include "VideoWallActor.h"
 #include "ProjectionScreenActor.h"
+#include "SectionalLayoutActor.h"
 #include "BuildMenuWidget.generated.h"
 
 class UBuildItemDataAsset;
@@ -19,10 +24,13 @@ class UBuildManagerComponent;
 class UButton;
 class UCheckBox;
 class UHorizontalBox;
+class UPanelWidget;
 class UWhiteComboBoxString;
+class USlider;
 class USpinBox;
 class UScrollBox;
 class UTextBlock;
+class UUniformGridPanel;
 class UVerticalBox;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBuildMenuSelectionChanged, UBuildItemDataAsset*, SelectedItem);
@@ -48,7 +56,7 @@ class UNREALTRUSS_API UBuildMenuItemButtonProxy : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(class UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem);
+	void Initialize(class UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem, bool bInHasFurnitureSeatingTypeOverride = false, EFurnitureSeatingRuntimeType InFurnitureSeatingType = EFurnitureSeatingRuntimeType::BarSeating);
 
 	UFUNCTION()
 	void HandleClicked();
@@ -56,6 +64,8 @@ public:
 private:
 	TWeakObjectPtr<class UBuildMenuWidget> Owner;
 	TWeakObjectPtr<UBuildItemDataAsset> BuildItem;
+	bool bHasFurnitureSeatingTypeOverride = false;
+	EFurnitureSeatingRuntimeType FurnitureSeatingType = EFurnitureSeatingRuntimeType::BarSeating;
 };
 
 UCLASS()
@@ -70,11 +80,22 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Build Menu")
 	FBuildMenuActionRequested OnActionRequested;
 
+	UPROPERTY(BlueprintAssignable, Category = "Build Menu")
+	FBuildMenuActionRequested OnMoveRequested;
+
+	UPROPERTY(BlueprintAssignable, Category = "Build Menu")
+	FBuildMenuActionRequested OnRotateRequested;
+
+	UPROPERTY(BlueprintAssignable, Category = "Build Menu")
+	FBuildMenuActionRequested OnDeleteRequested;
+
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuildItems);
 
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem);
+
+	void SetSelectedFurnitureSeatingBuildItem(UBuildItemDataAsset* InSelectedItem, EFurnitureSeatingRuntimeType SeatingType);
 
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetBuildManager(UBuildManagerComponent* InBuildManager);
@@ -111,6 +132,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	FLoungeLayoutBuildDefinition GetCurrentLoungeLayoutDefinition() const;
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FSectionalLayoutBuildDefinition GetCurrentSectionalLayoutDefinition() const;
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FFurnitureSeatingBuildDefinition GetCurrentFurnitureSeatingDefinition() const;
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FBarLayoutBuildDefinition GetCurrentBarLayoutDefinition() const;
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	FDiningTableBuildDefinition GetCurrentDiningTableDefinition() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Build Menu")
 	void SetEditingTarget(class ATrussStructureActor* InEditingTarget);
@@ -172,11 +205,47 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	class ALoungeLayoutActor* GetEditingLoungeTarget() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingSectionalTarget(class ASectionalLayoutActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class ASectionalLayoutActor* GetEditingSectionalTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingFurnitureSeatingTarget(class AActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class AActor* GetEditingFurnitureSeatingTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingBarLayoutTarget(class ABarLayoutActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class ABarLayoutActor* GetEditingBarLayoutTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingDiningTableTarget(class ADiningTableActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class ADiningTableActor* GetEditingDiningTableTarget() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Build Menu")
+	void SetEditingLightTarget(class ALightFixtureActor* InEditingTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class ALightFixtureActor* GetEditingLightTarget() const;
+
+	void SetLightingFixtureOptions(const TArray<FString>& InNames, const TArray<TSubclassOf<AActor>>& InClasses);
+
+	UFUNCTION(BlueprintPure, Category = "Build Menu")
+	class AActor* GetEditingActor() const;
+
 	UFUNCTION(BlueprintPure, Category = "Build Menu")
 	bool ShouldShowPointerForCurrentEdit() const;
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativeConstruct() override;
 
 private:
 	UPROPERTY(Transient)
@@ -213,6 +282,18 @@ private:
 	FLoungeLayoutBuildDefinition CurrentLoungeLayoutDefinition;
 
 	UPROPERTY(Transient)
+	FSectionalLayoutBuildDefinition CurrentSectionalLayoutDefinition;
+
+	UPROPERTY(Transient)
+	FFurnitureSeatingBuildDefinition CurrentFurnitureSeatingDefinition;
+
+	UPROPERTY(Transient)
+	FBarLayoutBuildDefinition CurrentBarLayoutDefinition;
+
+	UPROPERTY(Transient)
+	FDiningTableBuildDefinition CurrentDiningTableDefinition;
+
+	UPROPERTY(Transient)
 	TSoftObjectPtr<class USoundBase> CurrentAudioSource;
 
 	UPROPERTY(Transient)
@@ -223,6 +304,27 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UScrollBox> RootScrollBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UScrollBox> DesignerBuildGridScroll = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUniformGridPanel> DesignerBuildGrid = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DesignerCategoryTitleText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DesignerSelectedValueText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USlider> DesignerRotationSlider = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> DesignerConfirmButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> DesignerCancelButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UHorizontalBox> TabButtonBox = nullptr;
@@ -255,6 +357,12 @@ private:
 	TObjectPtr<UButton> LoungeTabButton = nullptr;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UButton> SeatingTabButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> BarTabButton = nullptr;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HeaderText = nullptr;
 
 	UPROPERTY(Transient)
@@ -265,6 +373,18 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ActionButtonText = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> EditActorActionBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> MoveActorButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> RotateActorButton = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> DeleteActorButton = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ModeLabelText = nullptr;
@@ -419,10 +539,35 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ALoungeLayoutActor> EditingLoungeTarget = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<ASectionalLayoutActor> EditingSectionalTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class ABarSeatingActor> EditingBarSeatingTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class ACafeTableActor> EditingCafeTableTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ABarLayoutActor> EditingBarLayoutTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ADiningTableActor> EditingDiningTableTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ALightFixtureActor> EditingLightTarget = nullptr;
+
+	UPROPERTY(Transient)
+	TArray<TSubclassOf<AActor>> LightingFixtureClasses;
+
+	TArray<FString> LightingFixtureNames;
+	TMap<FString, FSoftObjectPath> GoboTexturePathsByOption;
+
 	TArray<FString> AudioSourceOptions;
 	TMap<FString, FSoftObjectPath> AudioSourcePathsByOption;
 
 	bool bRefreshingControls = false;
+	bool bUsesDesignerWidgetTree = false;
 	EBuildItemType ActiveMenuTab = EBuildItemType::TrussStructure;
 	EMBPRuntimeEditScope CurrentMBPEditScope = EMBPRuntimeEditScope::Panel;
 	int32 CurrentMBPEditTargetRow = 0;
@@ -434,11 +579,18 @@ private:
 	bool bCurrentStageCellEnabled = true;
 	EStageDeckHeightPreset CurrentStageCellHeightPreset = EStageDeckHeightPreset::In24;
 	EStageDeckSurfaceStyle CurrentStageCellSurfaceStyle = EStageDeckSurfaceStyle::BlackTop;
+	float DesignerLastRotationSliderValue = 0.0f;
 
 	void RebuildItemButtons();
+	void BindDesignerWidgetTree();
+	void CreateDesignerControlPanel(UVerticalBox* PanelBody);
+	UButton* FindDesignerTabInnerButton(const FName& WidgetName) const;
+	void SetDesignerTabLabel(const FName& WidgetName, const FText& LabelText) const;
+	void RefreshDesignerSummary();
 	FText BuildDetailText() const;
 	FText BuildHeaderText() const;
 	FText BuildActionButtonText() const;
+	bool IsEditingAnyActor() const;
 	bool IsEditingMBP() const;
 	bool IsEditingStage() const;
 	bool IsEditingDrape() const;
@@ -447,7 +599,12 @@ private:
 	bool IsEditingProjection() const;
 	bool IsEditingAudio() const;
 	bool IsEditingLounge() const;
+	bool IsEditingSectional() const;
+	bool IsEditingFurnitureSeating() const;
+	bool IsEditingBarLayout() const;
+	bool IsEditingDiningTable() const;
 	void RefreshTabButtons();
+	void RefreshEditActorActionButtons();
 	void RefreshTrussControls();
 	void RefreshMBPControls();
 	void RefreshStageControls();
@@ -456,7 +613,16 @@ private:
 	void RefreshVideoWallControls();
 	void RefreshProjectionControls();
 	void RefreshAudioControls();
+	void RefreshLightingControls();
+	void CreateLightingControlPanel(UVerticalBox* Parent);
+	void ApplyLightingControlValue(int32 SlotIndex, float NormalizedValue);
+	void UpdateLightingColorSwatch() const;
+	void RefreshGoboPreview(const FString& Option) const;
 	void RefreshLoungeControls();
+	void RefreshSectionalControls();
+	void RefreshFurnitureSeatingControls();
+	void RefreshBarLayoutControls();
+	void RefreshDiningTableControls();
 	void ApplyTrussDefinitionToBuildManager();
 	void ApplyMBPDefinitionToBuildManager();
 	void ApplyStageDefinitionToBuildManager();
@@ -466,6 +632,10 @@ private:
 	void ApplyProjectionDefinitionToBuildManager();
 	void ApplyAudioDefinitionToBuildManager();
 	void ApplyLoungeDefinitionToBuildManager();
+	void ApplySectionalDefinitionToBuildManager();
+	void ApplyFurnitureSeatingDefinitionToBuildManager();
+	void ApplyBarLayoutDefinitionToBuildManager();
+	void ApplyDiningTableDefinitionToBuildManager();
 	void ApplyMBPEditToTarget();
 	void ApplyStageEditToTarget();
 	void ApplyDrapeEditToTarget();
@@ -474,6 +644,10 @@ private:
 	void ApplyProjectionEditToTarget();
 	void ApplyAudioEditToTarget();
 	void ApplyLoungeEditToTarget();
+	void ApplySectionalEditToTarget();
+	void ApplyFurnitureSeatingEditToTarget();
+	void ApplyBarLayoutEditToTarget();
+	void ApplyDiningTableEditToTarget();
 	void SyncCurrentStageCellFromTarget();
 	void RefreshAudioSourceOptions();
 	FString AudioSourceToOption(const TSoftObjectPtr<USoundBase>& AudioSource) const;
@@ -507,6 +681,20 @@ private:
 	static EProjectionLensType OptionToProjectionLens(const FString& Option);
 	static FString AudioPlacementTypeToOption(EAudioPlacementRuntimeType PlacementType);
 	static EAudioPlacementRuntimeType OptionToAudioPlacementType(const FString& Option);
+	static FString SectionalShapeToOption(ESectionalLayoutShape Shape);
+	static ESectionalLayoutShape OptionToSectionalShape(const FString& Option);
+	static FString FurnitureSeatingTypeToOption(EFurnitureSeatingRuntimeType SeatingType);
+	static EFurnitureSeatingRuntimeType OptionToFurnitureSeatingType(const FString& Option);
+	static FString BarSeatingLayoutToOption(EBarSeatingStoolLayout Layout);
+	static EBarSeatingStoolLayout OptionToBarSeatingLayout(const FString& Option);
+	static FString CafeTableLayoutToOption(ECafeTableChairLayout Layout);
+	static ECafeTableChairLayout OptionToCafeTableLayout(const FString& Option);
+	static FString DiningChairCountToOption(EDiningChairCount ChairCount);
+	static EDiningChairCount OptionToDiningChairCount(const FString& Option);
+	static FString DiningChairArrangementToOption(EDiningChairArrangement Arrangement);
+	static EDiningChairArrangement OptionToDiningChairArrangement(const FString& Option);
+	static FString BarLayoutShapeToOption(EBarLayoutShape Shape);
+	static EBarLayoutShape OptionToBarLayoutShape(const FString& Option);
 	static FString AudioSpeakerModelToOption(EAudioGroundSpeakerModel SpeakerModel);
 	static EAudioGroundSpeakerModel OptionToAudioSpeakerModel(const FString& Option);
 	static FString AudioLineArrayModelToOption(EAudioGroundLineArrayModel LineArrayModel);
@@ -543,7 +731,19 @@ private:
 	void HandleLoungeTabClicked();
 
 	UFUNCTION()
+	void HandleSeatingTabClicked();
+
+	UFUNCTION()
+	void HandleBarTabClicked();
+
+	UFUNCTION()
 	void HandleModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	void HandleGoboChanged(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+	UFUNCTION()
+	UWidget* CreateGoboOptionWidget(FString Item);
 
 	UFUNCTION()
 	void HandlePrimaryValueChanged(float NewValue);
@@ -604,4 +804,19 @@ private:
 
 	UFUNCTION()
 	void HandleActionButtonClicked();
+
+	UFUNCTION()
+	void HandleMoveActorButtonClicked();
+
+	UFUNCTION()
+	void HandleRotateActorButtonClicked();
+
+	UFUNCTION()
+	void HandleDeleteActorButtonClicked();
+
+	UFUNCTION()
+	void HandleDesignerCancelClicked();
+
+	UFUNCTION()
+	void HandleDesignerRotationChanged(float NewValue);
 };

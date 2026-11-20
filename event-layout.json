@@ -1,0 +1,256 @@
+{
+  "format": "majic-event-layout",
+  "version": 1,
+  "event": {},
+  "items": [
+    {
+      "id": "drape-5527",
+      "type": "drape",
+      "name": "Drape 40 ft x 12 ft",
+      "position": {
+        "x_ft": -7.6404,
+        "y_ft": 17.9991,
+        "rotation_deg": 0.0
+      },
+      "params": {
+        "kind": "regular",
+        "length_ft": 40.0,
+        "height_ft": 12.0,
+        "fabric": true,
+        "hardware": true
+      }
+    },
+    {
+      "id": "mbp-1edf",
+      "type": "mbp_wall",
+      "name": "MBP Wall 15x12ft",
+      "position": {
+        "x_ft": 4.0617,
+        "y_ft": 16.0464,
+        "rotation_deg": -90.0
+      },
+      "params": {
+        "version": 1,
+        "width_ft": 15,
+        "height_ft": 12,
+        "support_spacing": "every_other",
+        "left_cap": false,
+        "right_cap": false,
+        "cells": [
+          {
+            "row": 0,
+            "col": 0,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 0,
+            "col": 1,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 0,
+            "col": 2,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 0,
+            "col": 3,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 0,
+            "col": 4,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 1,
+            "col": 0,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 1,
+            "col": 1,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 1,
+            "col": 2,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 1,
+            "col": 3,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 1,
+            "col": 4,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 2,
+            "col": 0,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 2,
+            "col": 1,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 2,
+            "col": 2,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 2,
+            "col": 3,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 2,
+            "col": 4,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 3,
+            "col": 0,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 3,
+            "col": 1,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 3,
+            "col": 2,
+            "style": "geowall",
+            "depth_in": 12
+          },
+          {
+            "row": 3,
+            "col": 3,
+            "style": "platinum",
+            "depth_in": 0
+          },
+          {
+            "row": 3,
+            "col": 4,
+            "style": "geowall",
+            "depth_in": 12
+          }
+        ]
+      }
+    },
+    {
+      "id": "stage-c090",
+      "type": "stage",
+      "name": "Stage Deck",
+      "position": {
+        "x_ft": 0.0,
+        "y_ft": 0.0,
+        "rotation_deg": 0.0
+      },
+      "params": {
+        "columns": 3,
+        "rows": 3,
+        "cells": [
+          {
+            "row": 0,
+            "col": 0,
+            "height_in": 12
+          },
+          {
+            "row": 0,
+            "col": 1,
+            "height_in": 12
+          },
+          {
+            "row": 0,
+            "col": 2,
+            "height_in": 12
+          },
+          {
+            "row": 1,
+            "col": 0,
+            "height_in": 20
+          },
+          {
+            "row": 1,
+            "col": 1,
+            "height_in": 20
+          },
+          {
+            "row": 1,
+            "col": 2,
+            "height_in": 20
+          },
+          {
+            "row": 2,
+            "col": 0,
+            "height_in": 20
+          },
+          {
+            "row": 2,
+            "col": 1,
+            "height_in": 20
+          },
+          {
+            "row": 2,
+            "col": 2,
+            "height_in": 20
+          }
+        ],
+        "railings": {
+          "front": false,
+          "back": false,
+          "left": false,
+          "right": false
+        },
+        "steps": [
+          {
+            "side": "right",
+            "style": "stage_right"
+          }
+        ],
+        "skirt": true,
+        "surface": "black_top"
+      }
+    },
+    {
+      "id": "truss-2c85",
+      "type": "truss",
+      "name": "Rectangle 40.0 ft x 16.0 ft",
+      "position": {
+        "x_ft": -7.1187,
+        "y_ft": -27.0833,
+        "rotation_deg": 0.0
+      },
+      "params": {
+        "shape": "rectangle",
+        "length_ft": 40.0,
+        "width_ft": 16.0,
+        "length_bays": 2,
+        "width_bays": 1
+      }
+    }
+  ]
+}

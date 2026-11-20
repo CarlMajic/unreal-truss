@@ -2,7 +2,11 @@
 
 #include "AudioGroundLineArrayActor.h"
 #include "AudioGroundSpeakerActor.h"
+#include "BarLayoutActor.h"
+#include "BarSeatingActor.h"
 #include "BuildPreviewActor.h"
+#include "CafeTableActor.h"
+#include "DiningTableActor.h"
 #include "DrapeRunActor.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -13,6 +17,7 @@
 #include "VideoPlacementActor.h"
 #include "VideoWallActor.h"
 #include "ProjectionScreenActor.h"
+#include "SectionalLayoutActor.h"
 
 UBuildManagerComponent::UBuildManagerComponent()
 {
@@ -29,6 +34,7 @@ void UBuildManagerComponent::ExitBuildMode()
 {
 	bBuildModeActive = false;
 	bHasValidPlacement = false;
+	bPreviewOnlyMode = false;
 	DestroyPreviewActor();
 }
 
@@ -44,6 +50,10 @@ bool UBuildManagerComponent::SetSelectedBuildItem(UBuildItemDataAsset* BuildItem
 	ActiveProjectionScreenDefinition = BuildItem ? BuildItem->DefaultProjectionScreenDefinition : FProjectionScreenBuildDefinition();
 	ActiveAudioPlacementDefinition = BuildItem ? BuildItem->DefaultAudioPlacementDefinition : FAudioPlacementBuildDefinition();
 	ActiveLoungeLayoutDefinition = BuildItem ? BuildItem->DefaultLoungeLayoutDefinition : FLoungeLayoutBuildDefinition();
+	ActiveSectionalLayoutDefinition = BuildItem ? BuildItem->DefaultSectionalLayoutDefinition : FSectionalLayoutBuildDefinition();
+	ActiveFurnitureSeatingDefinition = BuildItem ? BuildItem->DefaultFurnitureSeatingDefinition : FFurnitureSeatingBuildDefinition();
+	ActiveBarLayoutDefinition = BuildItem ? BuildItem->DefaultBarLayoutDefinition : FBarLayoutBuildDefinition();
+	ActiveDiningTableDefinition = BuildItem ? BuildItem->DefaultDiningTableDefinition : FDiningTableBuildDefinition();
 	CurrentYawDegrees = 0.0f;
 
 	if (!bBuildModeActive)
@@ -156,6 +166,47 @@ void UBuildManagerComponent::SetActiveLoungeLayoutDefinition(const FLoungeLayout
 	}
 }
 
+void UBuildManagerComponent::SetActiveSectionalLayoutDefinition(const FSectionalLayoutBuildDefinition& Definition)
+{
+	ActiveSectionalLayoutDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveFurnitureSeatingDefinition(const FFurnitureSeatingBuildDefinition& Definition)
+{
+	ActiveFurnitureSeatingDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ActivePreviewActor->SetPreviewActorClass(ResolveBuildActorClass());
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveBarLayoutDefinition(const FBarLayoutBuildDefinition& Definition)
+{
+	ActiveBarLayoutDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
+void UBuildManagerComponent::SetActiveDiningTableDefinition(const FDiningTableBuildDefinition& Definition)
+{
+	ActiveDiningTableDefinition = Definition;
+
+	if (ActivePreviewActor)
+	{
+		ApplyCurrentSettingsToActor(ActivePreviewActor->GetPreviewActor());
+	}
+}
+
 bool UBuildManagerComponent::UpdatePreviewFromPlayerView(APlayerController* PlayerController)
 {
 	if (!bBuildModeActive || !PlayerController || !SelectedBuildItem)
@@ -196,6 +247,22 @@ bool UBuildManagerComponent::UpdatePreviewFromPlayerView(APlayerController* Play
 		PlacementLocation = SnapLocation(PlacementLocation, SelectedBuildItem->GridSnapSizeCm);
 	}
 
+	if (bSuppressPreviewAtLastPlacement)
+	{
+		constexpr float PreviewResumeDistanceCm = 25.0f;
+		if (FVector::DistSquared(PlacementLocation, LastConfirmedPlacementLocation) <= FMath::Square(PreviewResumeDistanceCm))
+		{
+			bHasValidPlacement = false;
+			if (ActivePreviewActor)
+			{
+				ActivePreviewActor->SetActorHiddenInGame(true);
+			}
+			return false;
+		}
+
+		bSuppressPreviewAtLastPlacement = false;
+	}
+
 	const FRotator PlacementRotation = MakePlacementRotation(HitResult.ImpactNormal);
 	CurrentPlacementTransform = FTransform(PlacementRotation, PlacementLocation);
 	bHasValidPlacement = true;
@@ -227,7 +294,7 @@ FBuildPlacementResult UBuildManagerComponent::ConfirmPlacement()
 {
 	FBuildPlacementResult Result;
 
-	if (!bBuildModeActive || !SelectedBuildItem || !bHasValidPlacement)
+	if (!bBuildModeActive || bPreviewOnlyMode || !SelectedBuildItem || !bHasValidPlacement)
 	{
 		return Result;
 	}
@@ -243,6 +310,16 @@ FBuildPlacementResult UBuildManagerComponent::ConfirmPlacement()
 	AActor* SpawnedActor = SpawnBuildActor(CurrentPlacementTransform);
 	Result.bSuccess = SpawnedActor != nullptr;
 	Result.SpawnedActor = SpawnedActor;
+	if (Result.bSuccess)
+	{
+		LastConfirmedPlacementLocation = CurrentPlacementTransform.GetLocation();
+		bSuppressPreviewAtLastPlacement = true;
+		bHasValidPlacement = false;
+		if (ActivePreviewActor)
+		{
+			ActivePreviewActor->SetActorHiddenInGame(true);
+		}
+	}
 	return Result;
 }
 
@@ -425,6 +502,47 @@ void UBuildManagerComponent::ApplyCurrentSettingsToActor(AActor* Actor) const
 			LoungeActor->ApplyBuildDefinition(ActiveLoungeLayoutDefinition, true);
 		}
 	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+	{
+		if (ASectionalLayoutActor* SectionalActor = Cast<ASectionalLayoutActor>(Actor))
+		{
+			SectionalActor->bBuildOnConstruction = false;
+			SectionalActor->ApplyBuildDefinition(ActiveSectionalLayoutDefinition, true);
+		}
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::FurnitureSeating)
+	{
+		if (ABarSeatingActor* BarSeatingActor = Cast<ABarSeatingActor>(Actor))
+		{
+			BarSeatingActor->bBuildOnConstruction = false;
+			BarSeatingActor->ApplyBuildDefinition(ActiveFurnitureSeatingDefinition.BarSeatingDefinition, true);
+		}
+		else if (ACafeTableActor* CafeTableActor = Cast<ACafeTableActor>(Actor))
+		{
+			CafeTableActor->bBuildOnConstruction = false;
+			CafeTableActor->ApplyBuildDefinition(ActiveFurnitureSeatingDefinition.CafeTableDefinition, true);
+		}
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::BarLayout)
+	{
+		if (ABarLayoutActor* BarLayoutActor = Cast<ABarLayoutActor>(Actor))
+		{
+			BarLayoutActor->bBuildOnConstruction = false;
+			BarLayoutActor->ApplyBuildDefinition(ActiveBarLayoutDefinition, true);
+		}
+	}
+
+	if (SelectedBuildItem->ItemType == EBuildItemType::DiningTable)
+	{
+		if (ADiningTableActor* DiningTableActor = Cast<ADiningTableActor>(Actor))
+		{
+			DiningTableActor->bBuildOnConstruction = false;
+			DiningTableActor->ApplyBuildDefinition(ActiveDiningTableDefinition, true);
+		}
+	}
 }
 
 AActor* UBuildManagerComponent::SpawnBuildActor(const FTransform& SpawnTransform) const
@@ -476,6 +594,13 @@ TSubclassOf<AActor> UBuildManagerComponent::ResolveBuildActorClass() const
 		return ActiveAudioPlacementDefinition.PlacementType == EAudioPlacementRuntimeType::GroundLineArray
 			? AAudioGroundLineArrayActor::StaticClass()
 			: AAudioGroundSpeakerActor::StaticClass();
+	}
+
+	if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::FurnitureSeating)
+	{
+		return ActiveFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable
+			? ACafeTableActor::StaticClass()
+			: ABarSeatingActor::StaticClass();
 	}
 
 	return SelectedBuildItem ? SelectedBuildItem->BuildActorClass : nullptr;

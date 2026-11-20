@@ -37,7 +37,7 @@ a wall.
 | Stage heights | The file's 20 in deck uses Unreal's "24 in" preset, and back again on export. 27.5 in uses "27 in". |
 | Stage steps | Unreal has only the Stage Right steps (black carpet is noted and ignored) and always puts the stairs on the last row (the back), not the front row. |
 | Stage skirt | `skirt: true` turns on Unreal's automatic skirt and turns off its debug single skirt. |
-| Truss | T-top towers are built as plain towers; `length_bays`/`width_bays` are ignored. |
+| Truss | T-top towers are built as plain towers. Rectangles take `length_bays`/`width_bays` (center support lines, 1 to 20 each); lights snap to any run, including the center runs (see free light mounting in the truss actor). |
 | Drape | Control drapes are skipped (and kept in the file); height is clamped to 6 to 18.33 ft. |
 | MBP | Custom panels have no web style and are left out on export. Rows other than 3 ft high are not supported by the importer. |
 

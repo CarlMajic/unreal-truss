@@ -8,6 +8,10 @@
 class ABuildPreviewActor;
 class AAudioGroundLineArrayActor;
 class AAudioGroundSpeakerActor;
+class ABarLayoutActor;
+class ABarSeatingActor;
+class ACafeTableActor;
+class ADiningTableActor;
 class ADrapeRunActor;
 class ALoungeLayoutActor;
 class AMBPWallActor;
@@ -17,6 +21,7 @@ class ATrussStructureActor;
 class AVideoPlacementActor;
 class AVideoWallActor;
 class AProjectionScreenActor;
+class ASectionalLayoutActor;
 
 USTRUCT(BlueprintType)
 struct FBuildPlacementResult
@@ -84,6 +89,18 @@ public:
 	FLoungeLayoutBuildDefinition ActiveLoungeLayoutDefinition;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FSectionalLayoutBuildDefinition ActiveSectionalLayoutDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FFurnitureSeatingBuildDefinition ActiveFurnitureSeatingDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FBarLayoutBuildDefinition ActiveBarLayoutDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
+	FDiningTableBuildDefinition ActiveDiningTableDefinition;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Build")
 	TObjectPtr<ATrussStructureActor> EditingTrussActor = nullptr;
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -123,6 +140,20 @@ public:
 	void SetActiveLoungeLayoutDefinition(const FLoungeLayoutBuildDefinition& Definition);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveSectionalLayoutDefinition(const FSectionalLayoutBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveFurnitureSeatingDefinition(const FFurnitureSeatingBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveBarLayoutDefinition(const FBarLayoutBuildDefinition& Definition);
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
+	void SetActiveDiningTableDefinition(const FDiningTableBuildDefinition& Definition);
+
+	void SetPreviewOnlyMode(bool bInPreviewOnlyMode) { bPreviewOnlyMode = bInPreviewOnlyMode; }
+
+	UFUNCTION(BlueprintCallable, Category = "Build")
 	bool UpdatePreviewFromPlayerView(APlayerController* PlayerController);
 
 	UFUNCTION(BlueprintCallable, Category = "Build")
@@ -153,6 +184,9 @@ private:
 	FTransform CurrentPlacementTransform = FTransform::Identity;
 	float CurrentYawDegrees = 0.0f;
 	bool bHasValidPlacement = false;
+	bool bPreviewOnlyMode = false;
+	bool bSuppressPreviewAtLastPlacement = false;
+	FVector LastConfirmedPlacementLocation = FVector::ZeroVector;
 
 	bool EnsurePreviewActor();
 	void DestroyPreviewActor();

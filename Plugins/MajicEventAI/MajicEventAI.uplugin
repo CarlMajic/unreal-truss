@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Majic Event AI",
+	"Description": "Event simulation system for live events — NPC crowds, behavioral phases, and smart object interaction.",
+	"Category": "Majic",
+	"CreatedBy": "Majic",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"Plugins": [
+		{ "Name": "SmartObjects", "Enabled": true },
+		{ "Name": "GameplayBehaviors", "Enabled": true },
+		{ "Name": "GameplayBehaviorSmartObjects", "Enabled": true },
+		{ "Name": "MajicTruss", "Enabled": true }
+	],
+	"Modules": [
+		{
+			"Name": "MajicEventAIRuntime",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

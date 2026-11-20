@@ -12,17 +12,31 @@
 #include "Components/ComboBoxString.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
+#include "Components/Slider.h"
+#include "Components/Spacer.h"
 #include "Components/SpinBox.h"
 #include "Components/TextBlock.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "DiningTableActor.h"
+#include "DMXAttribute.h"
+#include "Engine/Texture2D.h"
+#include "Game/DMXComponent.h"
+#include "LightFixtureActor.h"
+#include "Library/DMXEntityFixturePatch.h"
+#include "Library/DMXEntityFixtureType.h"
+#include "Library/DMXLibrary.h"
 #include "StageDeckActor.h"
 #include "TrussMathLibrary.h"
 #include "TrussStructureActor.h"
 #include "WhiteComboBoxString.h"
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/UserWidget.h"
 #include "Sound/SoundBase.h"
 
 namespace
@@ -35,9 +49,95 @@ constexpr TCHAR LoungeCocktailTableAssetPath[] = TEXT("/Game/Furniture/Cocktail_
 constexpr TCHAR LoungeEndTableAssetPath[] = TEXT("/Game/Furniture/End_Tables");
 constexpr TCHAR LoungeLampAssetPath[] = TEXT("/Game/Furniture/Lamps");
 constexpr TCHAR LoungeAccentAssetPath[] = TEXT("/Game/Furniture/Accents");
+constexpr TCHAR SectionalArmlessAssetPath[] = TEXT("/Game/Furniture/Sectionals/Armless");
+constexpr TCHAR SectionalCornerAssetPath[] = TEXT("/Game/Furniture/Sectionals/Corners");
+constexpr TCHAR BarTableAssetPath[] = TEXT("/Game/Furniture/Bar_Tables");
+constexpr TCHAR StoolAssetPath[] = TEXT("/Game/Furniture/Stools");
+constexpr TCHAR CafeTableAssetPath[] = TEXT("/Game/Furniture/Cafe_Tables");
+constexpr TCHAR DiningChairAssetPath[] = TEXT("/Game/Furniture/Dining_Seating");
+constexpr TCHAR DiningTableAssetPath[] = TEXT("/Game/Furniture/Dining_Tables");
+constexpr TCHAR DiningTableclothAssetPath[] = TEXT("/Game/Furniture/Dining_Seating/BBJ_Linens/Table_Cloths");
+constexpr TCHAR MajicGoboAssetPath[] = TEXT("/Game/Majic_Gear/Lighting/Majic_Gobos");
+constexpr TCHAR FrontBarAssetPath[] = TEXT("/Game/Furniture/Bars/Front_Bars");
+constexpr TCHAR BackBarAssetPath[] = TEXT("/Game/Furniture/Bars/Back_Bars");
+
+TArray<TPair<FString, UDMXEntityFixturePatch*>> GetLightingFixturePatchOptions()
+{
+	TArray<TPair<FString, UDMXEntityFixturePatch*>> Options;
+	Options.Emplace(TEXT("Unpatched"), nullptr);
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TArray<FAssetData> LibraryAssets;
+	AssetRegistryModule.Get().GetAssetsByClass(UDMXLibrary::StaticClass()->GetClassPathName(), LibraryAssets, true);
+	LibraryAssets.RemoveAll([](const FAssetData& Asset) { return !Asset.PackagePath.ToString().StartsWith(TEXT("/Game")); });
+	LibraryAssets.Sort([](const FAssetData& A, const FAssetData& B) { return A.GetSoftObjectPath().ToString() < B.GetSoftObjectPath().ToString(); });
+	const bool bShowLibraryName = LibraryAssets.Num() > 1;
+	for (const FAssetData& LibraryAsset : LibraryAssets)
+	{
+		UDMXLibrary* Library = Cast<UDMXLibrary>(LibraryAsset.GetAsset());
+		if (!Library)
+		{
+			continue;
+		}
+
+		const FString LibraryPrefix = bShowLibraryName ? Library->GetName() + TEXT(" / ") : FString();
+		for (UDMXEntityFixturePatch* Patch : Library->GetEntitiesTypeCast<UDMXEntityFixturePatch>())
+		{
+			if (Patch)
+			{
+				Options.Emplace(FString::Printf(TEXT("%s%s (U%d.%d, %d ch)"),
+					*LibraryPrefix, *Patch->Name, Patch->GetUniverseID(), Patch->GetStartingChannel(), Patch->GetChannelSpan()), Patch);
+			}
+		}
+	}
+	return Options;
+}
+
+TArray<const FDMXFixtureFunction*> GetLightingControlFunctions(const UDMXEntityFixturePatch* Patch)
+{
+	TArray<const FDMXFixtureFunction*> Result;
+	const FDMXFixtureMode* Mode = Patch ? Patch->GetActiveMode() : nullptr;
+	if (!Mode)
+	{
+		return Result;
+	}
+
+	static const FName PreferredAttributes[] = {
+		TEXT("Dimmer"), TEXT("Pan"), TEXT("Tilt"),
+		TEXT("Red"), TEXT("Green"), TEXT("Blue"),
+		TEXT("Cyan"), TEXT("Magenta"), TEXT("Yellow"),
+		TEXT("White"), TEXT("Amber"), TEXT("Color"), TEXT("Shutter")
+	};
+	for (const FName AttributeName : PreferredAttributes)
+	{
+		for (const FDMXFixtureFunction& Function : Mode->Functions)
+		{
+			if (Function.Attribute.Name == AttributeName && Function.GetNumChannels() <= 3)
+			{
+				Result.Add(&Function);
+				break;
+			}
+		}
+		if (Result.Num() == 7)
+		{
+			break;
+		}
+	}
+	return Result;
+}
+
+FName LightingControlWidgetName(const TCHAR* Prefix, int32 Index)
+{
+	return FName(*FString::Printf(TEXT("%s%d"), Prefix, Index));
+}
 
 static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 {
+	if (ItemType == EBuildItemType::SectionalLayout)
+	{
+		return EBuildItemType::LoungeLayout;
+	}
+
 	if (ItemType == EBuildItemType::MBPWall ||
 		ItemType == EBuildItemType::StageDeck ||
 		ItemType == EBuildItemType::DrapeRun ||
@@ -45,12 +145,121 @@ static EBuildItemType BuildTabForItemType(EBuildItemType ItemType)
 		ItemType == EBuildItemType::VideoWall ||
 		ItemType == EBuildItemType::ProjectionScreen ||
 		ItemType == EBuildItemType::AudioPlacement ||
-		ItemType == EBuildItemType::LoungeLayout)
+		ItemType == EBuildItemType::LoungeLayout ||
+		ItemType == EBuildItemType::FurnitureSeating ||
+		ItemType == EBuildItemType::BarLayout ||
+		ItemType == EBuildItemType::DiningTable)
 	{
 		return ItemType;
 	}
 
 	return EBuildItemType::TrussStructure;
+}
+
+static EBuildItemType BuildDesignerTabForItemType(EBuildItemType ItemType)
+{
+	if (ItemType == EBuildItemType::MBPWall ||
+		ItemType == EBuildItemType::StageDeck ||
+		ItemType == EBuildItemType::DrapeRun)
+	{
+		return EBuildItemType::StageDeck;
+	}
+
+	if (ItemType == EBuildItemType::VideoPlacement ||
+		ItemType == EBuildItemType::VideoWall ||
+		ItemType == EBuildItemType::ProjectionScreen ||
+		ItemType == EBuildItemType::AudioPlacement)
+	{
+		return EBuildItemType::VideoPlacement;
+	}
+
+	if (ItemType == EBuildItemType::LoungeLayout ||
+		ItemType == EBuildItemType::SectionalLayout ||
+		ItemType == EBuildItemType::FurnitureSeating ||
+		ItemType == EBuildItemType::BarLayout ||
+		ItemType == EBuildItemType::DiningTable)
+	{
+		return EBuildItemType::LoungeLayout;
+	}
+
+	return BuildTabForItemType(ItemType);
+}
+
+static bool IsDiningTableContext(EBuildItemType ActiveMenuTab, const UBuildItemDataAsset* SelectedBuildItem)
+{
+	return ActiveMenuTab == EBuildItemType::DiningTable ||
+		(SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable);
+}
+
+static FString BuildDesignerCategoryLabel(EBuildItemType ItemType)
+{
+	switch (BuildDesignerTabForItemType(ItemType))
+	{
+	case EBuildItemType::StageDeck:
+		return TEXT("Stage");
+	case EBuildItemType::VideoPlacement:
+		return TEXT("AV");
+	case EBuildItemType::LoungeLayout:
+		return TEXT("Furniture");
+	case EBuildItemType::TrussStructure:
+	default:
+		return TEXT("Truss");
+	}
+}
+
+static FString BuildItemTypeLabel(EBuildItemType ItemType)
+{
+	switch (ItemType)
+	{
+	case EBuildItemType::MBPWall:
+		return TEXT("MBP Wall");
+	case EBuildItemType::StageDeck:
+		return TEXT("Stage");
+	case EBuildItemType::DrapeRun:
+		return TEXT("Drape");
+	case EBuildItemType::VideoPlacement:
+		return TEXT("TV");
+	case EBuildItemType::VideoWall:
+		return TEXT("Video Wall");
+	case EBuildItemType::ProjectionScreen:
+		return TEXT("Projection");
+	case EBuildItemType::AudioPlacement:
+		return TEXT("Audio");
+	case EBuildItemType::LoungeLayout:
+		return TEXT("Lounge");
+	case EBuildItemType::SectionalLayout:
+		return TEXT("Sectional");
+	case EBuildItemType::FurnitureSeating:
+		return TEXT("Seating");
+	case EBuildItemType::BarLayout:
+		return TEXT("Bars");
+	case EBuildItemType::DiningTable:
+		return TEXT("Dining");
+	case EBuildItemType::TrussStructure:
+	default:
+		return TEXT("Truss");
+	}
+}
+
+static FString FurnitureSeatingTypeToMenuLabel(EFurnitureSeatingRuntimeType SeatingType)
+{
+	return SeatingType == EFurnitureSeatingRuntimeType::CafeTable ? TEXT("Cafe Tables") : TEXT("High Seating");
+}
+
+static FString BuildDesignerSelectionLabel(const UBuildItemDataAsset* BuildItem, EBuildItemType ActiveMenuTab)
+{
+	const EBuildItemType ItemType = BuildItem ? BuildItem->ItemType : ActiveMenuTab;
+	const FString CategoryLabel = BuildDesignerCategoryLabel(ItemType);
+	const FString TypeLabel = BuildItemTypeLabel(ItemType);
+	if (!BuildItem)
+	{
+		return FString::Printf(TEXT("%s > %s"), *CategoryLabel, *TypeLabel);
+	}
+
+	const FString DisplayName = BuildItem->DisplayName.IsEmpty()
+		? BuildItem->ItemId.ToString()
+		: BuildItem->DisplayName.ToString();
+	return FString::Printf(TEXT("%s > %s"), *CategoryLabel, *DisplayName);
 }
 
 static UBuildItemDataAsset* FindMatchingBuildItemForActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ATrussStructureActor* TrussActor)
@@ -104,6 +313,78 @@ static UBuildItemDataAsset* FindMatchingBuildItemForLoungeActor(const TArray<TOb
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
 		if (BuildItem && BuildItem->ItemType == EBuildItemType::LoungeLayout)
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
+static UBuildItemDataAsset* FindMatchingBuildItemForSectionalActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ASectionalLayoutActor* SectionalActor)
+{
+	if (!SectionalActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && BuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
+static UBuildItemDataAsset* FindMatchingBuildItemForFurnitureSeatingActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const AActor* SeatingActor)
+{
+	if (!SeatingActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && BuildItem->ItemType == EBuildItemType::FurnitureSeating)
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
+static UBuildItemDataAsset* FindMatchingBuildItemForBarLayoutActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ABarLayoutActor* BarLayoutActor)
+{
+	if (!BarLayoutActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && BuildItem->ItemType == EBuildItemType::BarLayout)
+		{
+			return BuildItem;
+		}
+	}
+
+	return nullptr;
+}
+
+static UBuildItemDataAsset* FindMatchingBuildItemForDiningTableActor(const TArray<TObjectPtr<UBuildItemDataAsset>>& BuildItems, const ADiningTableActor* DiningTableActor)
+{
+	if (!DiningTableActor)
+	{
+		return nullptr;
+	}
+
+	for (UBuildItemDataAsset* BuildItem : BuildItems)
+	{
+		if (BuildItem && BuildItem->ItemType == EBuildItemType::DiningTable)
 		{
 			return BuildItem;
 		}
@@ -266,6 +547,34 @@ static TArray<FString> GetLoungeItemOptionsFromFolder(const FString& CategoryFol
 	return SortedOptions;
 }
 
+static TArray<FString> GetFlatAssetOptionsFromFolder(const FString& AssetFolder)
+{
+	TArray<FString> Options;
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TArray<FAssetData> Assets;
+	AssetRegistryModule.Get().GetAssetsByPath(*AssetFolder, Assets, false);
+
+	for (const FAssetData& Asset : Assets)
+	{
+		const FName AssetClassName = Asset.AssetClassPath.GetAssetName();
+		const bool bSupportedAsset =
+			AssetClassName == TEXT("Texture2D") ||
+			AssetClassName == TEXT("Material") ||
+			AssetClassName == TEXT("MaterialInstance") ||
+			AssetClassName == TEXT("MaterialInstanceConstant");
+		if (!bSupportedAsset || Asset.AssetName == TEXT("UE_Placeholder"))
+		{
+			continue;
+		}
+
+		Options.Add(Asset.AssetName.ToString());
+	}
+
+	Options.Sort();
+	return Options;
+}
+
 static FString EnsureLoungeOption(FString CurrentOption, const TArray<FString>& Options)
 {
 	if (!CurrentOption.IsEmpty() && Options.Contains(CurrentOption))
@@ -277,17 +586,26 @@ static FString EnsureLoungeOption(FString CurrentOption, const TArray<FString>& 
 }
 }
 
-void UBuildMenuItemButtonProxy::Initialize(UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem)
+void UBuildMenuItemButtonProxy::Initialize(UBuildMenuWidget* InOwner, UBuildItemDataAsset* InBuildItem, bool bInHasFurnitureSeatingTypeOverride, EFurnitureSeatingRuntimeType InFurnitureSeatingType)
 {
 	Owner = InOwner;
 	BuildItem = InBuildItem;
+	bHasFurnitureSeatingTypeOverride = bInHasFurnitureSeatingTypeOverride;
+	FurnitureSeatingType = InFurnitureSeatingType;
 }
 
 void UBuildMenuItemButtonProxy::HandleClicked()
 {
 	if (Owner.IsValid())
 	{
-		Owner->SetSelectedBuildItem(BuildItem.Get());
+		if (bHasFurnitureSeatingTypeOverride)
+		{
+			Owner->SetSelectedFurnitureSeatingBuildItem(BuildItem.Get(), FurnitureSeatingType);
+		}
+		else
+		{
+			Owner->SetSelectedBuildItem(BuildItem.Get());
+		}
 		Owner->OnBuildItemSelected.Broadcast(BuildItem.Get());
 	}
 }
@@ -316,6 +634,10 @@ void UBuildMenuWidget::SetBuildItems(const TArray<UBuildItemDataAsset*>& InBuild
 		CurrentProjectionScreenDefinition = SelectedBuildItem->DefaultProjectionScreenDefinition;
 		CurrentAudioPlacementDefinition = SelectedBuildItem->DefaultAudioPlacementDefinition;
 		CurrentLoungeLayoutDefinition = SelectedBuildItem->DefaultLoungeLayoutDefinition;
+		CurrentSectionalLayoutDefinition = SelectedBuildItem->DefaultSectionalLayoutDefinition;
+		CurrentFurnitureSeatingDefinition = SelectedBuildItem->DefaultFurnitureSeatingDefinition;
+		CurrentBarLayoutDefinition = SelectedBuildItem->DefaultBarLayoutDefinition;
+		CurrentDiningTableDefinition = SelectedBuildItem->DefaultDiningTableDefinition;
 		ActiveMenuTab = BuildTabForItemType(SelectedBuildItem->ItemType);
 	}
 
@@ -337,6 +659,10 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		CurrentProjectionScreenDefinition = InSelectedItem->DefaultProjectionScreenDefinition;
 		CurrentAudioPlacementDefinition = InSelectedItem->DefaultAudioPlacementDefinition;
 		CurrentLoungeLayoutDefinition = InSelectedItem->DefaultLoungeLayoutDefinition;
+		CurrentSectionalLayoutDefinition = InSelectedItem->DefaultSectionalLayoutDefinition;
+		CurrentFurnitureSeatingDefinition = InSelectedItem->DefaultFurnitureSeatingDefinition;
+		CurrentBarLayoutDefinition = InSelectedItem->DefaultBarLayoutDefinition;
+		CurrentDiningTableDefinition = InSelectedItem->DefaultDiningTableDefinition;
 		ActiveMenuTab = BuildTabForItemType(InSelectedItem->ItemType);
 	}
 
@@ -352,8 +678,29 @@ void UBuildMenuWidget::SetSelectedBuildItem(UBuildItemDataAsset* InSelectedItem)
 		ApplyProjectionDefinitionToBuildManager();
 		ApplyAudioDefinitionToBuildManager();
 		ApplyLoungeDefinitionToBuildManager();
+		ApplySectionalDefinitionToBuildManager();
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		ApplyBarLayoutDefinitionToBuildManager();
+		ApplyDiningTableDefinitionToBuildManager();
 	}
 
+	RefreshMenu();
+}
+
+void UBuildMenuWidget::SetSelectedFurnitureSeatingBuildItem(UBuildItemDataAsset* InSelectedItem, EFurnitureSeatingRuntimeType SeatingType)
+{
+	if (!InSelectedItem || InSelectedItem->ItemType != EBuildItemType::FurnitureSeating)
+	{
+		SetSelectedBuildItem(InSelectedItem);
+		return;
+	}
+
+	SetSelectedBuildItem(InSelectedItem);
+	CurrentFurnitureSeatingDefinition.SeatingType = SeatingType;
+	if (BuildManager)
+	{
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+	}
 	RefreshMenu();
 }
 
@@ -364,6 +711,26 @@ void UBuildMenuWidget::SetBuildManager(UBuildManagerComponent* InBuildManager)
 
 void UBuildMenuWidget::RefreshMenu()
 {
+	BindDesignerWidgetTree();
+	if (UWidget* LightingPanel = WidgetTree ? WidgetTree->FindWidget(TEXT("LightingControlPanel")) : nullptr)
+	{
+		LightingPanel->SetVisibility(EditingLightTarget ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (DesignerRotationSlider)
+	{
+		DesignerRotationSlider->SetVisibility(EditingLightTarget ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	}
+	if (!EditingLightTarget)
+	{
+		for (UWidget* StageLabel : { StageFrontRailingLabelText.Get(), StageBackRailingLabelText.Get(), StageLeftRailingLabelText.Get(), StageRightRailingLabelText.Get(), StageLeftStepLabelText.Get(), StageRightStepLabelText.Get(), StageAutomaticSkirtLabelText.Get(), StageCellEnabledLabelText.Get() })
+		{
+			if (StageLabel && StageLabel->GetParent())
+			{
+				StageLabel->GetParent()->SetVisibility(ESlateVisibility::Visible);
+			}
+		}
+	}
+
 	if (HeaderText)
 	{
 		HeaderText->SetText(BuildHeaderText());
@@ -378,18 +745,100 @@ void UBuildMenuWidget::RefreshMenu()
 	{
 		ActionButtonText->SetText(BuildActionButtonText());
 	}
+	RefreshEditActorActionButtons();
 
-	RefreshTrussControls();
-	RefreshMBPControls();
-	RefreshStageControls();
-	RefreshDrapeControls();
-	RefreshVideoControls();
-	RefreshVideoWallControls();
-	RefreshProjectionControls();
-	RefreshAudioControls();
-	RefreshLoungeControls();
+	if (EditingLightTarget)
+	{
+		RefreshLightingControls();
+	}
+	else switch (ActiveMenuTab)
+	{
+	case EBuildItemType::MBPWall:
+		RefreshMBPControls();
+		break;
+	case EBuildItemType::StageDeck:
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::MBPWall)
+		{
+			RefreshMBPControls();
+		}
+		else if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DrapeRun)
+		{
+			RefreshDrapeControls();
+		}
+		else
+		{
+			RefreshStageControls();
+		}
+		break;
+	case EBuildItemType::DrapeRun:
+		RefreshDrapeControls();
+		break;
+	case EBuildItemType::VideoPlacement:
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::VideoWall)
+		{
+			RefreshVideoWallControls();
+		}
+		else if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::ProjectionScreen)
+		{
+			RefreshProjectionControls();
+		}
+		else if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::AudioPlacement)
+		{
+			RefreshAudioControls();
+		}
+		else
+		{
+			RefreshVideoControls();
+		}
+		break;
+	case EBuildItemType::VideoWall:
+		RefreshVideoWallControls();
+		break;
+	case EBuildItemType::ProjectionScreen:
+		RefreshProjectionControls();
+		break;
+	case EBuildItemType::AudioPlacement:
+		RefreshAudioControls();
+		break;
+	case EBuildItemType::LoungeLayout:
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			RefreshSectionalControls();
+		}
+		else if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::FurnitureSeating)
+		{
+			RefreshFurnitureSeatingControls();
+		}
+		else if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::BarLayout)
+		{
+			RefreshBarLayoutControls();
+		}
+		else if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable)
+		{
+			RefreshDiningTableControls();
+		}
+		else
+		{
+			RefreshLoungeControls();
+		}
+		break;
+	case EBuildItemType::FurnitureSeating:
+		RefreshFurnitureSeatingControls();
+		break;
+	case EBuildItemType::BarLayout:
+		RefreshBarLayoutControls();
+		break;
+	case EBuildItemType::DiningTable:
+		RefreshDiningTableControls();
+		break;
+	case EBuildItemType::TrussStructure:
+	default:
+		RefreshTrussControls();
+		break;
+	}
 	RefreshTabButtons();
 	RebuildItemButtons();
+	RefreshDesignerSummary();
 }
 
 UBuildItemDataAsset* UBuildMenuWidget::GetSelectedBuildItem() const
@@ -442,9 +891,30 @@ FLoungeLayoutBuildDefinition UBuildMenuWidget::GetCurrentLoungeLayoutDefinition(
 	return CurrentLoungeLayoutDefinition;
 }
 
+FSectionalLayoutBuildDefinition UBuildMenuWidget::GetCurrentSectionalLayoutDefinition() const
+{
+	return CurrentSectionalLayoutDefinition;
+}
+
+FFurnitureSeatingBuildDefinition UBuildMenuWidget::GetCurrentFurnitureSeatingDefinition() const
+{
+	return CurrentFurnitureSeatingDefinition;
+}
+
+FBarLayoutBuildDefinition UBuildMenuWidget::GetCurrentBarLayoutDefinition() const
+{
+	return CurrentBarLayoutDefinition;
+}
+
+FDiningTableBuildDefinition UBuildMenuWidget::GetCurrentDiningTableDefinition() const
+{
+	return CurrentDiningTableDefinition;
+}
+
 void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 {
 	EditingTarget = InEditingTarget;
+	EditingLightTarget = nullptr;
 	EditingMBPTarget = nullptr;
 	EditingStageTarget = nullptr;
 	EditingDrapeTarget = nullptr;
@@ -454,6 +924,11 @@ void UBuildMenuWidget::SetEditingTarget(ATrussStructureActor* InEditingTarget)
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingTarget)
 	{
@@ -484,6 +959,11 @@ void UBuildMenuWidget::SetEditingMBPTarget(AMBPWallActor* InEditingTarget, int32
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingMBPTarget)
 	{
@@ -557,6 +1037,11 @@ void UBuildMenuWidget::SetEditingStageTarget(AStageDeckActor* InEditingTarget, i
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingStageTarget)
 	{
@@ -603,6 +1088,11 @@ void UBuildMenuWidget::SetEditingDrapeTarget(ADrapeRunActor* InEditingTarget)
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingDrapeTarget)
 	{
@@ -634,6 +1124,11 @@ void UBuildMenuWidget::SetEditingVideoTarget(AVideoPlacementActor* InEditingTarg
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingVideoTarget)
 	{
@@ -665,6 +1160,11 @@ void UBuildMenuWidget::SetEditingVideoWallTarget(AVideoWallActor* InEditingTarge
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingVideoWallTarget)
 	{
@@ -696,6 +1196,11 @@ void UBuildMenuWidget::SetEditingProjectionTarget(AProjectionScreenActor* InEdit
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingProjectionTarget)
 	{
@@ -725,8 +1230,13 @@ void UBuildMenuWidget::SetEditingAudioTarget(AActor* InEditingTarget)
 	EditingVideoWallTarget = nullptr;
 	EditingProjectionTarget = nullptr;
 	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
 	EditingAudioGroundSpeakerTarget = Cast<AAudioGroundSpeakerActor>(InEditingTarget);
 	EditingAudioGroundLineArrayTarget = Cast<AAudioGroundLineArrayActor>(InEditingTarget);
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingAudioGroundSpeakerTarget)
 	{
@@ -780,6 +1290,11 @@ void UBuildMenuWidget::SetEditingLoungeTarget(ALoungeLayoutActor* InEditingTarge
 	EditingAudioGroundSpeakerTarget = nullptr;
 	EditingAudioGroundLineArrayTarget = nullptr;
 	EditingLoungeTarget = InEditingTarget;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
 
 	if (EditingLoungeTarget)
 	{
@@ -797,6 +1312,260 @@ void UBuildMenuWidget::SetEditingLoungeTarget(ALoungeLayoutActor* InEditingTarge
 ALoungeLayoutActor* UBuildMenuWidget::GetEditingLoungeTarget() const
 {
 	return EditingLoungeTarget;
+}
+
+void UBuildMenuWidget::SetEditingSectionalTarget(ASectionalLayoutActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
+	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = InEditingTarget;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
+
+	if (EditingSectionalTarget)
+	{
+		ActiveMenuTab = EBuildItemType::LoungeLayout;
+		CurrentSectionalLayoutDefinition = EditingSectionalTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForSectionalActor(BuildItems, EditingSectionalTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+ASectionalLayoutActor* UBuildMenuWidget::GetEditingSectionalTarget() const
+{
+	return EditingSectionalTarget;
+}
+
+void UBuildMenuWidget::SetEditingFurnitureSeatingTarget(AActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
+	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = Cast<ABarSeatingActor>(InEditingTarget);
+	EditingCafeTableTarget = Cast<ACafeTableActor>(InEditingTarget);
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = nullptr;
+
+	if (EditingBarSeatingTarget)
+	{
+		ActiveMenuTab = EBuildItemType::FurnitureSeating;
+		CurrentFurnitureSeatingDefinition.SeatingType = EFurnitureSeatingRuntimeType::BarSeating;
+		CurrentFurnitureSeatingDefinition.BarSeatingDefinition = EditingBarSeatingTarget->GetBuildDefinition();
+	}
+	else if (EditingCafeTableTarget)
+	{
+		ActiveMenuTab = EBuildItemType::FurnitureSeating;
+		CurrentFurnitureSeatingDefinition.SeatingType = EFurnitureSeatingRuntimeType::CafeTable;
+		CurrentFurnitureSeatingDefinition.CafeTableDefinition = EditingCafeTableTarget->GetBuildDefinition();
+	}
+
+	if (IsEditingFurnitureSeating())
+	{
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForFurnitureSeatingActor(BuildItems, InEditingTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+AActor* UBuildMenuWidget::GetEditingFurnitureSeatingTarget() const
+{
+	if (EditingBarSeatingTarget)
+	{
+		return EditingBarSeatingTarget;
+	}
+
+	return EditingCafeTableTarget;
+}
+
+void UBuildMenuWidget::SetEditingBarLayoutTarget(ABarLayoutActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
+	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = InEditingTarget;
+	EditingDiningTableTarget = nullptr;
+
+	if (EditingBarLayoutTarget)
+	{
+		ActiveMenuTab = EBuildItemType::BarLayout;
+		CurrentBarLayoutDefinition = EditingBarLayoutTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForBarLayoutActor(BuildItems, EditingBarLayoutTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+ABarLayoutActor* UBuildMenuWidget::GetEditingBarLayoutTarget() const
+{
+	return EditingBarLayoutTarget;
+}
+
+void UBuildMenuWidget::SetEditingDiningTableTarget(ADiningTableActor* InEditingTarget)
+{
+	EditingTarget = nullptr;
+	EditingMBPTarget = nullptr;
+	EditingStageTarget = nullptr;
+	EditingDrapeTarget = nullptr;
+	EditingVideoTarget = nullptr;
+	EditingVideoWallTarget = nullptr;
+	EditingProjectionTarget = nullptr;
+	EditingAudioGroundSpeakerTarget = nullptr;
+	EditingAudioGroundLineArrayTarget = nullptr;
+	EditingLoungeTarget = nullptr;
+	EditingSectionalTarget = nullptr;
+	EditingBarSeatingTarget = nullptr;
+	EditingCafeTableTarget = nullptr;
+	EditingBarLayoutTarget = nullptr;
+	EditingDiningTableTarget = InEditingTarget;
+
+	if (EditingDiningTableTarget)
+	{
+		ActiveMenuTab = EBuildItemType::DiningTable;
+		CurrentDiningTableDefinition = EditingDiningTableTarget->GetBuildDefinition();
+		if (UBuildItemDataAsset* MatchingItem = FindMatchingBuildItemForDiningTableActor(BuildItems, EditingDiningTableTarget))
+		{
+			SelectedBuildItem = MatchingItem;
+		}
+	}
+
+	RefreshMenu();
+}
+
+ADiningTableActor* UBuildMenuWidget::GetEditingDiningTableTarget() const
+{
+	return EditingDiningTableTarget;
+}
+
+void UBuildMenuWidget::SetEditingLightTarget(ALightFixtureActor* InEditingTarget)
+{
+	if (InEditingTarget)
+	{
+		SetEditingTarget(nullptr);
+	}
+	EditingLightTarget = InEditingTarget;
+	RefreshMenu();
+}
+
+ALightFixtureActor* UBuildMenuWidget::GetEditingLightTarget() const
+{
+	return EditingLightTarget;
+}
+
+void UBuildMenuWidget::SetLightingFixtureOptions(const TArray<FString>& InNames, const TArray<TSubclassOf<AActor>>& InClasses)
+{
+	LightingFixtureNames = InNames;
+	LightingFixtureClasses = InClasses;
+	if (EditingLightTarget)
+	{
+		RefreshMenu();
+	}
+}
+
+AActor* UBuildMenuWidget::GetEditingActor() const
+{
+	if (EditingLightTarget)
+	{
+		return EditingLightTarget;
+	}
+	if (EditingTarget)
+	{
+		return EditingTarget;
+	}
+	if (EditingMBPTarget)
+	{
+		return EditingMBPTarget;
+	}
+	if (EditingStageTarget)
+	{
+		return EditingStageTarget;
+	}
+	if (EditingDrapeTarget)
+	{
+		return EditingDrapeTarget;
+	}
+	if (EditingVideoTarget)
+	{
+		return EditingVideoTarget;
+	}
+	if (EditingVideoWallTarget)
+	{
+		return EditingVideoWallTarget;
+	}
+	if (EditingProjectionTarget)
+	{
+		return EditingProjectionTarget;
+	}
+	if (EditingAudioGroundSpeakerTarget)
+	{
+		return EditingAudioGroundSpeakerTarget;
+	}
+	if (EditingAudioGroundLineArrayTarget)
+	{
+		return EditingAudioGroundLineArrayTarget;
+	}
+	if (EditingLoungeTarget)
+	{
+		return EditingLoungeTarget;
+	}
+	if (EditingSectionalTarget)
+	{
+		return EditingSectionalTarget;
+	}
+	if (EditingBarSeatingTarget)
+	{
+		return EditingBarSeatingTarget;
+	}
+	if (EditingCafeTableTarget)
+	{
+		return EditingCafeTableTarget;
+	}
+	if (EditingBarLayoutTarget)
+	{
+		return EditingBarLayoutTarget;
+	}
+	if (EditingDiningTableTarget)
+	{
+		return EditingDiningTableTarget;
+	}
+	return nullptr;
 }
 
 bool UBuildMenuWidget::ShouldShowPointerForCurrentEdit() const
@@ -836,6 +1605,13 @@ void UBuildMenuWidget::SetEditingStageCellTarget(int32 InTargetRow, int32 InTarg
 
 TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 {
+	if (GetClass() != UBuildMenuWidget::StaticClass())
+	{
+		bUsesDesignerWidgetTree = true;
+		return Super::RebuildWidget();
+	}
+
+	bUsesDesignerWidgetTree = false;
 	WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"));
 
 	UBorder* RootBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("RootBorder"));
@@ -950,6 +1726,22 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	LoungeTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	LoungeTabButton->AddChild(LoungeTabText);
 	TabButtonBox->AddChildToHorizontalBox(LoungeTabButton);
+
+	SeatingTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("SeatingTabButton"));
+	SeatingTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleSeatingTabClicked);
+	UTextBlock* SeatingTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SeatingTabText"));
+	SeatingTabText->SetText(FText::FromString(TEXT("Seating")));
+	SeatingTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	SeatingTabButton->AddChild(SeatingTabText);
+	TabButtonBox->AddChildToHorizontalBox(SeatingTabButton);
+
+	BarTabButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("BarTabButton"));
+	BarTabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleBarTabClicked);
+	UTextBlock* BarTabText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BarTabText"));
+	BarTabText->SetText(FText::FromString(TEXT("Bars")));
+	BarTabText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	BarTabButton->AddChild(BarTabText);
+	TabButtonBox->AddChildToHorizontalBox(BarTabButton);
 
 	HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HeaderText"));
 	HeaderText->SetText(FText::FromString(TEXT("Build Menu")));
@@ -1070,6 +1862,7 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	{
 		SidePieceComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 	}
+	CreateLightingControlPanel(RootBox);
 
 	DepthPieceLabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DepthPieceLabelText"));
 	DepthPieceLabelText->SetText(FText::FromString(TEXT("Depth Spacer Piece")));
@@ -1244,6 +2037,54 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 		ActionButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 	}
 
+	EditActorActionBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("EditActorActionBox"));
+	MoveActorButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("MoveActorButton"));
+	MoveActorButton->SetBackgroundColor(FLinearColor(0.18f, 0.45f, 0.70f, 1.0f));
+	MoveActorButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleMoveActorButtonClicked);
+	UTextBlock* MoveActorButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MoveActorButtonText"));
+	MoveActorButtonText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	MoveActorButtonText->SetJustification(ETextJustify::Center);
+	MoveActorButtonText->SetText(FText::FromString(TEXT("Move Actor")));
+	MoveActorButton->AddChild(MoveActorButtonText);
+
+	RotateActorButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("RotateActorButton"));
+	RotateActorButton->SetBackgroundColor(FLinearColor(0.70f, 0.45f, 0.18f, 1.0f));
+	RotateActorButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleRotateActorButtonClicked);
+	UTextBlock* RotateActorButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("RotateActorButtonText"));
+	RotateActorButtonText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	RotateActorButtonText->SetJustification(ETextJustify::Center);
+	RotateActorButtonText->SetText(FText::FromString(TEXT("Rotate Actor")));
+	RotateActorButton->AddChild(RotateActorButtonText);
+
+	DeleteActorButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("DeleteActorButton"));
+	DeleteActorButton->SetBackgroundColor(FLinearColor(0.70f, 0.18f, 0.18f, 1.0f));
+	DeleteActorButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleDeleteActorButtonClicked);
+	UTextBlock* DeleteActorButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DeleteActorButtonText"));
+	DeleteActorButtonText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	DeleteActorButtonText->SetJustification(ETextJustify::Center);
+	DeleteActorButtonText->SetText(FText::FromString(TEXT("Delete Actor")));
+	DeleteActorButton->AddChild(DeleteActorButtonText);
+
+	if (UHorizontalBoxSlot* MoveButtonSlot = EditActorActionBox->AddChildToHorizontalBox(MoveActorButton))
+	{
+		MoveButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+		MoveButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	if (UHorizontalBoxSlot* RotateButtonSlot = EditActorActionBox->AddChildToHorizontalBox(RotateActorButton))
+	{
+		RotateButtonSlot->SetPadding(FMargin(6.0f, 0.0f, 6.0f, 0.0f));
+		RotateButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	if (UHorizontalBoxSlot* DeleteButtonSlot = EditActorActionBox->AddChildToHorizontalBox(DeleteActorButton))
+	{
+		DeleteButtonSlot->SetPadding(FMargin(6.0f, 0.0f, 0.0f, 0.0f));
+		DeleteButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	if (UVerticalBoxSlot* EditActionSlot = RootBox->AddChildToVerticalBox(EditActorActionBox))
+	{
+		EditActionSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
 	ItemListBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ItemListBox"));
 	RootBox->AddChildToVerticalBox(ItemListBox);
 
@@ -1251,32 +2092,96 @@ TSharedRef<SWidget> UBuildMenuWidget::RebuildWidget()
 	return Super::RebuildWidget();
 }
 
+void UBuildMenuWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	BindDesignerWidgetTree();
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::RebuildItemButtons()
 {
-	if (!ItemListBox || !WidgetTree)
+	if (!ItemListBox && !DesignerBuildGrid)
 	{
 		return;
 	}
 
 	ButtonProxies.Reset();
-	ItemListBox->ClearChildren();
+	if (ItemListBox)
+	{
+		ItemListBox->ClearChildren();
+	}
+	if (DesignerBuildGrid)
+	{
+		DesignerBuildGrid->ClearChildren();
+	}
 
-	const bool bShowBuildItemButtons = !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingVideoWall() && !IsEditingProjection() && !IsEditingAudio() && !IsEditingLounge() && BuildItems.Num() > 1;
+	const bool bShowBuildItemButtons = !EditingLightTarget && !EditingTarget && !IsEditingStage() && !IsEditingDrape() && !IsEditingVideo() && !IsEditingVideoWall() && !IsEditingProjection() && !IsEditingAudio() && !IsEditingLounge() && !IsEditingSectional() && !IsEditingFurnitureSeating() && !IsEditingBarLayout() && !IsEditingDiningTable() && BuildItems.Num() > 1;
 	int32 VisibleItemCount = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
 		if (BuildItem && ItemBelongsToActiveTab(BuildItem))
 		{
-			++VisibleItemCount;
+			VisibleItemCount += BuildItem->ItemType == EBuildItemType::FurnitureSeating ? 2 : 1;
 		}
 	}
 
-	ItemListBox->SetVisibility(bShowBuildItemButtons && VisibleItemCount > 1 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (ItemListBox)
+	{
+		ItemListBox->SetVisibility(bShowBuildItemButtons && VisibleItemCount > 1 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (DesignerBuildGridScroll)
+	{
+		DesignerBuildGridScroll->SetVisibility(bShowBuildItemButtons && VisibleItemCount > 1 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
 	if (!bShowBuildItemButtons)
 	{
 		return;
 	}
 
+	auto AddBuildItemButton = [this](UBuildItemDataAsset* BuildItem, const FText& LabelText, int32 VisibleIndex, bool bHasFurnitureSeatingTypeOverride = false, EFurnitureSeatingRuntimeType FurnitureSeatingType = EFurnitureSeatingRuntimeType::BarSeating)
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
+		const bool bIsSelected = BuildItem == SelectedBuildItem &&
+			(!bHasFurnitureSeatingTypeOverride || CurrentFurnitureSeatingDefinition.SeatingType == FurnitureSeatingType);
+		Button->SetBackgroundColor(bIsSelected
+			? FLinearColor(0.18f, 0.45f, 0.70f, 1.0f)
+			: FLinearColor(0.10f, 0.10f, 0.12f, 1.0f));
+
+		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		Label->SetText(LabelText);
+		Label->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		Label->SetJustification(ETextJustify::Center);
+		Label->SetAutoWrapText(true);
+		FSlateFontInfo LabelFont = Label->GetFont();
+		LabelFont.Size = bUsesDesignerWidgetTree ? 9 : LabelFont.Size;
+		Label->SetFont(LabelFont);
+		Button->AddChild(Label);
+
+		UBuildMenuItemButtonProxy* Proxy = NewObject<UBuildMenuItemButtonProxy>(this);
+		Proxy->Initialize(this, BuildItem, bHasFurnitureSeatingTypeOverride, FurnitureSeatingType);
+		Button->OnClicked.AddDynamic(Proxy, &UBuildMenuItemButtonProxy::HandleClicked);
+		ButtonProxies.Add(Proxy);
+
+		if (DesignerBuildGrid)
+		{
+			if (UUniformGridSlot* GridSlot = DesignerBuildGrid->AddChildToUniformGrid(Button, VisibleIndex / 3, VisibleIndex % 3))
+			{
+				GridSlot->SetHorizontalAlignment(HAlign_Fill);
+				GridSlot->SetVerticalAlignment(VAlign_Fill);
+			}
+		}
+		else if (ItemListBox)
+		{
+			if (UVerticalBoxSlot* ButtonSlot = ItemListBox->AddChildToVerticalBox(Button))
+			{
+				ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+			}
+		}
+	};
+
+	int32 VisibleIndex = 0;
 	for (UBuildItemDataAsset* BuildItem : BuildItems)
 	{
 		if (!BuildItem || !ItemBelongsToActiveTab(BuildItem))
@@ -1284,48 +2189,585 @@ void UBuildMenuWidget::RebuildItemButtons()
 			continue;
 		}
 
-		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-		Button->SetBackgroundColor(BuildItem == SelectedBuildItem
-			? FLinearColor(0.18f, 0.45f, 0.70f, 1.0f)
-			: FLinearColor(0.10f, 0.10f, 0.12f, 1.0f));
-
-		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-		Label->SetText(BuildItem->DisplayName.IsEmpty() ? FText::FromName(BuildItem->ItemId) : BuildItem->DisplayName);
-		Label->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-		Button->AddChild(Label);
-
-		UBuildMenuItemButtonProxy* Proxy = NewObject<UBuildMenuItemButtonProxy>(this);
-		Proxy->Initialize(this, BuildItem);
-		Button->OnClicked.AddDynamic(Proxy, &UBuildMenuItemButtonProxy::HandleClicked);
-		ButtonProxies.Add(Proxy);
-
-		if (UVerticalBoxSlot* ButtonSlot = ItemListBox->AddChildToVerticalBox(Button))
+		if (BuildItem->ItemType == EBuildItemType::FurnitureSeating)
 		{
-			ButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+			AddBuildItemButton(BuildItem, FText::FromString(FurnitureSeatingTypeToMenuLabel(EFurnitureSeatingRuntimeType::CafeTable)), VisibleIndex++, true, EFurnitureSeatingRuntimeType::CafeTable);
+			AddBuildItemButton(BuildItem, FText::FromString(FurnitureSeatingTypeToMenuLabel(EFurnitureSeatingRuntimeType::BarSeating)), VisibleIndex++, true, EFurnitureSeatingRuntimeType::BarSeating);
+			continue;
+		}
+
+		AddBuildItemButton(BuildItem, BuildItem->DisplayName.IsEmpty() ? FText::FromName(BuildItem->ItemId) : BuildItem->DisplayName, VisibleIndex);
+		++VisibleIndex;
+	}
+}
+
+void UBuildMenuWidget::CreateLightingControlPanel(UVerticalBox* Parent)
+{
+	if (!Parent || !WidgetTree)
+	{
+		return;
+	}
+
+	UVerticalBox* Panel = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("LightingControlPanel"));
+	Panel->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* PanelSlot = Parent->AddChildToVerticalBox(Panel))
+	{
+		PanelSlot->SetPadding(FMargin(0.0f, 4.0f, 0.0f, 12.0f));
+	}
+
+	UTextBlock* Heading = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("LightingControlHeading"));
+	Heading->SetText(FText::FromString(TEXT("Control")));
+	Heading->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	Panel->AddChildToVerticalBox(Heading);
+
+	UTextBlock* Status = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("LightingControlStatus"));
+	Status->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.72f, 0.75f)));
+	Panel->AddChildToVerticalBox(Status);
+
+	for (int32 Index = 0; Index < 7; ++Index)
+	{
+		UVerticalBox* Row = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), LightingControlWidgetName(TEXT("LightingControlRow"), Index));
+		Row->SetVisibility(ESlateVisibility::Collapsed);
+		if (UVerticalBoxSlot* RowSlot = Panel->AddChildToVerticalBox(Row))
+		{
+			RowSlot->SetPadding(FMargin(0.0f, 6.0f, 0.0f, 2.0f));
+		}
+
+		UHorizontalBox* Caption = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		Row->AddChildToVerticalBox(Caption);
+		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), LightingControlWidgetName(TEXT("LightingControlLabel"), Index));
+		Label->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.9f, 0.9f)));
+		if (UHorizontalBoxSlot* LabelSlot = Caption->AddChildToHorizontalBox(Label))
+		{
+			LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		UTextBlock* Value = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), LightingControlWidgetName(TEXT("LightingControlValue"), Index));
+		Value->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.82f, 0.9f)));
+		Caption->AddChildToHorizontalBox(Value);
+
+		USlider* Slider = WidgetTree->ConstructWidget<USlider>(USlider::StaticClass(), LightingControlWidgetName(TEXT("LightingControlSlider"), Index));
+		Slider->SetStepSize(0.01f);
+		switch (Index)
+		{
+		case 0: Slider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandlePrimaryValueChanged); break;
+		case 1: Slider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleSecondaryValueChanged); break;
+		case 2: Slider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleTertiaryValueChanged); break;
+		case 3: Slider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleQuaternaryValueChanged); break;
+		case 4: Slider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPRowsChanged); break;
+		case 5: Slider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPColumnsChanged); break;
+		case 6: Slider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleDesignerRotationChanged); break;
+		}
+		Row->AddChildToVerticalBox(Slider);
+	}
+
+	UBorder* Swatch = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("LightingColorSwatch"));
+	Swatch->SetVisibility(ESlateVisibility::Collapsed);
+	USpacer* SwatchSize = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
+	SwatchSize->SetSize(FVector2D(1.0f, 16.0f));
+	Swatch->AddChild(SwatchSize);
+	if (UVerticalBoxSlot* SwatchSlot = Panel->AddChildToVerticalBox(Swatch))
+	{
+		SwatchSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+	}
+
+	UVerticalBox* GoboPanel = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("LightingGoboPanel"));
+	GoboPanel->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* GoboSlot = Panel->AddChildToVerticalBox(GoboPanel))
+	{
+		GoboSlot->SetPadding(FMargin(0.0f, 12.0f, 0.0f, 0.0f));
+	}
+	UTextBlock* GoboHeading = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	GoboHeading->SetText(FText::FromString(TEXT("Gobo")));
+	GoboHeading->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	GoboPanel->AddChildToVerticalBox(GoboHeading);
+
+	UComboBoxString* GoboComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("LightingGoboComboBox"));
+	GoboComboBox->SetMaxListHeight(360.0f);
+	GoboComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleGoboChanged);
+	GoboComboBox->OnGenerateWidgetEvent.BindDynamic(this, &UBuildMenuWidget::CreateGoboOptionWidget);
+	GoboPanel->AddChildToVerticalBox(GoboComboBox);
+
+	UImage* GoboPreview = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("LightingGoboPreview"));
+	GoboPreview->SetDesiredSizeOverride(FVector2D(96.0f, 96.0f));
+	GoboPreview->SetVisibility(ESlateVisibility::Collapsed);
+	if (UVerticalBoxSlot* PreviewSlot = GoboPanel->AddChildToVerticalBox(GoboPreview))
+	{
+		PreviewSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
+	}
+}
+
+void UBuildMenuWidget::CreateDesignerControlPanel(UVerticalBox* PanelBody)
+{
+	if (!PanelBody || !WidgetTree || ModeComboBox)
+	{
+		return;
+	}
+
+	int32 ControlPanelInsertIndex = 3;
+	if (!EditActorActionBox && (!MoveActorButton || !RotateActorButton || !DeleteActorButton))
+	{
+		EditActorActionBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("DesignerEditActorActionBox"));
+		MoveActorButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("DesignerMoveActorButton"));
+		MoveActorButton->SetBackgroundColor(FLinearColor(0.18f, 0.45f, 0.70f, 1.0f));
+
+		UTextBlock* MoveActorButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DesignerMoveActorButtonText"));
+		MoveActorButtonText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		MoveActorButtonText->SetJustification(ETextJustify::Center);
+		MoveActorButtonText->SetText(FText::FromString(TEXT("Move")));
+		MoveActorButton->AddChild(MoveActorButtonText);
+
+		RotateActorButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("DesignerRotateActorButton"));
+		RotateActorButton->SetBackgroundColor(FLinearColor(0.70f, 0.45f, 0.18f, 1.0f));
+
+		UTextBlock* RotateActorButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DesignerRotateActorButtonText"));
+		RotateActorButtonText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		RotateActorButtonText->SetJustification(ETextJustify::Center);
+		RotateActorButtonText->SetText(FText::FromString(TEXT("Rotate")));
+		RotateActorButton->AddChild(RotateActorButtonText);
+
+		DeleteActorButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("DesignerDeleteActorButton"));
+		DeleteActorButton->SetBackgroundColor(FLinearColor(0.70f, 0.18f, 0.18f, 1.0f));
+
+		UTextBlock* DeleteActorButtonText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DesignerDeleteActorButtonText"));
+		DeleteActorButtonText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		DeleteActorButtonText->SetJustification(ETextJustify::Center);
+		DeleteActorButtonText->SetText(FText::FromString(TEXT("Delete")));
+		DeleteActorButton->AddChild(DeleteActorButtonText);
+
+		if (UHorizontalBoxSlot* MoveButtonSlot = EditActorActionBox->AddChildToHorizontalBox(MoveActorButton))
+		{
+			MoveButtonSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+			MoveButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		if (UHorizontalBoxSlot* RotateButtonSlot = EditActorActionBox->AddChildToHorizontalBox(RotateActorButton))
+		{
+			RotateButtonSlot->SetPadding(FMargin(6.0f, 0.0f, 6.0f, 0.0f));
+			RotateButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		if (UHorizontalBoxSlot* DeleteButtonSlot = EditActorActionBox->AddChildToHorizontalBox(DeleteActorButton))
+		{
+			DeleteButtonSlot->SetPadding(FMargin(6.0f, 0.0f, 0.0f, 0.0f));
+			DeleteButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		if (UVerticalBoxSlot* EditActionSlot = Cast<UVerticalBoxSlot>(PanelBody->InsertChildAt(ControlPanelInsertIndex, EditActorActionBox)))
+		{
+			EditActionSlot->SetPadding(FMargin(4.0f, 4.0f, 4.0f, 8.0f));
+			EditActionSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+		++ControlPanelInsertIndex;
+	}
+
+	UScrollBox* ControlPanelScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("DesignerGeneratedControlScroll"));
+	if (UVerticalBoxSlot* ControlPanelScrollSlot = Cast<UVerticalBoxSlot>(PanelBody->InsertChildAt(ControlPanelInsertIndex, ControlPanelScroll)))
+	{
+		ControlPanelScrollSlot->SetPadding(FMargin(4.0f, 4.0f, 4.0f, 0.0f));
+		ControlPanelScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+
+	UVerticalBox* ControlPanel = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DesignerGeneratedControlPanel"));
+	ControlPanelScroll->AddChild(ControlPanel);
+
+	auto AddLabel = [this, ControlPanel](TObjectPtr<UTextBlock>& OutLabel, const TCHAR* Name, const TCHAR* Text)
+	{
+		OutLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
+		OutLabel->SetText(FText::FromString(Text));
+		OutLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+		if (UVerticalBoxSlot* LabelSlot = ControlPanel->AddChildToVerticalBox(OutLabel))
+		{
+			LabelSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		}
+	};
+
+	auto AddCombo = [this, ControlPanel](TObjectPtr<UWhiteComboBoxString>& OutCombo, const TCHAR* Name)
+	{
+		OutCombo = WidgetTree->ConstructWidget<UWhiteComboBoxString>(UWhiteComboBoxString::StaticClass(), Name);
+		OutCombo->OnGenerateWidgetEvent.BindUFunction(this, GET_FUNCTION_NAME_CHECKED(UBuildMenuWidget, GenerateComboItemWidget));
+		if (UVerticalBoxSlot* ComboSlot = ControlPanel->AddChildToVerticalBox(OutCombo))
+		{
+			ComboSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+		}
+	};
+
+	auto AddSpinBox = [this, ControlPanel](TObjectPtr<USpinBox>& OutSpinBox, const TCHAR* Name)
+	{
+		OutSpinBox = WidgetTree->ConstructWidget<USpinBox>(USpinBox::StaticClass(), Name);
+		OutSpinBox->SetDelta(1.0f);
+		OutSpinBox->SetAlwaysUsesDeltaSnap(true);
+		if (UVerticalBoxSlot* SpinSlot = ControlPanel->AddChildToVerticalBox(OutSpinBox))
+		{
+			SpinSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+		}
+	};
+
+	DetailText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DesignerDetailText"));
+	DetailText->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 0.78f, 0.82f)));
+	DetailText->SetAutoWrapText(true);
+	if (UVerticalBoxSlot* DetailSlot = ControlPanel->AddChildToVerticalBox(DetailText))
+	{
+		DetailSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
+	AddLabel(ModeLabelText, TEXT("DesignerModeLabelText"), TEXT("Truss Mode"));
+	AddCombo(ModeComboBox, TEXT("DesignerModeComboBox"));
+	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::StraightRun));
+	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Rectangle));
+	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Arch));
+	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Tower));
+	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Cube));
+	ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::CubeArch));
+	ModeComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleModeChanged);
+
+	AddLabel(PrimaryValueLabelText, TEXT("DesignerPrimaryValueLabelText"), TEXT(""));
+	AddSpinBox(PrimaryValueSpinBox, TEXT("DesignerPrimaryValueSpinBox"));
+	PrimaryValueSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandlePrimaryValueChanged);
+
+	AddLabel(SecondaryValueLabelText, TEXT("DesignerSecondaryValueLabelText"), TEXT(""));
+	AddSpinBox(SecondaryValueSpinBox, TEXT("DesignerSecondaryValueSpinBox"));
+	SecondaryValueSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleSecondaryValueChanged);
+
+	AddLabel(TertiaryValueLabelText, TEXT("DesignerTertiaryValueLabelText"), TEXT(""));
+	AddSpinBox(TertiaryValueSpinBox, TEXT("DesignerTertiaryValueSpinBox"));
+	TertiaryValueSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleTertiaryValueChanged);
+
+	AddLabel(QuaternaryValueLabelText, TEXT("DesignerQuaternaryValueLabelText"), TEXT(""));
+	AddSpinBox(QuaternaryValueSpinBox, TEXT("DesignerQuaternaryValueSpinBox"));
+	QuaternaryValueSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleQuaternaryValueChanged);
+
+	AddLabel(SidePieceLabelText, TEXT("DesignerSidePieceLabelText"), TEXT("Side Spacer Piece"));
+	AddCombo(SidePieceComboBox, TEXT("DesignerSidePieceComboBox"));
+	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TwoFoot));
+	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FourFoot));
+	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FiveFoot));
+	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::EightFoot));
+	SidePieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TenFoot));
+	SidePieceComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleSidePieceChanged);
+	CreateLightingControlPanel(ControlPanel);
+
+	AddLabel(DepthPieceLabelText, TEXT("DesignerDepthPieceLabelText"), TEXT("Depth Spacer Piece"));
+	AddCombo(DepthPieceComboBox, TEXT("DesignerDepthPieceComboBox"));
+	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TwoFoot));
+	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FourFoot));
+	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::FiveFoot));
+	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::EightFoot));
+	DepthPieceComboBox->AddOption(PieceTypeToOption(ETrussPieceType::TenFoot));
+	DepthPieceComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleDepthPieceChanged);
+
+	AddLabel(MBPRowsLabelText, TEXT("DesignerMBPRowsLabelText"), TEXT("Rows"));
+	AddSpinBox(MBPRowsSpinBox, TEXT("DesignerMBPRowsSpinBox"));
+	MBPRowsSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPRowsChanged);
+
+	AddLabel(MBPColumnsLabelText, TEXT("DesignerMBPColumnsLabelText"), TEXT("Columns"));
+	AddSpinBox(MBPColumnsSpinBox, TEXT("DesignerMBPColumnsSpinBox"));
+	MBPColumnsSpinBox->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPColumnsChanged);
+
+	AddLabel(MBPStyleLabelText, TEXT("DesignerMBPStyleLabelText"), TEXT("Default Style"));
+	AddCombo(MBPStyleComboBox, TEXT("DesignerMBPStyleComboBox"));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Empty));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Acrylic));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Boxwood));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Drift));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Geo));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Shimmer));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Hive));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Platinum));
+	MBPStyleComboBox->AddOption(MBPStyleToOption(EMBPPanelStyle::Custom));
+	MBPStyleComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleMBPStyleChanged);
+
+	AddLabel(StageHeightLabelText, TEXT("DesignerStageHeightLabelText"), TEXT("Deck Height"));
+	AddCombo(StageHeightComboBox, TEXT("DesignerStageHeightComboBox"));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In8));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In12));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In24));
+	StageHeightComboBox->AddOption(StageHeightPresetToOption(EStageDeckHeightPreset::In27));
+	StageHeightComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageHeightChanged);
+
+	AddLabel(StageSurfaceLabelText, TEXT("DesignerStageSurfaceLabelText"), TEXT("Surface Style"));
+	AddCombo(StageSurfaceComboBox, TEXT("DesignerStageSurfaceComboBox"));
+	StageSurfaceComboBox->AddOption(StageSurfaceStyleToOption(EStageDeckSurfaceStyle::BlackTop));
+	StageSurfaceComboBox->AddOption(StageSurfaceStyleToOption(EStageDeckSurfaceStyle::GrayCarpet));
+	StageSurfaceComboBox->OnSelectionChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageSurfaceChanged);
+
+	auto AddCheckBoxRow = [this, ControlPanel](const TCHAR* LabelName, const TCHAR* CheckBoxName, const TCHAR* LabelText, TObjectPtr<UTextBlock>& OutLabel, TObjectPtr<UCheckBox>& OutCheckBox)
+	{
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		OutLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), LabelName);
+		OutLabel->SetText(FText::FromString(LabelText));
+		OutLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.90f, 0.90f)));
+		OutCheckBox = WidgetTree->ConstructWidget<UCheckBox>(UCheckBox::StaticClass(), CheckBoxName);
+
+		if (UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(OutLabel))
+		{
+			LabelSlot->SetHorizontalAlignment(HAlign_Left);
+			LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		if (UHorizontalBoxSlot* CheckSlot = Row->AddChildToHorizontalBox(OutCheckBox))
+		{
+			CheckSlot->SetHorizontalAlignment(HAlign_Right);
+		}
+		if (UVerticalBoxSlot* RowSlot = ControlPanel->AddChildToVerticalBox(Row))
+		{
+			RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		}
+	};
+
+	AddCheckBoxRow(TEXT("DesignerStageFrontRailingLabelText"), TEXT("DesignerStageFrontRailingCheckBox"), TEXT("Front Railing"), StageFrontRailingLabelText, StageFrontRailingCheckBox);
+	StageFrontRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageFrontRailingChanged);
+	AddCheckBoxRow(TEXT("DesignerStageBackRailingLabelText"), TEXT("DesignerStageBackRailingCheckBox"), TEXT("Back Railing"), StageBackRailingLabelText, StageBackRailingCheckBox);
+	StageBackRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageBackRailingChanged);
+	AddCheckBoxRow(TEXT("DesignerStageLeftRailingLabelText"), TEXT("DesignerStageLeftRailingCheckBox"), TEXT("Left Railing"), StageLeftRailingLabelText, StageLeftRailingCheckBox);
+	StageLeftRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageLeftRailingChanged);
+	AddCheckBoxRow(TEXT("DesignerStageRightRailingLabelText"), TEXT("DesignerStageRightRailingCheckBox"), TEXT("Right Railing"), StageRightRailingLabelText, StageRightRailingCheckBox);
+	StageRightRailingCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageRightRailingChanged);
+	AddCheckBoxRow(TEXT("DesignerStageLeftStepLabelText"), TEXT("DesignerStageLeftStepCheckBox"), TEXT("Left Step"), StageLeftStepLabelText, StageLeftStepCheckBox);
+	StageLeftStepCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageLeftStepChanged);
+	AddCheckBoxRow(TEXT("DesignerStageRightStepLabelText"), TEXT("DesignerStageRightStepCheckBox"), TEXT("Right Step"), StageRightStepLabelText, StageRightStepCheckBox);
+	StageRightStepCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageRightStepChanged);
+	AddCheckBoxRow(TEXT("DesignerStageAutomaticSkirtLabelText"), TEXT("DesignerStageAutomaticSkirtCheckBox"), TEXT("Automatic Skirt"), StageAutomaticSkirtLabelText, StageAutomaticSkirtCheckBox);
+	StageAutomaticSkirtCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageAutomaticSkirtChanged);
+	AddCheckBoxRow(TEXT("DesignerStageCellEnabledLabelText"), TEXT("DesignerStageCellEnabledCheckBox"), TEXT("Cell Enabled"), StageCellEnabledLabelText, StageCellEnabledCheckBox);
+	StageCellEnabledCheckBox->OnCheckStateChanged.AddDynamic(this, &UBuildMenuWidget::HandleStageCellEnabledChanged);
+}
+
+void UBuildMenuWidget::BindDesignerWidgetTree()
+{
+	if (!bUsesDesignerWidgetTree || !WidgetTree)
+	{
+		return;
+	}
+
+	DesignerBuildGridScroll = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("BuildGridScroll")));
+	DesignerBuildGrid = Cast<UUniformGridPanel>(WidgetTree->FindWidget(TEXT("BuildGrid")));
+	DesignerCategoryTitleText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("CategoryTitle")));
+	DesignerSelectedValueText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Value_Selected")));
+	DesignerRotationSlider = Cast<USlider>(WidgetTree->FindWidget(TEXT("RotationSlider")));
+	DesignerConfirmButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Confirm")));
+	DesignerCancelButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Cancel")));
+	MoveActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Move")));
+	if (!MoveActorButton)
+	{
+		MoveActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_MoveActor")));
+	}
+	if (!MoveActorButton)
+	{
+		MoveActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Move_Actor")));
+	}
+	if (!MoveActorButton)
+	{
+		MoveActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("DesignerMoveActorButton")));
+	}
+	RotateActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Rotate")));
+	if (!RotateActorButton)
+	{
+		RotateActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_RotateActor")));
+	}
+	if (!RotateActorButton)
+	{
+		RotateActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Rotate_Actor")));
+	}
+	if (!RotateActorButton)
+	{
+		RotateActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("DesignerRotateActorButton")));
+	}
+	DeleteActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Delete")));
+	if (!DeleteActorButton)
+	{
+		DeleteActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_DeleteActor")));
+	}
+	if (!DeleteActorButton)
+	{
+		DeleteActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Delete_Actor")));
+	}
+	if (!DeleteActorButton)
+	{
+		DeleteActorButton = Cast<UButton>(WidgetTree->FindWidget(TEXT("DesignerDeleteActorButton")));
+	}
+	EditActorActionBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("EditActionBar")));
+	if (!EditActorActionBox)
+	{
+		EditActorActionBox = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("DesignerEditActorActionBox")));
+	}
+	if (DesignerBuildGridScroll)
+	{
+		if (UVerticalBoxSlot* BuildGridSlot = Cast<UVerticalBoxSlot>(DesignerBuildGridScroll->Slot))
+		{
+			BuildGridSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		}
+	}
+	CreateDesignerControlPanel(Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("PanelBody"))));
+
+	if (DesignerConfirmButton)
+	{
+		DesignerConfirmButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleActionButtonClicked);
+		DesignerConfirmButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleActionButtonClicked);
+	}
+
+	if (DesignerCancelButton)
+	{
+		DesignerCancelButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleDesignerCancelClicked);
+		DesignerCancelButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleDesignerCancelClicked);
+	}
+
+	if (MoveActorButton)
+	{
+		MoveActorButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleMoveActorButtonClicked);
+		MoveActorButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleMoveActorButtonClicked);
+	}
+
+	if (RotateActorButton)
+	{
+		RotateActorButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleRotateActorButtonClicked);
+		RotateActorButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleRotateActorButtonClicked);
+	}
+
+	if (DeleteActorButton)
+	{
+		DeleteActorButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleDeleteActorButtonClicked);
+		DeleteActorButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleDeleteActorButtonClicked);
+	}
+
+	if (DesignerRotationSlider)
+	{
+		DesignerRotationSlider->OnValueChanged.RemoveDynamic(this, &UBuildMenuWidget::HandleDesignerRotationChanged);
+		DesignerRotationSlider->OnValueChanged.AddDynamic(this, &UBuildMenuWidget::HandleDesignerRotationChanged);
+	}
+
+	if (UButton* TabButton = FindDesignerTabInnerButton(TEXT("Tab_Truss")))
+	{
+		SetDesignerTabLabel(TEXT("Tab_Truss"), FText::FromString(TEXT("Truss")));
+		TabButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleTrussTabClicked);
+		TabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleTrussTabClicked);
+	}
+	if (UButton* TabButton = FindDesignerTabInnerButton(TEXT("Tab_Stage")))
+	{
+		SetDesignerTabLabel(TEXT("Tab_Stage"), FText::FromString(TEXT("Stage")));
+		TabButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleStageTabClicked);
+		TabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleStageTabClicked);
+	}
+	if (UButton* TabButton = FindDesignerTabInnerButton(TEXT("Tab_AV")))
+	{
+		SetDesignerTabLabel(TEXT("Tab_AV"), FText::FromString(TEXT("AV")));
+		TabButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleVideoTabClicked);
+		TabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleVideoTabClicked);
+	}
+	if (UButton* TabButton = FindDesignerTabInnerButton(TEXT("Tab_Audio")))
+	{
+		SetDesignerTabLabel(TEXT("Tab_Audio"), FText::FromString(TEXT("Audio")));
+		TabButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleAudioTabClicked);
+		TabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleAudioTabClicked);
+	}
+	if (UWidget* AudioTabWidget = WidgetTree->FindWidget(TEXT("Tab_Audio")))
+	{
+		AudioTabWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (UButton* TabButton = FindDesignerTabInnerButton(TEXT("Tab_Furniture")))
+	{
+		SetDesignerTabLabel(TEXT("Tab_Furniture"), FText::FromString(TEXT("Furniture")));
+		TabButton->OnClicked.RemoveDynamic(this, &UBuildMenuWidget::HandleLoungeTabClicked);
+		TabButton->OnClicked.AddDynamic(this, &UBuildMenuWidget::HandleLoungeTabClicked);
+	}
+}
+
+UButton* UBuildMenuWidget::FindDesignerTabInnerButton(const FName& WidgetName) const
+{
+	const UUserWidget* TabWidget = WidgetTree ? Cast<UUserWidget>(WidgetTree->FindWidget(WidgetName)) : nullptr;
+	return TabWidget && TabWidget->WidgetTree ? Cast<UButton>(TabWidget->WidgetTree->FindWidget(TEXT("TabButton"))) : nullptr;
+}
+
+void UBuildMenuWidget::SetDesignerTabLabel(const FName& WidgetName, const FText& LabelText) const
+{
+	const UUserWidget* TabWidget = WidgetTree ? Cast<UUserWidget>(WidgetTree->FindWidget(WidgetName)) : nullptr;
+	if (!TabWidget || !TabWidget->WidgetTree)
+	{
+		return;
+	}
+
+	if (UTextBlock* TabLabel = Cast<UTextBlock>(TabWidget->WidgetTree->FindWidget(TEXT("TabLabel"))))
+	{
+		TabLabel->SetText(LabelText);
+	}
+}
+
+void UBuildMenuWidget::RefreshDesignerSummary()
+{
+	if (!bUsesDesignerWidgetTree)
+	{
+		return;
+	}
+
+	if (DesignerCategoryTitleText)
+	{
+		if (EditingLightTarget || EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingVideoWall() || IsEditingProjection() || IsEditingAudio() || IsEditingLounge() || IsEditingSectional() || IsEditingFurnitureSeating() || IsEditingBarLayout() || IsEditingDiningTable())
+		{
+			DesignerCategoryTitleText->SetText(BuildHeaderText());
+		}
+		else
+		{
+			const EBuildItemType ItemType = SelectedBuildItem ? SelectedBuildItem->ItemType : ActiveMenuTab;
+			DesignerCategoryTitleText->SetText(FText::FromString(BuildDesignerCategoryLabel(ItemType)));
+		}
+	}
+
+	if (DesignerSelectedValueText)
+	{
+		if (EditingLightTarget)
+		{
+			FString FixtureName = EditingLightTarget->FixtureClass.ToSoftObjectPath().GetAssetName();
+			FixtureName.RemoveFromStart(TEXT("BP_"));
+			FixtureName.RemoveFromEnd(TEXT("_C"));
+			DesignerSelectedValueText->SetText(FText::FromString(FString::Printf(TEXT("Lighting > %s"), FixtureName.IsEmpty() ? TEXT("Fixture") : *FixtureName)));
+		}
+		else if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::FurnitureSeating)
+		{
+			DesignerSelectedValueText->SetText(FText::FromString(FString::Printf(TEXT("Furniture > %s"), *FurnitureSeatingTypeToMenuLabel(CurrentFurnitureSeatingDefinition.SeatingType))));
+		}
+		else
+		{
+			DesignerSelectedValueText->SetText(FText::FromString(BuildDesignerSelectionLabel(SelectedBuildItem, ActiveMenuTab)));
 		}
 	}
 }
 
 FText UBuildMenuWidget::BuildDetailText() const
 {
-	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::VideoWall && ActiveMenuTab != EBuildItemType::ProjectionScreen && ActiveMenuTab != EBuildItemType::AudioPlacement && ActiveMenuTab != EBuildItemType::LoungeLayout)
+	if (EditingLightTarget)
+	{
+		FString FixtureName = EditingLightTarget->FixtureClass.ToSoftObjectPath().GetAssetName();
+		FixtureName.RemoveFromStart(TEXT("BP_"));
+		FixtureName.RemoveFromEnd(TEXT("_C"));
+		const UDMXEntityFixturePatch* Patch = EditingLightTarget->DMX ? EditingLightTarget->DMX->GetFixturePatch() : nullptr;
+		const FString PatchDescription = Patch
+			? FString::Printf(TEXT("%s (U%d.%d, %d ch)"), *Patch->Name, Patch->GetUniverseID(), Patch->GetStartingChannel(), Patch->GetChannelSpan())
+			: TEXT("Unpatched");
+		return FText::FromString(FString::Printf(TEXT("Fixture: %s\nPatch: %s\nTruss: %s"),
+			FixtureName.IsEmpty() ? TEXT("None") : *FixtureName,
+			*PatchDescription,
+			EditingLightTarget->bAttachedToTruss ? TEXT("Attached") : TEXT("Not attached")));
+	}
+
+	if (!SelectedBuildItem && ActiveMenuTab != EBuildItemType::MBPWall && ActiveMenuTab != EBuildItemType::DrapeRun && ActiveMenuTab != EBuildItemType::VideoPlacement && ActiveMenuTab != EBuildItemType::VideoWall && ActiveMenuTab != EBuildItemType::ProjectionScreen && ActiveMenuTab != EBuildItemType::AudioPlacement && ActiveMenuTab != EBuildItemType::LoungeLayout && ActiveMenuTab != EBuildItemType::FurnitureSeating && ActiveMenuTab != EBuildItemType::BarLayout && ActiveMenuTab != EBuildItemType::DiningTable)
 	{
 		return FText::FromString(TEXT("No build item selected."));
 	}
 
 	const FText Name = SelectedBuildItem
-		? (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName)
+		? (SelectedBuildItem->ItemType == EBuildItemType::FurnitureSeating
+			? FText::FromString(FurnitureSeatingTypeToMenuLabel(CurrentFurnitureSeatingDefinition.SeatingType))
+			: (SelectedBuildItem->DisplayName.IsEmpty() ? FText::FromName(SelectedBuildItem->ItemId) : SelectedBuildItem->DisplayName))
 		: (ActiveMenuTab == EBuildItemType::AudioPlacement
 			? FText::FromString(TEXT("Audio"))
 			: (ActiveMenuTab == EBuildItemType::LoungeLayout
 			? FText::FromString(TEXT("Lounge"))
+			: (ActiveMenuTab == EBuildItemType::DiningTable
+			? FText::FromString(TEXT("Dining"))
+			: (ActiveMenuTab == EBuildItemType::BarLayout
+			? FText::FromString(TEXT("Bars"))
 			: (ActiveMenuTab == EBuildItemType::ProjectionScreen
 			? FText::FromString(TEXT("Projection"))
 			: (ActiveMenuTab == EBuildItemType::VideoWall
 				? FText::FromString(TEXT("Video Wall"))
 				: (ActiveMenuTab == EBuildItemType::VideoPlacement
 					? FText::FromString(TEXT("Video"))
-					: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall"))))))));
+					: (ActiveMenuTab == EBuildItemType::DrapeRun ? FText::FromString(TEXT("Drape")) : FText::FromString(TEXT("MBP Wall"))))))))));
 
 	const TCHAR* TypeLabel = TEXT("MBP Wall");
 	if (ActiveMenuTab == EBuildItemType::TrussStructure)
@@ -1356,9 +2798,21 @@ FText UBuildMenuWidget::BuildDetailText() const
 	{
 		TypeLabel = TEXT("Audio Placement");
 	}
-	else if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	else if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
-		TypeLabel = TEXT("Lounge Layout");
+		TypeLabel = SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout ? TEXT("Sectional Layout") : TEXT("Lounge Layout");
+	}
+	else if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		TypeLabel = CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable ? TEXT("Cafe Tables") : TEXT("High Seating");
+	}
+	else if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		TypeLabel = TEXT("Bar Layout");
+	}
+	else if (ActiveMenuTab == EBuildItemType::DiningTable || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable))
+	{
+		TypeLabel = TEXT("Dining Table");
 	}
 
 	FString Detail = FString::Printf(
@@ -1507,26 +2961,88 @@ FText UBuildMenuWidget::BuildDetailText() const
 				CurrentAudioPlacementDefinition.GroundSpeakerDefinition.StandExtensionFt,
 				*AudioSourceToOption(CurrentAudioSource));
 	}
-	else if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	else if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
-		const FLoungeLayoutBuildDefinition& Definition = CurrentLoungeLayoutDefinition;
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			const FSectionalLayoutBuildDefinition& Definition = CurrentSectionalLayoutDefinition;
+			Detail += FString::Printf(
+				TEXT("\nArmless: %s\nCorner: %s\nShape: %s\nWidth Sections: %d\nDepth Sections: %d\nSpacing: %.1f cm\nAuto Spacing: %s"),
+				Definition.ArmlessItem.IsEmpty() ? TEXT("Auto") : *Definition.ArmlessItem,
+				Definition.CornerItem.IsEmpty() ? TEXT("Auto") : *Definition.CornerItem,
+				*SectionalShapeToOption(Definition.Shape),
+				Definition.WidthSections,
+				Definition.DepthSections,
+				Definition.SectionSpacingCm,
+				Definition.bUseArmlessItemDefaultSpacing ? TEXT("Yes") : TEXT("No"));
+		}
+		else
+		{
+			const FLoungeLayoutBuildDefinition& Definition = CurrentLoungeLayoutDefinition;
+			Detail += FString::Printf(
+				TEXT("\nSofa: %s\nChair: %s\nCocktail Table: %s\nEnd Table: %s\nLamp: %s\nAccent: %s\nSofas: %d\nChairs: %d\nEnd Tables: %d\nLamps: %d\nAccents: %d\nTwo Sofas: %s\nFour Chairs: %s\nEnd Table X Offset: %.1f cm\nMirrored Chair Yaw: %.1f deg"),
+				Definition.SofaItem.IsEmpty() ? TEXT("Auto") : *Definition.SofaItem,
+				Definition.ChairItem.IsEmpty() ? TEXT("Auto") : *Definition.ChairItem,
+				Definition.CocktailTableItem.IsEmpty() ? TEXT("Auto") : *Definition.CocktailTableItem,
+				Definition.EndTableItem.IsEmpty() ? TEXT("Auto") : *Definition.EndTableItem,
+				Definition.LampItem.IsEmpty() ? TEXT("Auto") : *Definition.LampItem,
+				Definition.AccentItem.IsEmpty() ? TEXT("Auto") : *Definition.AccentItem,
+				Definition.SofaCount,
+				Definition.ChairCount,
+				Definition.EndTableCount,
+				Definition.LampCount,
+				Definition.AccentCount,
+				Definition.bUseTwoSofas ? TEXT("Yes") : TEXT("No"),
+				Definition.bUseFourChairs ? TEXT("Yes") : TEXT("No"),
+				Definition.EndTableOffsetXCm,
+				Definition.MirroredChairYawOffsetDegrees);
+		}
+	}
+	else if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		const bool bCafe = CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable;
+		const FBarSeatingBuildDefinition& BarDefinition = CurrentFurnitureSeatingDefinition.BarSeatingDefinition;
+		const FCafeTableBuildDefinition& CafeDefinition = CurrentFurnitureSeatingDefinition.CafeTableDefinition;
 		Detail += FString::Printf(
-			TEXT("\nSofa: %s\nChair: %s\nCocktail Table: %s\nEnd Table: %s\nLamp: %s\nAccent: %s\nSofas: %d\nChairs: %d\nEnd Tables: %d\nLamps: %d\nAccents: %d\nTwo Sofas: %s\nFour Chairs: %s\nEnd Table X Offset: %.1f cm\nMirrored Chair Yaw: %.1f deg"),
-			Definition.SofaItem.IsEmpty() ? TEXT("Auto") : *Definition.SofaItem,
-			Definition.ChairItem.IsEmpty() ? TEXT("Auto") : *Definition.ChairItem,
-			Definition.CocktailTableItem.IsEmpty() ? TEXT("Auto") : *Definition.CocktailTableItem,
-			Definition.EndTableItem.IsEmpty() ? TEXT("Auto") : *Definition.EndTableItem,
-			Definition.LampItem.IsEmpty() ? TEXT("Auto") : *Definition.LampItem,
-			Definition.AccentItem.IsEmpty() ? TEXT("Auto") : *Definition.AccentItem,
-			Definition.SofaCount,
-			Definition.ChairCount,
-			Definition.EndTableCount,
-			Definition.LampCount,
-			Definition.AccentCount,
-			Definition.bUseTwoSofas ? TEXT("Yes") : TEXT("No"),
-			Definition.bUseFourChairs ? TEXT("Yes") : TEXT("No"),
-			Definition.EndTableOffsetXCm,
-			Definition.MirroredChairYawOffsetDegrees);
+			TEXT("\nSeating Type: %s\nTable: %s\nSeat: %s\nLayout: %s\nSeat Y Offset: %.1f cm\nPair X Offset: %.1f cm\nClassroom Style: %s"),
+			*FurnitureSeatingTypeToOption(CurrentFurnitureSeatingDefinition.SeatingType),
+			bCafe ? (CafeDefinition.CafeTableItem.IsEmpty() ? TEXT("Auto") : *CafeDefinition.CafeTableItem) : (BarDefinition.BarTableItem.IsEmpty() ? TEXT("Auto") : *BarDefinition.BarTableItem),
+			bCafe ? (CafeDefinition.DiningChairItem.IsEmpty() ? TEXT("Auto") : *CafeDefinition.DiningChairItem) : (BarDefinition.StoolItem.IsEmpty() ? TEXT("Auto") : *BarDefinition.StoolItem),
+			bCafe ? *CafeTableLayoutToOption(CafeDefinition.ChairLayout) : *BarSeatingLayoutToOption(BarDefinition.StoolLayout),
+			bCafe ? CafeDefinition.ChairOffsetYCm : BarDefinition.StoolOffsetYCm,
+			bCafe ? CafeDefinition.RectangleChairPairOffsetXCm : BarDefinition.RectangleStoolPairOffsetXCm,
+			(bCafe ? CafeDefinition.bClassroomStyle : BarDefinition.bClassroomStyle) ? TEXT("Yes") : TEXT("No"));
+	}
+	else if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		const FBarLayoutBuildDefinition& Definition = CurrentBarLayoutDefinition;
+		Detail += FString::Printf(
+			TEXT("\nShape: %s\nFront: %s\nBack: %s\nUse Front: %s\nUse Back: %s\nWall Count: %d\nWall Spacing: %.1f cm\nCenter Offsets: 2 %.1f cm, 4 %.1f cm, 6 %.1f cm"),
+			*BarLayoutShapeToOption(Definition.LayoutShape),
+			Definition.FrontBarItem.IsEmpty() ? TEXT("Auto") : *Definition.FrontBarItem,
+			Definition.BackBarItem.IsEmpty() ? TEXT("Auto") : *Definition.BackBarItem,
+			Definition.bUseFrontBar ? TEXT("Yes") : TEXT("No"),
+			Definition.bUseBackBar ? TEXT("Yes") : TEXT("No"),
+			Definition.WallBarCount,
+			Definition.WallBarSpacingCm,
+			Definition.CenterTwoSidedOffsetCm,
+			Definition.CenterFourSidedOffsetCm,
+			Definition.CenterSixSidedOffsetCm);
+	}
+	else if (ActiveMenuTab == EBuildItemType::DiningTable || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable))
+	{
+		const FDiningTableBuildDefinition& Definition = CurrentDiningTableDefinition;
+		Detail += FString::Printf(
+			TEXT("\nTable: %s\nChair: %s\nChairs: %s\nArrangement: %s\nGap: %.1f cm\nTablecloth: %s\nLinen: %s\nOverhang: %.1f cm\nDrop: %.1f cm"),
+			Definition.DiningTableItem.IsEmpty() ? TEXT("Auto") : *Definition.DiningTableItem,
+			Definition.DiningChairItem.IsEmpty() ? TEXT("Auto") : *Definition.DiningChairItem,
+			*DiningChairCountToOption(Definition.ChairCount),
+			*DiningChairArrangementToOption(Definition.ChairArrangement),
+			Definition.ChairGapCm,
+			Definition.bUseTablecloth ? TEXT("Yes") : TEXT("No"),
+			Definition.TableclothItem.IsEmpty() ? TEXT("Auto") : *Definition.TableclothItem,
+			Definition.TableclothOverhangCm,
+			Definition.TableclothDropCm);
 	}
 
 	return FText::Format(FText::FromString(TEXT("{0}\n\n{1}")), Name, FText::FromString(Detail));
@@ -1534,6 +3050,11 @@ FText UBuildMenuWidget::BuildDetailText() const
 
 FText UBuildMenuWidget::BuildHeaderText() const
 {
+	if (EditingLightTarget)
+	{
+		return FText::FromString(TEXT("Edit Lighting"));
+	}
+
 	if (EditingTarget)
 	{
 		return FText::FromString(TEXT("Edit Truss"));
@@ -1579,12 +3100,32 @@ FText UBuildMenuWidget::BuildHeaderText() const
 		return FText::FromString(TEXT("Edit Lounge"));
 	}
 
+	if (IsEditingSectional())
+	{
+		return FText::FromString(TEXT("Edit Sectional"));
+	}
+
+	if (IsEditingFurnitureSeating())
+	{
+		return FText::FromString(TEXT("Edit Seating"));
+	}
+
+	if (IsEditingBarLayout())
+	{
+		return FText::FromString(TEXT("Edit Bar"));
+	}
+
+	if (IsEditingDiningTable())
+	{
+		return FText::FromString(TEXT("Edit Dining"));
+	}
+
 	return FText::FromString(TEXT("Build Menu"));
 }
 
 FText UBuildMenuWidget::BuildActionButtonText() const
 {
-	return (EditingTarget || IsEditingMBP() || IsEditingStage() || IsEditingDrape() || IsEditingVideo() || IsEditingVideoWall() || IsEditingProjection() || IsEditingAudio() || IsEditingLounge())
+	return IsEditingAnyActor()
 		? FText::FromString(TEXT("Apply"))
 		: FText::FromString(TEXT("Create"));
 }
@@ -1592,6 +3133,35 @@ FText UBuildMenuWidget::BuildActionButtonText() const
 bool UBuildMenuWidget::IsEditingMBP() const
 {
 	return EditingMBPTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingAnyActor() const
+{
+	return GetEditingActor() != nullptr;
+}
+
+void UBuildMenuWidget::RefreshEditActorActionButtons()
+{
+	const ESlateVisibility EditActionVisibility = IsEditingAnyActor()
+		? ESlateVisibility::Visible
+		: ESlateVisibility::Collapsed;
+
+	if (EditActorActionBox)
+	{
+		EditActorActionBox->SetVisibility(EditActionVisibility);
+	}
+	if (MoveActorButton)
+	{
+		MoveActorButton->SetVisibility(EditActionVisibility);
+	}
+	if (RotateActorButton)
+	{
+		RotateActorButton->SetVisibility(EditActionVisibility);
+	}
+	if (DeleteActorButton)
+	{
+		DeleteActorButton->SetVisibility(EditActionVisibility);
+	}
 }
 
 bool UBuildMenuWidget::IsEditingStage() const
@@ -1629,6 +3199,26 @@ bool UBuildMenuWidget::IsEditingLounge() const
 	return EditingLoungeTarget != nullptr;
 }
 
+bool UBuildMenuWidget::IsEditingSectional() const
+{
+	return EditingSectionalTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingFurnitureSeating() const
+{
+	return EditingBarSeatingTarget != nullptr || EditingCafeTableTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingBarLayout() const
+{
+	return EditingBarLayoutTarget != nullptr;
+}
+
+bool UBuildMenuWidget::IsEditingDiningTable() const
+{
+	return EditingDiningTableTarget != nullptr;
+}
+
 void UBuildMenuWidget::RefreshTrussControls()
 {
 	bRefreshingControls = true;
@@ -1641,14 +3231,21 @@ void UBuildMenuWidget::RefreshTrussControls()
 		ModeLabelText->SetVisibility(VisibleState);
 	}
 
-		if (ModeComboBox)
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(VisibleState);
+		if (bIsTrussItem)
 		{
-			ModeComboBox->SetVisibility(VisibleState);
-			if (bIsTrussItem)
-			{
-				ModeComboBox->SetSelectedOption(BuildModeToOption(CurrentTrussDefinition.BuildMode));
-			}
+			ModeComboBox->ClearOptions();
+			ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::StraightRun));
+			ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Rectangle));
+			ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Arch));
+			ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Tower));
+			ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::Cube));
+			ModeComboBox->AddOption(BuildModeToOption(ETrussBuildMode::CubeArch));
+			ModeComboBox->SetSelectedOption(BuildModeToOption(CurrentTrussDefinition.BuildMode));
 		}
+	}
 
 	if (!bIsTrussItem)
 	{
@@ -1764,11 +3361,326 @@ void UBuildMenuWidget::RefreshTrussControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshLightingControls()
+{
+	bRefreshingControls = true;
+	for (UWidget* Control : { PrimaryValueLabelText.Get(), SecondaryValueLabelText.Get(), TertiaryValueLabelText.Get(), QuaternaryValueLabelText.Get(), SidePieceLabelText.Get(), DepthPieceLabelText.Get(), MBPRowsLabelText.Get(), MBPColumnsLabelText.Get(), MBPStyleLabelText.Get(), StageHeightLabelText.Get(), StageSurfaceLabelText.Get() })
+	{
+		if (Control) Control->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	for (UWidget* Control : { PrimaryValueSpinBox.Get(), SecondaryValueSpinBox.Get(), TertiaryValueSpinBox.Get(), QuaternaryValueSpinBox.Get(), MBPRowsSpinBox.Get(), MBPColumnsSpinBox.Get() })
+	{
+		if (Control) Control->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	for (UWidget* Control : { SidePieceComboBox.Get(), DepthPieceComboBox.Get(), MBPStyleComboBox.Get(), StageHeightComboBox.Get(), StageSurfaceComboBox.Get() })
+	{
+		if (Control) Control->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	for (UWidget* StageLabel : { StageFrontRailingLabelText.Get(), StageBackRailingLabelText.Get(), StageLeftRailingLabelText.Get(), StageRightRailingLabelText.Get(), StageLeftStepLabelText.Get(), StageRightStepLabelText.Get(), StageAutomaticSkirtLabelText.Get(), StageCellEnabledLabelText.Get() })
+	{
+		if (StageLabel && StageLabel->GetParent())
+		{
+			StageLabel->GetParent()->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+	for (UWidget* Control : { StageFrontRailingLabelText.Get(), StageBackRailingLabelText.Get(), StageLeftRailingLabelText.Get(), StageRightRailingLabelText.Get(), StageLeftStepLabelText.Get(), StageRightStepLabelText.Get(), StageAutomaticSkirtLabelText.Get(), StageCellEnabledLabelText.Get() })
+	{
+		if (Control) Control->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	for (UWidget* Control : { StageFrontRailingCheckBox.Get(), StageBackRailingCheckBox.Get(), StageLeftRailingCheckBox.Get(), StageRightRailingCheckBox.Get(), StageLeftStepCheckBox.Get(), StageRightStepCheckBox.Get(), StageAutomaticSkirtCheckBox.Get(), StageCellEnabledCheckBox.Get() })
+	{
+		if (Control) Control->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (ModeLabelText)
+	{
+		ModeLabelText->SetText(FText::FromString(TEXT("Fixture")));
+		ModeLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (ModeComboBox)
+	{
+		ModeComboBox->SetVisibility(ESlateVisibility::Visible);
+		ModeComboBox->ClearOptions();
+		FString SelectedName;
+		const UClass* CurrentClass = EditingLightTarget ? EditingLightTarget->FixtureClass.LoadSynchronous() : nullptr;
+		for (int32 Index = 0; Index < LightingFixtureClasses.Num() && Index < LightingFixtureNames.Num(); ++Index)
+		{
+			ModeComboBox->AddOption(LightingFixtureNames[Index]);
+			if (LightingFixtureClasses[Index].Get() == CurrentClass)
+			{
+				SelectedName = LightingFixtureNames[Index];
+			}
+		}
+		if (SelectedName.IsEmpty())
+		{
+			SelectedName = CurrentClass ? CurrentClass->GetName() : TEXT("No Fixture");
+			ModeComboBox->AddOption(SelectedName);
+		}
+		ModeComboBox->SetSelectedOption(SelectedName);
+	}
+
+	UDMXEntityFixturePatch* CurrentPatch = EditingLightTarget && EditingLightTarget->DMX
+		? EditingLightTarget->DMX->GetFixturePatch() : nullptr;
+	FString SelectedPatchOption = TEXT("Unpatched");
+	const TArray<TPair<FString, UDMXEntityFixturePatch*>> PatchOptions = GetLightingFixturePatchOptions();
+	for (const TPair<FString, UDMXEntityFixturePatch*>& PatchOption : PatchOptions)
+	{
+		if (PatchOption.Value == CurrentPatch)
+		{
+			SelectedPatchOption = PatchOption.Key;
+			break;
+		}
+	}
+
+	if (SidePieceLabelText)
+	{
+		SidePieceLabelText->SetText(FText::FromString(TEXT("Fixture Patch")));
+		SidePieceLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (SidePieceComboBox)
+	{
+		SidePieceComboBox->SetVisibility(ESlateVisibility::Visible);
+		SidePieceComboBox->ClearOptions();
+		for (const TPair<FString, UDMXEntityFixturePatch*>& PatchOption : PatchOptions)
+		{
+			SidePieceComboBox->AddOption(PatchOption.Key);
+		}
+		SidePieceComboBox->SetSelectedOption(SelectedPatchOption);
+	}
+
+	const TArray<const FDMXFixtureFunction*> ControlFunctions = GetLightingControlFunctions(CurrentPatch);
+	TMap<FDMXAttributeName, int32> CurrentValues;
+	if (CurrentPatch)
+	{
+		CurrentPatch->GetAttributeValues(CurrentValues);
+	}
+	if (UTextBlock* Status = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("LightingControlStatus"))))
+	{
+		Status->SetText(FText::FromString(CurrentPatch ? TEXT("No intensity, position, or color controls in this patch mode.") : TEXT("Choose a fixture patch to control this light.")));
+		Status->SetVisibility(ControlFunctions.IsEmpty() ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	for (int32 Index = 0; Index < 7; ++Index)
+	{
+		UWidget* Row = WidgetTree->FindWidget(LightingControlWidgetName(TEXT("LightingControlRow"), Index));
+		if (!Row)
+		{
+			continue;
+		}
+		Row->SetVisibility(ControlFunctions.IsValidIndex(Index) ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (!ControlFunctions.IsValidIndex(Index))
+		{
+			continue;
+		}
+
+		const FDMXFixtureFunction& Function = *ControlFunctions[Index];
+		const int64 MaxValue = (int64(1) << (8 * Function.GetNumChannels())) - 1;
+		const int32* ReceivedValue = CurrentValues.Find(Function.Attribute);
+		const float NormalizedValue = static_cast<float>(FMath::Clamp<int64>(ReceivedValue ? *ReceivedValue : Function.DefaultValue, 0, MaxValue)) / static_cast<float>(MaxValue);
+		if (UTextBlock* Label = Cast<UTextBlock>(WidgetTree->FindWidget(LightingControlWidgetName(TEXT("LightingControlLabel"), Index))))
+		{
+			Label->SetText(FText::FromName(Function.Attribute.Name));
+		}
+		if (UTextBlock* Value = Cast<UTextBlock>(WidgetTree->FindWidget(LightingControlWidgetName(TEXT("LightingControlValue"), Index))))
+		{
+			Value->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(NormalizedValue * 100.0f))));
+		}
+		if (USlider* Slider = Cast<USlider>(WidgetTree->FindWidget(LightingControlWidgetName(TEXT("LightingControlSlider"), Index))))
+		{
+			Slider->SetValue(NormalizedValue);
+		}
+	}
+	UpdateLightingColorSwatch();
+
+	if (UWidget* GoboPanel = WidgetTree->FindWidget(TEXT("LightingGoboPanel")))
+	{
+		const bool bShowGobos = EditingLightTarget && EditingLightTarget->IsLekoFixture();
+		GoboPanel->SetVisibility(bShowGobos ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		GoboTexturePathsByOption.Reset();
+		if (bShowGobos)
+		{
+			if (UComboBoxString* ComboBox = Cast<UComboBoxString>(WidgetTree->FindWidget(TEXT("LightingGoboComboBox"))))
+			{
+				ComboBox->ClearOptions();
+				ComboBox->AddOption(TEXT("Open"));
+				FString SelectedOption = TEXT("Open");
+				const FSoftObjectPath SelectedPath = EditingLightTarget->GoboTexture.ToSoftObjectPath();
+
+				FAssetRegistryModule& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+				TArray<FAssetData> GoboAssets;
+				AssetRegistry.Get().GetAssetsByPath(FName(MajicGoboAssetPath), GoboAssets, false);
+				GoboAssets.Sort([](const FAssetData& A, const FAssetData& B) { return A.AssetName.LexicalLess(B.AssetName); });
+				for (const FAssetData& Asset : GoboAssets)
+				{
+					if (Asset.AssetClassPath != UTexture2D::StaticClass()->GetClassPathName())
+					{
+						continue;
+					}
+					const FString Name = Asset.AssetName.ToString();
+					const FSoftObjectPath Path = Asset.GetSoftObjectPath();
+					GoboTexturePathsByOption.Add(Name, Path);
+					ComboBox->AddOption(Name);
+					if (Path == SelectedPath)
+					{
+						SelectedOption = Name;
+					}
+				}
+
+				FSoftObjectPath CustomPath = EditingLightTarget->CustomGoboTexture.ToSoftObjectPath();
+				if (CustomPath.IsNull() && !SelectedPath.IsNull() && SelectedOption == TEXT("Open"))
+				{
+					CustomPath = SelectedPath;
+				}
+				if (!CustomPath.IsNull())
+				{
+					GoboTexturePathsByOption.Add(TEXT("Custom"), CustomPath);
+					ComboBox->AddOption(TEXT("Custom"));
+					if (CustomPath == SelectedPath)
+					{
+						SelectedOption = TEXT("Custom");
+					}
+				}
+				ComboBox->SetSelectedOption(SelectedOption);
+				RefreshGoboPreview(SelectedOption);
+			}
+		}
+	}
+	bRefreshingControls = false;
+}
+
+void UBuildMenuWidget::ApplyLightingControlValue(int32 SlotIndex, float NormalizedValue)
+{
+	UDMXEntityFixturePatch* Patch = EditingLightTarget && EditingLightTarget->DMX
+		? EditingLightTarget->DMX->GetFixturePatch() : nullptr;
+	const TArray<const FDMXFixtureFunction*> ControlFunctions = GetLightingControlFunctions(Patch);
+	if (!ControlFunctions.IsValidIndex(SlotIndex))
+	{
+		return;
+	}
+
+	const FDMXFixtureFunction& Function = *ControlFunctions[SlotIndex];
+	const int64 MaxValue = (int64(1) << (8 * Function.GetNumChannels())) - 1;
+	const int32 RawValue = static_cast<int32>(FMath::RoundToInt64(FMath::Clamp(NormalizedValue, 0.0f, 1.0f) * static_cast<double>(MaxValue)));
+	TMap<FDMXAttributeName, int32> Values;
+	Values.Add(Function.Attribute, RawValue);
+	Patch->SendDMX(Values);
+
+	if (UTextBlock* Value = Cast<UTextBlock>(WidgetTree->FindWidget(LightingControlWidgetName(TEXT("LightingControlValue"), SlotIndex))))
+	{
+		Value->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(FMath::Clamp(NormalizedValue, 0.0f, 1.0f) * 100.0f))));
+	}
+	UpdateLightingColorSwatch();
+}
+
+void UBuildMenuWidget::UpdateLightingColorSwatch() const
+{
+	UBorder* Swatch = WidgetTree ? Cast<UBorder>(WidgetTree->FindWidget(TEXT("LightingColorSwatch"))) : nullptr;
+	if (!Swatch)
+	{
+		return;
+	}
+
+	const UDMXEntityFixturePatch* Patch = EditingLightTarget && EditingLightTarget->DMX
+		? EditingLightTarget->DMX->GetFixturePatch() : nullptr;
+	const TArray<const FDMXFixtureFunction*> ControlFunctions = GetLightingControlFunctions(Patch);
+	float Red = -1.0f, Green = -1.0f, Blue = -1.0f;
+	float Cyan = -1.0f, Magenta = -1.0f, Yellow = -1.0f;
+	for (int32 Index = 0; Index < ControlFunctions.Num(); ++Index)
+	{
+		const USlider* Slider = Cast<USlider>(WidgetTree->FindWidget(LightingControlWidgetName(TEXT("LightingControlSlider"), Index)));
+		if (!Slider)
+		{
+			continue;
+		}
+		const FName Attribute = ControlFunctions[Index]->Attribute.Name;
+		if (Attribute == TEXT("Red")) Red = Slider->GetValue();
+		else if (Attribute == TEXT("Green")) Green = Slider->GetValue();
+		else if (Attribute == TEXT("Blue")) Blue = Slider->GetValue();
+		else if (Attribute == TEXT("Cyan")) Cyan = Slider->GetValue();
+		else if (Attribute == TEXT("Magenta")) Magenta = Slider->GetValue();
+		else if (Attribute == TEXT("Yellow")) Yellow = Slider->GetValue();
+	}
+
+	if (Red >= 0.0f && Green >= 0.0f && Blue >= 0.0f)
+	{
+		Swatch->SetBrushColor(FLinearColor(Red, Green, Blue));
+		Swatch->SetVisibility(ESlateVisibility::Visible);
+	}
+	else if (Cyan >= 0.0f && Magenta >= 0.0f && Yellow >= 0.0f)
+	{
+		Swatch->SetBrushColor(FLinearColor(1.0f - Cyan, 1.0f - Magenta, 1.0f - Yellow));
+		Swatch->SetVisibility(ESlateVisibility::Visible);
+	}
+	else
+	{
+		Swatch->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UBuildMenuWidget::RefreshGoboPreview(const FString& Option) const
+{
+	UImage* Preview = WidgetTree ? Cast<UImage>(WidgetTree->FindWidget(TEXT("LightingGoboPreview"))) : nullptr;
+	if (!Preview)
+	{
+		return;
+	}
+	const FSoftObjectPath* Path = GoboTexturePathsByOption.Find(Option);
+	UTexture2D* Texture = Path ? Cast<UTexture2D>(Path->TryLoad()) : nullptr;
+	Preview->SetVisibility(Texture ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Texture)
+	{
+		Preview->SetBrushFromTexture(Texture);
+	}
+}
+
+UWidget* UBuildMenuWidget::CreateGoboOptionWidget(FString Item)
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	if (const FSoftObjectPath* Path = GoboTexturePathsByOption.Find(Item))
+	{
+		if (UTexture2D* Texture = Cast<UTexture2D>(Path->TryLoad()))
+		{
+			UImage* Thumbnail = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+			Thumbnail->SetBrushFromTexture(Texture);
+			Thumbnail->SetDesiredSizeOverride(FVector2D(44.0f, 44.0f));
+			if (UHorizontalBoxSlot* ImageSlot = Row->AddChildToHorizontalBox(Thumbnail))
+			{
+				ImageSlot->SetPadding(FMargin(4.0f));
+			}
+		}
+	}
+	UTextBlock* Name = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	Name->SetText(FText::FromString(Item));
+	Name->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+	if (UHorizontalBoxSlot* NameSlot = Row->AddChildToHorizontalBox(Name))
+	{
+		NameSlot->SetPadding(FMargin(4.0f, 10.0f, 4.0f, 4.0f));
+	}
+	return Row;
+}
+
+void UBuildMenuWidget::HandleGoboChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	if (bRefreshingControls || !EditingLightTarget || !EditingLightTarget->IsLekoFixture())
+	{
+		return;
+	}
+	const FSoftObjectPath* Path = GoboTexturePathsByOption.Find(SelectedItem);
+	EditingLightTarget->SetGoboTexture(Path ? Cast<UTexture2D>(Path->TryLoad()) : nullptr);
+	RefreshGoboPreview(SelectedItem);
+}
+
 void UBuildMenuWidget::RefreshTabButtons()
 {
 	auto GetButtonColor = [this](EBuildItemType TabType)
 	{
-		return ActiveMenuTab == TabType
+		if (EditingLightTarget)
+		{
+			return FLinearColor(0.10f, 0.10f, 0.12f, 1.0f);
+		}
+		const EBuildItemType VisibleTab = bUsesDesignerWidgetTree
+			? BuildDesignerTabForItemType(ActiveMenuTab)
+			: ActiveMenuTab;
+		return VisibleTab == TabType
 			? FLinearColor(0.18f, 0.45f, 0.70f, 1.0f)
 			: FLinearColor(0.10f, 0.10f, 0.12f, 1.0f);
 	};
@@ -1816,6 +3728,16 @@ void UBuildMenuWidget::RefreshTabButtons()
 	if (LoungeTabButton)
 	{
 		LoungeTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::LoungeLayout));
+	}
+
+	if (SeatingTabButton)
+	{
+		SeatingTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::FurnitureSeating));
+	}
+
+	if (BarTabButton)
+	{
+		BarTabButton->SetBackgroundColor(GetButtonColor(EBuildItemType::BarLayout));
 	}
 }
 
@@ -2585,7 +4507,7 @@ void UBuildMenuWidget::RefreshAudioControls()
 
 void UBuildMenuWidget::RefreshLoungeControls()
 {
-	if (ActiveMenuTab != EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab != EBuildItemType::LoungeLayout || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout))
 	{
 		return;
 	}
@@ -2734,6 +4656,543 @@ void UBuildMenuWidget::RefreshLoungeControls()
 	bRefreshingControls = false;
 }
 
+void UBuildMenuWidget::RefreshSectionalControls()
+{
+	if (ActiveMenuTab != EBuildItemType::LoungeLayout || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::SectionalLayout)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	const TArray<FString> ArmlessOptions = GetLoungeItemOptionsFromFolder(SectionalArmlessAssetPath);
+	const TArray<FString> CornerOptions = GetLoungeItemOptionsFromFolder(SectionalCornerAssetPath);
+	CurrentSectionalLayoutDefinition.ArmlessItem = EnsureLoungeOption(CurrentSectionalLayoutDefinition.ArmlessItem, ArmlessOptions);
+	CurrentSectionalLayoutDefinition.CornerItem = EnsureLoungeOption(CurrentSectionalLayoutDefinition.CornerItem, CornerOptions);
+
+	auto SetComboControl = [](UTextBlock* Label, UWhiteComboBoxString* ComboBox, const TCHAR* LabelText, const TArray<FString>& Options, const FString& SelectedOption)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (ComboBox)
+		{
+			ComboBox->SetVisibility(ESlateVisibility::Visible);
+			ComboBox->ClearOptions();
+			for (const FString& Option : Options)
+			{
+				ComboBox->AddOption(Option);
+			}
+			if (!SelectedOption.IsEmpty())
+			{
+				ComboBox->SetSelectedOption(SelectedOption);
+			}
+		}
+	};
+
+	TArray<FString> ShapeOptions;
+	ShapeOptions.Add(SectionalShapeToOption(ESectionalLayoutShape::OneSided));
+	ShapeOptions.Add(SectionalShapeToOption(ESectionalLayoutShape::TwoSidedL));
+	ShapeOptions.Add(SectionalShapeToOption(ESectionalLayoutShape::ThreeSidedU));
+	ShapeOptions.Add(SectionalShapeToOption(ESectionalLayoutShape::FourSidedBox));
+
+	SetComboControl(ModeLabelText, ModeComboBox, TEXT("Shape"), ShapeOptions, SectionalShapeToOption(CurrentSectionalLayoutDefinition.Shape));
+	SetComboControl(SidePieceLabelText, SidePieceComboBox, TEXT("Armless"), ArmlessOptions, CurrentSectionalLayoutDefinition.ArmlessItem);
+	SetComboControl(DepthPieceLabelText, DepthPieceComboBox, TEXT("Corner"), CornerOptions, CurrentSectionalLayoutDefinition.CornerItem);
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, float SliderMin, float SliderMax)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ESlateVisibility::Visible);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(SliderMin);
+			SpinBox->SetMaxSliderValue(SliderMax);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Width Sections"), CurrentSectionalLayoutDefinition.WidthSections, 1.0f, 20.0f, 1.0f, 10.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Depth Sections"), CurrentSectionalLayoutDefinition.DepthSections, 1.0f, 20.0f, 1.0f, 10.0f);
+	SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT("Section Spacing (cm)"), CurrentSectionalLayoutDefinition.SectionSpacingCm, -500.0f, 500.0f, -150.0f, 150.0f);
+
+	if (StageFrontRailingLabelText)
+	{
+		StageFrontRailingLabelText->SetText(FText::FromString(TEXT("Use Item Spacing")));
+		StageFrontRailingLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (StageFrontRailingCheckBox)
+	{
+		StageFrontRailingCheckBox->SetVisibility(ESlateVisibility::Visible);
+		StageFrontRailingCheckBox->SetIsChecked(CurrentSectionalLayoutDefinition.bUseArmlessItemDefaultSpacing);
+	}
+
+	if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsLabelText) MBPRowsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsSpinBox) MBPRowsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsLabelText) MBPColumnsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsSpinBox) MBPColumnsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPStyleLabelText) MBPStyleLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPStyleComboBox) MBPStyleComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageHeightLabelText) StageHeightLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageHeightComboBox) StageHeightComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceLabelText) StageSurfaceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceComboBox) StageSurfaceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageBackRailingLabelText) StageBackRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageBackRailingCheckBox) StageBackRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingLabelText) StageLeftRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingCheckBox) StageLeftRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingLabelText) StageRightRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingCheckBox) StageRightRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepLabelText) StageLeftStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepCheckBox) StageLeftStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepLabelText) StageRightStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepCheckBox) StageRightStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtLabelText) StageAutomaticSkirtLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtCheckBox) StageAutomaticSkirtCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledLabelText) StageCellEnabledLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledCheckBox) StageCellEnabledCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	ApplySectionalDefinitionToBuildManager();
+	bRefreshingControls = false;
+}
+
+void UBuildMenuWidget::RefreshFurnitureSeatingControls()
+{
+	if (ActiveMenuTab != EBuildItemType::FurnitureSeating)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	const bool bCafe = CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable;
+	TArray<FString> TypeOptions;
+	TypeOptions.Add(FurnitureSeatingTypeToOption(EFurnitureSeatingRuntimeType::BarSeating));
+	TypeOptions.Add(FurnitureSeatingTypeToOption(EFurnitureSeatingRuntimeType::CafeTable));
+
+	const TArray<FString> TableOptions = GetLoungeItemOptionsFromFolder(bCafe ? CafeTableAssetPath : BarTableAssetPath);
+	const TArray<FString> SeatOptions = GetLoungeItemOptionsFromFolder(bCafe ? DiningChairAssetPath : StoolAssetPath);
+
+	if (bCafe)
+	{
+		CurrentFurnitureSeatingDefinition.CafeTableDefinition.CafeTableItem = EnsureLoungeOption(CurrentFurnitureSeatingDefinition.CafeTableDefinition.CafeTableItem, TableOptions);
+		CurrentFurnitureSeatingDefinition.CafeTableDefinition.DiningChairItem = EnsureLoungeOption(CurrentFurnitureSeatingDefinition.CafeTableDefinition.DiningChairItem, SeatOptions);
+	}
+	else
+	{
+		CurrentFurnitureSeatingDefinition.BarSeatingDefinition.BarTableItem = EnsureLoungeOption(CurrentFurnitureSeatingDefinition.BarSeatingDefinition.BarTableItem, TableOptions);
+		CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolItem = EnsureLoungeOption(CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolItem, SeatOptions);
+	}
+
+	auto SetComboControl = [](UTextBlock* Label, UWhiteComboBoxString* ComboBox, const TCHAR* LabelText, const TArray<FString>& Options, const FString& SelectedOption)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (ComboBox)
+		{
+			ComboBox->SetVisibility(ESlateVisibility::Visible);
+			ComboBox->ClearOptions();
+			for (const FString& Option : Options)
+			{
+				ComboBox->AddOption(Option);
+			}
+			if (!SelectedOption.IsEmpty())
+			{
+				ComboBox->SetSelectedOption(SelectedOption);
+			}
+		}
+	};
+
+	TArray<FString> LayoutOptions;
+	if (bCafe)
+	{
+		LayoutOptions.Add(CafeTableLayoutToOption(ECafeTableChairLayout::NoChairs));
+		LayoutOptions.Add(CafeTableLayoutToOption(ECafeTableChairLayout::TwoTop));
+		LayoutOptions.Add(CafeTableLayoutToOption(ECafeTableChairLayout::FourTop));
+		LayoutOptions.Add(CafeTableLayoutToOption(ECafeTableChairLayout::RectangleFourTop));
+		LayoutOptions.Add(CafeTableLayoutToOption(ECafeTableChairLayout::RectangleSixTop));
+	}
+	else
+	{
+		LayoutOptions.Add(BarSeatingLayoutToOption(EBarSeatingStoolLayout::NoStools));
+		LayoutOptions.Add(BarSeatingLayoutToOption(EBarSeatingStoolLayout::TwoTop));
+		LayoutOptions.Add(BarSeatingLayoutToOption(EBarSeatingStoolLayout::FourTop));
+		LayoutOptions.Add(BarSeatingLayoutToOption(EBarSeatingStoolLayout::RectangleFourTop));
+		LayoutOptions.Add(BarSeatingLayoutToOption(EBarSeatingStoolLayout::RectangleSixTop));
+	}
+
+	SetComboControl(ModeLabelText, ModeComboBox, TEXT("Tool"), TypeOptions, FurnitureSeatingTypeToOption(CurrentFurnitureSeatingDefinition.SeatingType));
+	SetComboControl(SidePieceLabelText, SidePieceComboBox, bCafe ? TEXT("Cafe Table") : TEXT("Bar Table"), TableOptions, bCafe ? CurrentFurnitureSeatingDefinition.CafeTableDefinition.CafeTableItem : CurrentFurnitureSeatingDefinition.BarSeatingDefinition.BarTableItem);
+	SetComboControl(DepthPieceLabelText, DepthPieceComboBox, bCafe ? TEXT("Dining Chair") : TEXT("Stool"), SeatOptions, bCafe ? CurrentFurnitureSeatingDefinition.CafeTableDefinition.DiningChairItem : CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolItem);
+	SetComboControl(MBPStyleLabelText, MBPStyleComboBox, TEXT("Chair Layout"), LayoutOptions, bCafe ? CafeTableLayoutToOption(CurrentFurnitureSeatingDefinition.CafeTableDefinition.ChairLayout) : BarSeatingLayoutToOption(CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolLayout));
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, float SliderMin, float SliderMax)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(ESlateVisibility::Visible);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(SliderMin);
+			SpinBox->SetMaxSliderValue(SliderMax);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, bCafe ? TEXT("Chair Y Offset (cm)") : TEXT("Stool Y Offset (cm)"), bCafe ? CurrentFurnitureSeatingDefinition.CafeTableDefinition.ChairOffsetYCm : CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolOffsetYCm, bCafe ? -500.0f : 0.0f, 500.0f, bCafe ? -100.0f : 0.0f, 100.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, bCafe ? TEXT("Rectangle Chair Pair X Offset (cm)") : TEXT("Rectangle Stool Pair X Offset (cm)"), bCafe ? CurrentFurnitureSeatingDefinition.CafeTableDefinition.RectangleChairPairOffsetXCm : CurrentFurnitureSeatingDefinition.BarSeatingDefinition.RectangleStoolPairOffsetXCm, 0.0f, 1000.0f, 0.0f, 300.0f);
+
+	if (StageFrontRailingLabelText)
+	{
+		StageFrontRailingLabelText->SetText(FText::FromString(TEXT("Classroom Style")));
+		StageFrontRailingLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (StageFrontRailingCheckBox)
+	{
+		StageFrontRailingCheckBox->SetVisibility(ESlateVisibility::Visible);
+		StageFrontRailingCheckBox->SetIsChecked(bCafe ? CurrentFurnitureSeatingDefinition.CafeTableDefinition.bClassroomStyle : CurrentFurnitureSeatingDefinition.BarSeatingDefinition.bClassroomStyle);
+	}
+
+	if (TertiaryValueLabelText) TertiaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (TertiaryValueSpinBox) TertiaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsLabelText) MBPRowsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsSpinBox) MBPRowsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsLabelText) MBPColumnsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsSpinBox) MBPColumnsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageHeightLabelText) StageHeightLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageHeightComboBox) StageHeightComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceLabelText) StageSurfaceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceComboBox) StageSurfaceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageBackRailingLabelText) StageBackRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageBackRailingCheckBox) StageBackRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingLabelText) StageLeftRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingCheckBox) StageLeftRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingLabelText) StageRightRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingCheckBox) StageRightRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepLabelText) StageLeftStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepCheckBox) StageLeftStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepLabelText) StageRightStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepCheckBox) StageRightStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtLabelText) StageAutomaticSkirtLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtCheckBox) StageAutomaticSkirtCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledLabelText) StageCellEnabledLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledCheckBox) StageCellEnabledCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	if (IsEditingFurnitureSeating())
+	{
+		ApplyFurnitureSeatingEditToTarget();
+	}
+	else
+	{
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+	}
+	bRefreshingControls = false;
+}
+
+void UBuildMenuWidget::RefreshDiningTableControls()
+{
+	if (ActiveMenuTab != EBuildItemType::DiningTable && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	const TArray<FString> TableOptions = GetLoungeItemOptionsFromFolder(DiningTableAssetPath);
+	const TArray<FString> ChairOptions = GetLoungeItemOptionsFromFolder(DiningChairAssetPath);
+	const TArray<FString> TableclothOptions = GetFlatAssetOptionsFromFolder(DiningTableclothAssetPath);
+	CurrentDiningTableDefinition.DiningTableItem = EnsureLoungeOption(CurrentDiningTableDefinition.DiningTableItem, TableOptions);
+	CurrentDiningTableDefinition.DiningChairItem = EnsureLoungeOption(CurrentDiningTableDefinition.DiningChairItem, ChairOptions);
+	CurrentDiningTableDefinition.TableclothItem = EnsureLoungeOption(CurrentDiningTableDefinition.TableclothItem, TableclothOptions);
+	CurrentDiningTableDefinition.ChairGapCm = FMath::Clamp(CurrentDiningTableDefinition.ChairGapCm, -200.0f, 80.0f);
+	CurrentDiningTableDefinition.TableclothOverhangCm = FMath::Clamp(CurrentDiningTableDefinition.TableclothOverhangCm, 0.0f, 80.0f);
+	CurrentDiningTableDefinition.TableclothDropCm = FMath::Clamp(CurrentDiningTableDefinition.TableclothDropCm, 0.0f, 120.0f);
+
+	auto SetComboControl = [](UTextBlock* Label, UWhiteComboBoxString* ComboBox, const TCHAR* LabelText, const TArray<FString>& Options, const FString& SelectedOption)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (ComboBox)
+		{
+			ComboBox->SetVisibility(ESlateVisibility::Visible);
+			ComboBox->ClearOptions();
+			for (const FString& Option : Options)
+			{
+				ComboBox->AddOption(Option);
+			}
+			if (!SelectedOption.IsEmpty())
+			{
+				ComboBox->SetSelectedOption(SelectedOption);
+			}
+		}
+	};
+
+	TArray<FString> CountOptions;
+	CountOptions.Add(DiningChairCountToOption(EDiningChairCount::Two));
+	CountOptions.Add(DiningChairCountToOption(EDiningChairCount::Four));
+	CountOptions.Add(DiningChairCountToOption(EDiningChairCount::Six));
+	CountOptions.Add(DiningChairCountToOption(EDiningChairCount::Eight));
+
+	TArray<FString> ArrangementOptions;
+	ArrangementOptions.Add(DiningChairArrangementToOption(EDiningChairArrangement::Rectangular));
+	ArrangementOptions.Add(DiningChairArrangementToOption(EDiningChairArrangement::Radial));
+
+	SetComboControl(ModeLabelText, ModeComboBox, TEXT("Chairs"), CountOptions, DiningChairCountToOption(CurrentDiningTableDefinition.ChairCount));
+	SetComboControl(SidePieceLabelText, SidePieceComboBox, TEXT("Dining Table"), TableOptions, CurrentDiningTableDefinition.DiningTableItem);
+	SetComboControl(DepthPieceLabelText, DepthPieceComboBox, TEXT("Dining Chair"), ChairOptions, CurrentDiningTableDefinition.DiningChairItem);
+	SetComboControl(MBPStyleLabelText, MBPStyleComboBox, TEXT("Arrangement"), ArrangementOptions, DiningChairArrangementToOption(CurrentDiningTableDefinition.ChairArrangement));
+	SetComboControl(StageHeightLabelText, StageHeightComboBox, TEXT("Tablecloth"), TableclothOptions, CurrentDiningTableDefinition.TableclothItem);
+
+	if (PrimaryValueLabelText)
+	{
+		PrimaryValueLabelText->SetText(FText::FromString(TEXT("Chair Gap (cm)")));
+		PrimaryValueLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (PrimaryValueSpinBox)
+	{
+		PrimaryValueSpinBox->SetVisibility(ESlateVisibility::Visible);
+		PrimaryValueSpinBox->SetMinValue(-200.0f);
+		PrimaryValueSpinBox->SetMaxValue(80.0f);
+		PrimaryValueSpinBox->SetMinSliderValue(-200.0f);
+		PrimaryValueSpinBox->SetMaxSliderValue(80.0f);
+		PrimaryValueSpinBox->SetValue(CurrentDiningTableDefinition.ChairGapCm);
+	}
+
+	if (SecondaryValueLabelText)
+	{
+		SecondaryValueLabelText->SetText(FText::FromString(TEXT("Cloth Overhang (cm)")));
+		SecondaryValueLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (SecondaryValueSpinBox)
+	{
+		SecondaryValueSpinBox->SetVisibility(ESlateVisibility::Visible);
+		SecondaryValueSpinBox->SetMinValue(0.0f);
+		SecondaryValueSpinBox->SetMaxValue(80.0f);
+		SecondaryValueSpinBox->SetMinSliderValue(0.0f);
+		SecondaryValueSpinBox->SetMaxSliderValue(80.0f);
+		SecondaryValueSpinBox->SetValue(CurrentDiningTableDefinition.TableclothOverhangCm);
+	}
+	if (TertiaryValueLabelText)
+	{
+		TertiaryValueLabelText->SetText(FText::FromString(TEXT("Cloth Drop (cm)")));
+		TertiaryValueLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (TertiaryValueSpinBox)
+	{
+		TertiaryValueSpinBox->SetVisibility(ESlateVisibility::Visible);
+		TertiaryValueSpinBox->SetMinValue(0.0f);
+		TertiaryValueSpinBox->SetMaxValue(120.0f);
+		TertiaryValueSpinBox->SetMinSliderValue(0.0f);
+		TertiaryValueSpinBox->SetMaxSliderValue(120.0f);
+		TertiaryValueSpinBox->SetValue(CurrentDiningTableDefinition.TableclothDropCm);
+	}
+	if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsLabelText) MBPRowsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsSpinBox) MBPRowsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsLabelText) MBPColumnsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsSpinBox) MBPColumnsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceLabelText) StageSurfaceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceComboBox) StageSurfaceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageFrontRailingLabelText)
+	{
+		StageFrontRailingLabelText->SetText(FText::FromString(TEXT("Use Tablecloth")));
+		StageFrontRailingLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (StageFrontRailingCheckBox)
+	{
+		StageFrontRailingCheckBox->SetVisibility(ESlateVisibility::Visible);
+		StageFrontRailingCheckBox->SetIsChecked(CurrentDiningTableDefinition.bUseTablecloth);
+	}
+	if (StageBackRailingLabelText) StageBackRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageBackRailingCheckBox) StageBackRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingLabelText) StageLeftRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingCheckBox) StageLeftRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingLabelText) StageRightRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingCheckBox) StageRightRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepLabelText) StageLeftStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepCheckBox) StageLeftStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepLabelText) StageRightStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepCheckBox) StageRightStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtLabelText) StageAutomaticSkirtLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtCheckBox) StageAutomaticSkirtCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledLabelText) StageCellEnabledLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledCheckBox) StageCellEnabledCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	if (IsEditingDiningTable())
+	{
+		ApplyDiningTableEditToTarget();
+	}
+	else
+	{
+		ApplyDiningTableDefinitionToBuildManager();
+	}
+	bRefreshingControls = false;
+}
+
+void UBuildMenuWidget::RefreshBarLayoutControls()
+{
+	if (ActiveMenuTab != EBuildItemType::BarLayout)
+	{
+		return;
+	}
+
+	bRefreshingControls = true;
+
+	const TArray<FString> FrontOptions = GetLoungeItemOptionsFromFolder(FrontBarAssetPath);
+	const TArray<FString> BackOptions = GetLoungeItemOptionsFromFolder(BackBarAssetPath);
+	CurrentBarLayoutDefinition.FrontBarItem = EnsureLoungeOption(CurrentBarLayoutDefinition.FrontBarItem, FrontOptions);
+	CurrentBarLayoutDefinition.BackBarItem = EnsureLoungeOption(CurrentBarLayoutDefinition.BackBarItem, BackOptions);
+	CurrentBarLayoutDefinition.WallBarCount = FMath::Clamp(CurrentBarLayoutDefinition.WallBarCount, 1, 24);
+
+	TArray<FString> ShapeOptions;
+	ShapeOptions.Add(BarLayoutShapeToOption(EBarLayoutShape::Single));
+	ShapeOptions.Add(BarLayoutShapeToOption(EBarLayoutShape::WallLine));
+	ShapeOptions.Add(BarLayoutShapeToOption(EBarLayoutShape::CenterTwoSided));
+	ShapeOptions.Add(BarLayoutShapeToOption(EBarLayoutShape::CenterFourSided));
+	ShapeOptions.Add(BarLayoutShapeToOption(EBarLayoutShape::CenterSixSided));
+
+	auto SetComboControl = [this](UTextBlock* Label, UWhiteComboBoxString* ComboBox, const TCHAR* LabelText, const TArray<FString>& Options, const FString& SelectedOption)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(ESlateVisibility::Visible);
+		}
+		if (ComboBox)
+		{
+			ComboBox->ClearOptions();
+			for (const FString& Option : Options)
+			{
+				ComboBox->AddOption(Option);
+			}
+			ComboBox->SetSelectedOption(SelectedOption);
+			ComboBox->SetVisibility(ESlateVisibility::Visible);
+		}
+	};
+
+	SetComboControl(ModeLabelText, ModeComboBox, TEXT("Bar Layout"), ShapeOptions, BarLayoutShapeToOption(CurrentBarLayoutDefinition.LayoutShape));
+	SetComboControl(SidePieceLabelText, SidePieceComboBox, TEXT("Front Bar"), FrontOptions, CurrentBarLayoutDefinition.FrontBarItem);
+	SetComboControl(DepthPieceLabelText, DepthPieceComboBox, TEXT("Back Bar"), BackOptions, CurrentBarLayoutDefinition.BackBarItem);
+
+	if (MBPStyleLabelText) MBPStyleLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPStyleComboBox) MBPStyleComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageHeightLabelText) StageHeightLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageHeightComboBox) StageHeightComboBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceLabelText) StageSurfaceLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageSurfaceComboBox) StageSurfaceComboBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	auto SetNumericControl = [](UTextBlock* Label, USpinBox* SpinBox, const TCHAR* LabelText, float Value, float MinValue, float MaxValue, float SliderMin, float SliderMax, bool bVisible = true)
+	{
+		if (Label)
+		{
+			Label->SetText(FText::FromString(LabelText));
+			Label->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+		if (SpinBox)
+		{
+			SpinBox->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+			SpinBox->SetMinValue(MinValue);
+			SpinBox->SetMaxValue(MaxValue);
+			SpinBox->SetMinSliderValue(SliderMin);
+			SpinBox->SetMaxSliderValue(SliderMax);
+			SpinBox->SetValue(Value);
+		}
+	};
+
+	SetNumericControl(PrimaryValueLabelText, PrimaryValueSpinBox, TEXT("Wall Bar Count"), CurrentBarLayoutDefinition.WallBarCount, 1.0f, 24.0f, 1.0f, 12.0f);
+	SetNumericControl(SecondaryValueLabelText, SecondaryValueSpinBox, TEXT("Wall Bar Spacing (cm)"), CurrentBarLayoutDefinition.WallBarSpacingCm, -1000.0f, 1000.0f, -500.0f, 500.0f);
+
+	float CenterOffsetCm = 0.0f;
+	if (CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterTwoSided)
+	{
+		CenterOffsetCm = CurrentBarLayoutDefinition.CenterTwoSidedOffsetCm;
+	}
+	else if (CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterFourSided)
+	{
+		CenterOffsetCm = CurrentBarLayoutDefinition.CenterFourSidedOffsetCm;
+	}
+	else if (CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterSixSided)
+	{
+		CenterOffsetCm = CurrentBarLayoutDefinition.CenterSixSidedOffsetCm;
+	}
+	const bool bShowCenterOffset = CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterTwoSided ||
+		CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterFourSided ||
+		CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterSixSided;
+	SetNumericControl(TertiaryValueLabelText, TertiaryValueSpinBox, TEXT("Center Offset (cm)"), CenterOffsetCm, -1000.0f, 1000.0f, -500.0f, 500.0f, bShowCenterOffset);
+
+	if (QuaternaryValueLabelText) QuaternaryValueLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (QuaternaryValueSpinBox) QuaternaryValueSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsLabelText) MBPRowsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPRowsSpinBox) MBPRowsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsLabelText) MBPColumnsLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (MBPColumnsSpinBox) MBPColumnsSpinBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	if (StageFrontRailingLabelText)
+	{
+		StageFrontRailingLabelText->SetText(FText::FromString(TEXT("Use Front Bar")));
+		StageFrontRailingLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (StageFrontRailingCheckBox)
+	{
+		StageFrontRailingCheckBox->SetVisibility(ESlateVisibility::Visible);
+		StageFrontRailingCheckBox->SetIsChecked(CurrentBarLayoutDefinition.bUseFrontBar);
+	}
+	if (StageBackRailingLabelText)
+	{
+		StageBackRailingLabelText->SetText(FText::FromString(TEXT("Use Back Bar")));
+		StageBackRailingLabelText->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (StageBackRailingCheckBox)
+	{
+		StageBackRailingCheckBox->SetVisibility(ESlateVisibility::Visible);
+		StageBackRailingCheckBox->SetIsChecked(CurrentBarLayoutDefinition.bUseBackBar);
+	}
+	if (StageLeftRailingLabelText) StageLeftRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftRailingCheckBox) StageLeftRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingLabelText) StageRightRailingLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightRailingCheckBox) StageRightRailingCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepLabelText) StageLeftStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageLeftStepCheckBox) StageLeftStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepLabelText) StageRightStepLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageRightStepCheckBox) StageRightStepCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtLabelText) StageAutomaticSkirtLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageAutomaticSkirtCheckBox) StageAutomaticSkirtCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledLabelText) StageCellEnabledLabelText->SetVisibility(ESlateVisibility::Collapsed);
+	if (StageCellEnabledCheckBox) StageCellEnabledCheckBox->SetVisibility(ESlateVisibility::Collapsed);
+
+	bRefreshingControls = false;
+	ApplyBarLayoutDefinitionToBuildManager();
+}
+
 void UBuildMenuWidget::ApplyTrussDefinitionToBuildManager()
 {
 	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::TrussStructure)
@@ -2830,11 +5289,111 @@ void UBuildMenuWidget::ApplyLoungeDefinitionToBuildManager()
 	BuildManager->SetActiveLoungeLayoutDefinition(CurrentLoungeLayoutDefinition);
 }
 
+void UBuildMenuWidget::ApplySectionalDefinitionToBuildManager()
+{
+	if (IsEditingSectional())
+	{
+		ApplySectionalEditToTarget();
+		return;
+	}
+
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::SectionalLayout)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveSectionalLayoutDefinition(CurrentSectionalLayoutDefinition);
+}
+
+void UBuildMenuWidget::ApplyFurnitureSeatingDefinitionToBuildManager()
+{
+	if (IsEditingFurnitureSeating())
+	{
+		ApplyFurnitureSeatingEditToTarget();
+		return;
+	}
+
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::FurnitureSeating)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveFurnitureSeatingDefinition(CurrentFurnitureSeatingDefinition);
+}
+
+void UBuildMenuWidget::ApplyBarLayoutDefinitionToBuildManager()
+{
+	if (IsEditingBarLayout())
+	{
+		ApplyBarLayoutEditToTarget();
+		return;
+	}
+
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::BarLayout)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveBarLayoutDefinition(CurrentBarLayoutDefinition);
+}
+
+void UBuildMenuWidget::ApplyDiningTableDefinitionToBuildManager()
+{
+	if (IsEditingDiningTable())
+	{
+		ApplyDiningTableEditToTarget();
+		return;
+	}
+
+	if (!BuildManager || !SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable)
+	{
+		return;
+	}
+
+	BuildManager->SetActiveDiningTableDefinition(CurrentDiningTableDefinition);
+}
+
+void UBuildMenuWidget::ApplyFurnitureSeatingEditToTarget()
+{
+	if (EditingBarSeatingTarget)
+	{
+		EditingBarSeatingTarget->ApplyBuildDefinition(CurrentFurnitureSeatingDefinition.BarSeatingDefinition, true);
+	}
+	else if (EditingCafeTableTarget)
+	{
+		EditingCafeTableTarget->ApplyBuildDefinition(CurrentFurnitureSeatingDefinition.CafeTableDefinition, true);
+	}
+}
+
 void UBuildMenuWidget::ApplyLoungeEditToTarget()
 {
 	if (EditingLoungeTarget)
 	{
 		EditingLoungeTarget->ApplyBuildDefinition(CurrentLoungeLayoutDefinition, true);
+	}
+}
+
+void UBuildMenuWidget::ApplySectionalEditToTarget()
+{
+	if (EditingSectionalTarget)
+	{
+		EditingSectionalTarget->ApplyBuildDefinition(CurrentSectionalLayoutDefinition, true);
+	}
+}
+
+void UBuildMenuWidget::ApplyBarLayoutEditToTarget()
+{
+	if (EditingBarLayoutTarget)
+	{
+		EditingBarLayoutTarget->ApplyBuildDefinition(CurrentBarLayoutDefinition, true);
+	}
+}
+
+void UBuildMenuWidget::ApplyDiningTableEditToTarget()
+{
+	if (EditingDiningTableTarget)
+	{
+		EditingDiningTableTarget->ApplyBuildDefinition(CurrentDiningTableDefinition, true);
 	}
 }
 
@@ -3016,6 +5575,33 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 		return false;
 	}
 
+	if (bUsesDesignerWidgetTree)
+	{
+		if (ActiveMenuTab == EBuildItemType::StageDeck)
+		{
+			return BuildItem->ItemType == EBuildItemType::StageDeck ||
+				BuildItem->ItemType == EBuildItemType::MBPWall ||
+				BuildItem->ItemType == EBuildItemType::DrapeRun;
+		}
+
+		if (ActiveMenuTab == EBuildItemType::VideoPlacement)
+		{
+			return BuildItem->ItemType == EBuildItemType::VideoPlacement ||
+				BuildItem->ItemType == EBuildItemType::VideoWall ||
+				BuildItem->ItemType == EBuildItemType::ProjectionScreen ||
+				BuildItem->ItemType == EBuildItemType::AudioPlacement;
+		}
+
+		if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+		{
+			return BuildItem->ItemType == EBuildItemType::LoungeLayout ||
+				BuildItem->ItemType == EBuildItemType::SectionalLayout ||
+				BuildItem->ItemType == EBuildItemType::FurnitureSeating ||
+				BuildItem->ItemType == EBuildItemType::BarLayout ||
+				BuildItem->ItemType == EBuildItemType::DiningTable;
+		}
+	}
+
 	if (ActiveMenuTab == EBuildItemType::MBPWall)
 	{
 		return BuildItem->ItemType == EBuildItemType::MBPWall;
@@ -3053,7 +5639,24 @@ bool UBuildMenuWidget::ItemBelongsToActiveTab(const UBuildItemDataAsset* BuildIt
 
 	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
 	{
-		return BuildItem->ItemType == EBuildItemType::LoungeLayout;
+		return BuildItem->ItemType == EBuildItemType::LoungeLayout ||
+			BuildItem->ItemType == EBuildItemType::SectionalLayout ||
+			BuildItem->ItemType == EBuildItemType::DiningTable;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		return BuildItem->ItemType == EBuildItemType::FurnitureSeating;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		return BuildItem->ItemType == EBuildItemType::BarLayout;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DiningTable)
+	{
+		return BuildItem->ItemType == EBuildItemType::DiningTable;
 	}
 
 	return BuildItem->ItemType == EBuildItemType::TrussStructure || BuildItem->ItemType == EBuildItemType::ActorClass;
@@ -3464,6 +6067,155 @@ EAudioPlacementRuntimeType UBuildMenuWidget::OptionToAudioPlacementType(const FS
 	return Option == TEXT("Ground Line Array") ? EAudioPlacementRuntimeType::GroundLineArray : EAudioPlacementRuntimeType::GroundSpeaker;
 }
 
+FString UBuildMenuWidget::SectionalShapeToOption(ESectionalLayoutShape Shape)
+{
+	switch (Shape)
+	{
+	case ESectionalLayoutShape::OneSided:
+		return TEXT("One Sided");
+	case ESectionalLayoutShape::ThreeSidedU:
+		return TEXT("Three Sided U");
+	case ESectionalLayoutShape::FourSidedBox:
+		return TEXT("Four Sided Box");
+	case ESectionalLayoutShape::TwoSidedL:
+	default:
+		return TEXT("Two Sided L");
+	}
+}
+
+ESectionalLayoutShape UBuildMenuWidget::OptionToSectionalShape(const FString& Option)
+{
+	if (Option == TEXT("One Sided")) return ESectionalLayoutShape::OneSided;
+	if (Option == TEXT("Three Sided U")) return ESectionalLayoutShape::ThreeSidedU;
+	if (Option == TEXT("Four Sided Box")) return ESectionalLayoutShape::FourSidedBox;
+	return ESectionalLayoutShape::TwoSidedL;
+}
+
+FString UBuildMenuWidget::FurnitureSeatingTypeToOption(EFurnitureSeatingRuntimeType SeatingType)
+{
+	return SeatingType == EFurnitureSeatingRuntimeType::CafeTable ? TEXT("Cafe Tables") : TEXT("High Seating");
+}
+
+EFurnitureSeatingRuntimeType UBuildMenuWidget::OptionToFurnitureSeatingType(const FString& Option)
+{
+	return Option == TEXT("Cafe Tables") || Option == TEXT("Cafe Seating") ? EFurnitureSeatingRuntimeType::CafeTable : EFurnitureSeatingRuntimeType::BarSeating;
+}
+
+FString UBuildMenuWidget::BarLayoutShapeToOption(EBarLayoutShape Shape)
+{
+	switch (Shape)
+	{
+	case EBarLayoutShape::WallLine:
+		return TEXT("Wall Line");
+	case EBarLayoutShape::CenterTwoSided:
+		return TEXT("Center Two Sided");
+	case EBarLayoutShape::CenterFourSided:
+		return TEXT("Center Four Sided");
+	case EBarLayoutShape::CenterSixSided:
+		return TEXT("Center Six Sided");
+	case EBarLayoutShape::Single:
+	default:
+		return TEXT("Single");
+	}
+}
+
+EBarLayoutShape UBuildMenuWidget::OptionToBarLayoutShape(const FString& Option)
+{
+	if (Option == TEXT("Wall Line")) return EBarLayoutShape::WallLine;
+	if (Option == TEXT("Center Two Sided")) return EBarLayoutShape::CenterTwoSided;
+	if (Option == TEXT("Center Four Sided")) return EBarLayoutShape::CenterFourSided;
+	if (Option == TEXT("Center Six Sided")) return EBarLayoutShape::CenterSixSided;
+	return EBarLayoutShape::Single;
+}
+
+FString UBuildMenuWidget::BarSeatingLayoutToOption(EBarSeatingStoolLayout Layout)
+{
+	switch (Layout)
+	{
+	case EBarSeatingStoolLayout::NoStools:
+		return TEXT("No Stools");
+	case EBarSeatingStoolLayout::TwoTop:
+		return TEXT("Square/Round Two Top");
+	case EBarSeatingStoolLayout::RectangleFourTop:
+		return TEXT("Rectangle Four Top");
+	case EBarSeatingStoolLayout::RectangleSixTop:
+		return TEXT("Rectangle Six Top");
+	case EBarSeatingStoolLayout::FourTop:
+	default:
+		return TEXT("Square/Round Four Top");
+	}
+}
+
+EBarSeatingStoolLayout UBuildMenuWidget::OptionToBarSeatingLayout(const FString& Option)
+{
+	if (Option == TEXT("No Stools")) return EBarSeatingStoolLayout::NoStools;
+	if (Option == TEXT("Square/Round Two Top")) return EBarSeatingStoolLayout::TwoTop;
+	if (Option == TEXT("Rectangle Four Top")) return EBarSeatingStoolLayout::RectangleFourTop;
+	if (Option == TEXT("Rectangle Six Top")) return EBarSeatingStoolLayout::RectangleSixTop;
+	return EBarSeatingStoolLayout::FourTop;
+}
+
+FString UBuildMenuWidget::CafeTableLayoutToOption(ECafeTableChairLayout Layout)
+{
+	switch (Layout)
+	{
+	case ECafeTableChairLayout::NoChairs:
+		return TEXT("No Chairs");
+	case ECafeTableChairLayout::TwoTop:
+		return TEXT("Square/Round Two Top");
+	case ECafeTableChairLayout::RectangleFourTop:
+		return TEXT("Rectangle Four Top");
+	case ECafeTableChairLayout::RectangleSixTop:
+		return TEXT("Rectangle Six Top");
+	case ECafeTableChairLayout::FourTop:
+	default:
+		return TEXT("Square/Round Four Top");
+	}
+}
+
+ECafeTableChairLayout UBuildMenuWidget::OptionToCafeTableLayout(const FString& Option)
+{
+	if (Option == TEXT("No Chairs")) return ECafeTableChairLayout::NoChairs;
+	if (Option == TEXT("Square/Round Two Top")) return ECafeTableChairLayout::TwoTop;
+	if (Option == TEXT("Rectangle Four Top")) return ECafeTableChairLayout::RectangleFourTop;
+	if (Option == TEXT("Rectangle Six Top")) return ECafeTableChairLayout::RectangleSixTop;
+	return ECafeTableChairLayout::FourTop;
+}
+
+FString UBuildMenuWidget::DiningChairCountToOption(EDiningChairCount ChairCount)
+{
+	switch (ChairCount)
+	{
+	case EDiningChairCount::Two:
+		return TEXT("2-Top");
+	case EDiningChairCount::Six:
+		return TEXT("6-Top");
+	case EDiningChairCount::Eight:
+		return TEXT("8-Top");
+	case EDiningChairCount::Four:
+	default:
+		return TEXT("4-Top");
+	}
+}
+
+EDiningChairCount UBuildMenuWidget::OptionToDiningChairCount(const FString& Option)
+{
+	if (Option == TEXT("2-Top")) return EDiningChairCount::Two;
+	if (Option == TEXT("6-Top")) return EDiningChairCount::Six;
+	if (Option == TEXT("8-Top")) return EDiningChairCount::Eight;
+	return EDiningChairCount::Four;
+}
+
+FString UBuildMenuWidget::DiningChairArrangementToOption(EDiningChairArrangement Arrangement)
+{
+	return Arrangement == EDiningChairArrangement::Radial ? TEXT("Radial") : TEXT("Rect");
+}
+
+EDiningChairArrangement UBuildMenuWidget::OptionToDiningChairArrangement(const FString& Option)
+{
+	return Option == TEXT("Radial") ? EDiningChairArrangement::Radial : EDiningChairArrangement::Rectangular;
+}
+
 FString UBuildMenuWidget::AudioSpeakerModelToOption(EAudioGroundSpeakerModel SpeakerModel)
 {
 	switch (SpeakerModel)
@@ -3607,6 +6359,18 @@ void UBuildMenuWidget::HandleStageTabClicked()
 {
 	ActiveMenuTab = EBuildItemType::StageDeck;
 
+	if (bUsesDesignerWidgetTree)
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (BuildItem && BuildItem->ItemType == EBuildItemType::StageDeck)
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
 	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
 	{
 		for (UBuildItemDataAsset* BuildItem : BuildItems)
@@ -3644,6 +6408,18 @@ void UBuildMenuWidget::HandleDrapeTabClicked()
 void UBuildMenuWidget::HandleVideoTabClicked()
 {
 	ActiveMenuTab = EBuildItemType::VideoPlacement;
+
+	if (bUsesDesignerWidgetTree)
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (BuildItem && BuildItem->ItemType == EBuildItemType::VideoPlacement)
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
 
 	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
 	{
@@ -3721,6 +6497,18 @@ void UBuildMenuWidget::HandleLoungeTabClicked()
 {
 	ActiveMenuTab = EBuildItemType::LoungeLayout;
 
+	if (bUsesDesignerWidgetTree)
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (BuildItem && BuildItem->ItemType == EBuildItemType::LoungeLayout)
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+
 	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
 	{
 		for (UBuildItemDataAsset* BuildItem : BuildItems)
@@ -3736,10 +6524,59 @@ void UBuildMenuWidget::HandleLoungeTabClicked()
 	RefreshMenu();
 }
 
+void UBuildMenuWidget::HandleSeatingTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::FurnitureSeating;
+
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				OnBuildItemSelected.Broadcast(BuildItem);
+				return;
+			}
+		}
+	}
+
+	RefreshMenu();
+}
+
+void UBuildMenuWidget::HandleBarTabClicked()
+{
+	ActiveMenuTab = EBuildItemType::BarLayout;
+	if (!SelectedBuildItem || !ItemBelongsToActiveTab(SelectedBuildItem))
+	{
+		for (UBuildItemDataAsset* BuildItem : BuildItems)
+		{
+			if (BuildItem && ItemBelongsToActiveTab(BuildItem))
+			{
+				SetSelectedBuildItem(BuildItem);
+				return;
+			}
+		}
+	}
+	RefreshMenu();
+}
+
 void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		const int32 FixtureIndex = LightingFixtureNames.IndexOfByKey(SelectedItemOption);
+		if (LightingFixtureClasses.IsValidIndex(FixtureIndex) && LightingFixtureClasses[FixtureIndex])
+		{
+			EditingLightTarget->FixtureClass = LightingFixtureClasses[FixtureIndex].Get();
+			EditingLightTarget->MountDefinition.FixtureClass = LightingFixtureClasses[FixtureIndex];
+			EditingLightTarget->RebuildFixture();
+			RefreshMenu();
+		}
 		return;
 	}
 
@@ -3832,14 +6669,58 @@ void UBuildMenuWidget::HandleModeChanged(FString SelectedItemOption, ESelectInfo
 		return;
 	}
 
-	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			CurrentSectionalLayoutDefinition.Shape = OptionToSectionalShape(SelectedItemOption);
+			ApplySectionalDefinitionToBuildManager();
+			if (DetailText)
+			{
+				DetailText->SetText(BuildDetailText());
+			}
+			return;
+		}
+
 		CurrentLoungeLayoutDefinition.SofaItem = SelectedItemOption;
 		ApplyLoungeDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
 		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		if (IsEditingFurnitureSeating())
+		{
+			CurrentFurnitureSeatingDefinition.SeatingType = EditingCafeTableTarget
+				? EFurnitureSeatingRuntimeType::CafeTable
+				: EFurnitureSeatingRuntimeType::BarSeating;
+			RefreshMenu();
+			return;
+		}
+
+		CurrentFurnitureSeatingDefinition.SeatingType = OptionToFurnitureSeatingType(SelectedItemOption);
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		RefreshMenu();
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		CurrentBarLayoutDefinition.LayoutShape = OptionToBarLayoutShape(SelectedItemOption);
+		ApplyBarLayoutDefinitionToBuildManager();
+		RefreshMenu();
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DiningTable || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable))
+	{
+		CurrentDiningTableDefinition.ChairCount = OptionToDiningChairCount(SelectedItemOption);
+		ApplyDiningTableDefinitionToBuildManager();
+		RefreshMenu();
 		return;
 	}
 
@@ -3857,6 +6738,11 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		ApplyLightingControlValue(0, NewValue);
 		return;
 	}
 
@@ -4022,10 +6908,61 @@ void UBuildMenuWidget::HandlePrimaryValueChanged(float NewValue)
 		return;
 	}
 
-	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			CurrentSectionalLayoutDefinition.WidthSections = FMath::Clamp(FMath::RoundToInt(NewValue), 1, 20);
+			ApplySectionalDefinitionToBuildManager();
+			if (DetailText)
+			{
+				DetailText->SetText(BuildDetailText());
+			}
+			return;
+		}
+
 		CurrentLoungeLayoutDefinition.SofaCount = FMath::Clamp(FMath::RoundToInt(NewValue), 0, 8);
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		if (CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable)
+		{
+			CurrentFurnitureSeatingDefinition.CafeTableDefinition.ChairOffsetYCm = FMath::Clamp(NewValue, -500.0f, 500.0f);
+		}
+		else
+		{
+			CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolOffsetYCm = FMath::Clamp(NewValue, 0.0f, 500.0f);
+		}
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		CurrentBarLayoutDefinition.WallBarCount = FMath::Clamp(FMath::RoundToInt(NewValue), 1, 24);
+		ApplyBarLayoutDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DiningTable || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable))
+	{
+		CurrentDiningTableDefinition.ChairGapCm = FMath::Clamp(NewValue, -200.0f, 80.0f);
+		ApplyDiningTableDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4072,6 +7009,22 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		ApplyLightingControlValue(1, NewValue);
+		return;
+	}
+
+	if (IsDiningTableContext(ActiveMenuTab, SelectedBuildItem))
+	{
+		CurrentDiningTableDefinition.TableclothOverhangCm = FMath::Clamp(NewValue, 0.0f, 80.0f);
+		ApplyDiningTableDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
 		return;
 	}
 
@@ -4232,10 +7185,50 @@ void UBuildMenuWidget::HandleSecondaryValueChanged(float NewValue)
 		return;
 	}
 
-	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			CurrentSectionalLayoutDefinition.DepthSections = FMath::Clamp(FMath::RoundToInt(NewValue), 1, 20);
+			ApplySectionalDefinitionToBuildManager();
+			if (DetailText)
+			{
+				DetailText->SetText(BuildDetailText());
+			}
+			return;
+		}
+
 		CurrentLoungeLayoutDefinition.ChairCount = FMath::Clamp(FMath::RoundToInt(NewValue), 0, 8);
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		if (CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable)
+		{
+			CurrentFurnitureSeatingDefinition.CafeTableDefinition.RectangleChairPairOffsetXCm = FMath::Clamp(NewValue, 0.0f, 1000.0f);
+		}
+		else
+		{
+			CurrentFurnitureSeatingDefinition.BarSeatingDefinition.RectangleStoolPairOffsetXCm = FMath::Clamp(NewValue, 0.0f, 1000.0f);
+		}
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		CurrentBarLayoutDefinition.WallBarSpacingCm = FMath::Clamp(NewValue, -1000.0f, 1000.0f);
+		ApplyBarLayoutDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4282,6 +7275,22 @@ void UBuildMenuWidget::HandleTertiaryValueChanged(float NewValue)
 	{
 		return;
 	}
+	if (EditingLightTarget)
+	{
+		ApplyLightingControlValue(2, NewValue);
+		return;
+	}
+
+	if (IsDiningTableContext(ActiveMenuTab, SelectedBuildItem))
+	{
+		CurrentDiningTableDefinition.TableclothDropCm = FMath::Clamp(NewValue, 0.0f, 120.0f);
+		ApplyDiningTableDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
 
 	if (IsEditingMBP())
 	{
@@ -4316,10 +7325,44 @@ void UBuildMenuWidget::HandleTertiaryValueChanged(float NewValue)
 		return;
 	}
 
-	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			CurrentSectionalLayoutDefinition.SectionSpacingCm = FMath::Clamp(NewValue, -500.0f, 500.0f);
+			CurrentSectionalLayoutDefinition.bUseArmlessItemDefaultSpacing = false;
+			ApplySectionalDefinitionToBuildManager();
+			if (DetailText)
+			{
+				DetailText->SetText(BuildDetailText());
+			}
+			return;
+		}
+
 		CurrentLoungeLayoutDefinition.EndTableOffsetXCm = FMath::Clamp(NewValue, -500.0f, 500.0f);
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		if (CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterTwoSided)
+		{
+			CurrentBarLayoutDefinition.CenterTwoSidedOffsetCm = FMath::Clamp(NewValue, -1000.0f, 1000.0f);
+		}
+		else if (CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterFourSided)
+		{
+			CurrentBarLayoutDefinition.CenterFourSidedOffsetCm = FMath::Clamp(NewValue, -1000.0f, 1000.0f);
+		}
+		else if (CurrentBarLayoutDefinition.LayoutShape == EBarLayoutShape::CenterSixSided)
+		{
+			CurrentBarLayoutDefinition.CenterSixSidedOffsetCm = FMath::Clamp(NewValue, -1000.0f, 1000.0f);
+		}
+		ApplyBarLayoutDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4352,6 +7395,11 @@ void UBuildMenuWidget::HandleQuaternaryValueChanged(float NewValue)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		ApplyLightingControlValue(3, NewValue);
 		return;
 	}
 
@@ -4389,6 +7437,29 @@ void UBuildMenuWidget::HandleSidePieceChanged(FString SelectedItemOption, ESelec
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		if (EditingLightTarget->DMX)
+		{
+			for (const TPair<FString, UDMXEntityFixturePatch*>& PatchOption : GetLightingFixturePatchOptions())
+			{
+				if (PatchOption.Key == SelectedItemOption)
+				{
+					UDMXComponent* DMXComponent = EditingLightTarget->DMX;
+					UDMXLibrary* CurrentLibrary = DMXComponent->FixturePatchRef.DMXLibrary.Get();
+					DMXComponent->SetFixturePatch(PatchOption.Value);
+					if (!PatchOption.Value)
+					{
+						DMXComponent->FixturePatchRef.DMXLibrary = CurrentLibrary;
+					}
+					EditingLightTarget->RefreshDMXBinding();
+					RefreshMenu();
+					break;
+				}
+			}
+		}
 		return;
 	}
 
@@ -4452,10 +7523,58 @@ void UBuildMenuWidget::HandleSidePieceChanged(FString SelectedItemOption, ESelec
 		return;
 	}
 
-	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			CurrentSectionalLayoutDefinition.ArmlessItem = SelectedItemOption;
+			ApplySectionalDefinitionToBuildManager();
+			RefreshMenu();
+			return;
+		}
+
 		CurrentLoungeLayoutDefinition.ChairItem = SelectedItemOption;
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		if (CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable)
+		{
+			CurrentFurnitureSeatingDefinition.CafeTableDefinition.CafeTableItem = SelectedItemOption;
+		}
+		else
+		{
+			CurrentFurnitureSeatingDefinition.BarSeatingDefinition.BarTableItem = SelectedItemOption;
+		}
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		CurrentBarLayoutDefinition.FrontBarItem = SelectedItemOption;
+		ApplyBarLayoutDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DiningTable || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable))
+	{
+		CurrentDiningTableDefinition.DiningTableItem = SelectedItemOption;
+		ApplyDiningTableDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4512,10 +7631,61 @@ void UBuildMenuWidget::HandleDepthPieceChanged(FString SelectedItemOption, ESele
 		return;
 	}
 
-	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			CurrentSectionalLayoutDefinition.CornerItem = SelectedItemOption;
+			ApplySectionalDefinitionToBuildManager();
+			if (DetailText)
+			{
+				DetailText->SetText(BuildDetailText());
+			}
+			return;
+		}
+
 		CurrentLoungeLayoutDefinition.CocktailTableItem = SelectedItemOption;
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		if (CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable)
+		{
+			CurrentFurnitureSeatingDefinition.CafeTableDefinition.DiningChairItem = SelectedItemOption;
+		}
+		else
+		{
+			CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolItem = SelectedItemOption;
+		}
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		CurrentBarLayoutDefinition.BackBarItem = SelectedItemOption;
+		ApplyBarLayoutDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DiningTable || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable))
+	{
+		CurrentDiningTableDefinition.DiningChairItem = SelectedItemOption;
+		ApplyDiningTableDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4540,6 +7710,11 @@ void UBuildMenuWidget::HandleMBPRowsChanged(float NewValue)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		ApplyLightingControlValue(4, NewValue);
 		return;
 	}
 
@@ -4571,6 +7746,11 @@ void UBuildMenuWidget::HandleMBPColumnsChanged(float NewValue)
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		ApplyLightingControlValue(5, NewValue);
 		return;
 	}
 
@@ -4605,10 +7785,39 @@ void UBuildMenuWidget::HandleMBPStyleChanged(FString SelectedItemOption, ESelect
 		return;
 	}
 
-	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
+	if (ActiveMenuTab == EBuildItemType::LoungeLayout && (!SelectedBuildItem || SelectedBuildItem->ItemType != EBuildItemType::DiningTable))
 	{
 		CurrentLoungeLayoutDefinition.EndTableItem = SelectedItemOption;
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		if (CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable)
+		{
+			CurrentFurnitureSeatingDefinition.CafeTableDefinition.ChairLayout = OptionToCafeTableLayout(SelectedItemOption);
+		}
+		else
+		{
+			CurrentFurnitureSeatingDefinition.BarSeatingDefinition.StoolLayout = OptionToBarSeatingLayout(SelectedItemOption);
+		}
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::DiningTable || (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::DiningTable))
+	{
+		CurrentDiningTableDefinition.ChairArrangement = OptionToDiningChairArrangement(SelectedItemOption);
+		ApplyDiningTableDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4640,6 +7849,17 @@ void UBuildMenuWidget::HandleStageHeightChanged(FString SelectedItemOption, ESel
 {
 	if (bRefreshingControls)
 	{
+		return;
+	}
+
+	if (IsDiningTableContext(ActiveMenuTab, SelectedBuildItem))
+	{
+		CurrentDiningTableDefinition.TableclothItem = SelectedItemOption;
+		ApplyDiningTableDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
 		return;
 	}
 
@@ -4735,10 +7955,58 @@ void UBuildMenuWidget::HandleStageFrontRailingChanged(bool bIsChecked)
 		return;
 	}
 
+	if (IsDiningTableContext(ActiveMenuTab, SelectedBuildItem))
+	{
+		CurrentDiningTableDefinition.bUseTablecloth = bIsChecked;
+		ApplyDiningTableDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
 	if (ActiveMenuTab == EBuildItemType::LoungeLayout)
 	{
+		if (SelectedBuildItem && SelectedBuildItem->ItemType == EBuildItemType::SectionalLayout)
+		{
+			CurrentSectionalLayoutDefinition.bUseArmlessItemDefaultSpacing = bIsChecked;
+			ApplySectionalDefinitionToBuildManager();
+			RefreshMenu();
+			return;
+		}
+
 		CurrentLoungeLayoutDefinition.bUseTwoSofas = bIsChecked;
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::FurnitureSeating)
+	{
+		if (CurrentFurnitureSeatingDefinition.SeatingType == EFurnitureSeatingRuntimeType::CafeTable)
+		{
+			CurrentFurnitureSeatingDefinition.CafeTableDefinition.bClassroomStyle = bIsChecked;
+		}
+		else
+		{
+			CurrentFurnitureSeatingDefinition.BarSeatingDefinition.bClassroomStyle = bIsChecked;
+		}
+		ApplyFurnitureSeatingDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		CurrentBarLayoutDefinition.bUseFrontBar = bIsChecked;
+		ApplyBarLayoutDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4777,6 +8045,17 @@ void UBuildMenuWidget::HandleStageBackRailingChanged(bool bIsChecked)
 	{
 		CurrentLoungeLayoutDefinition.bUseFourChairs = bIsChecked;
 		ApplyLoungeDefinitionToBuildManager();
+		if (DetailText)
+		{
+			DetailText->SetText(BuildDetailText());
+		}
+		return;
+	}
+
+	if (ActiveMenuTab == EBuildItemType::BarLayout)
+	{
+		CurrentBarLayoutDefinition.bUseBackBar = bIsChecked;
+		ApplyBarLayoutDefinitionToBuildManager();
 		if (DetailText)
 		{
 			DetailText->SetText(BuildDetailText());
@@ -4955,4 +8234,49 @@ void UBuildMenuWidget::HandleStageCellEnabledChanged(bool bIsChecked)
 void UBuildMenuWidget::HandleActionButtonClicked()
 {
 	OnActionRequested.Broadcast();
+}
+
+void UBuildMenuWidget::HandleMoveActorButtonClicked()
+{
+	OnMoveRequested.Broadcast();
+}
+
+void UBuildMenuWidget::HandleRotateActorButtonClicked()
+{
+	OnRotateRequested.Broadcast();
+}
+
+void UBuildMenuWidget::HandleDeleteActorButtonClicked()
+{
+	OnDeleteRequested.Broadcast();
+}
+
+void UBuildMenuWidget::HandleDesignerCancelClicked()
+{
+	SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UBuildMenuWidget::HandleDesignerRotationChanged(float NewValue)
+{
+	if (bRefreshingControls)
+	{
+		return;
+	}
+	if (EditingLightTarget)
+	{
+		ApplyLightingControlValue(6, NewValue);
+		return;
+	}
+	if (!BuildManager)
+	{
+		DesignerLastRotationSliderValue = NewValue;
+		return;
+	}
+
+	const float DeltaDegrees = NewValue - DesignerLastRotationSliderValue;
+	DesignerLastRotationSliderValue = NewValue;
+	if (!FMath::IsNearlyZero(DeltaDegrees))
+	{
+		BuildManager->RotatePreviewYaw(DeltaDegrees);
+	}
 }

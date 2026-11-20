@@ -3,5 +3,11 @@
 UWhiteComboBoxString::UWhiteComboBoxString(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	InitForegroundColor(FSlateColor(FLinearColor::White));
+	const FSlateColor WhiteText(FLinearColor::White);
+	InitForegroundColor(WhiteText);
+
+	FTableRowStyle WhiteItemStyle = GetItemStyle();
+	WhiteItemStyle.SetTextColor(WhiteText);
+	WhiteItemStyle.SetSelectedTextColor(WhiteText);
+	SetItemStyle(WhiteItemStyle);
 }

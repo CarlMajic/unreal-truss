@@ -1,12 +1,50 @@
 #include "TargetingPointerComponent.h"
 
+#include "AudioGroundLineArrayActor.h"
+#include "AudioGroundSpeakerActor.h"
+#include "BarLayoutActor.h"
+#include "BarSeatingActor.h"
+#include "CafeTableActor.h"
+#include "DiningTableActor.h"
 #include "Components/StaticMeshComponent.h"
+#include "DrapeRunActor.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/PlayerController.h"
+#include "LoungeLayoutActor.h"
+#include "LightFixtureActor.h"
+#include "MBPWallActor.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "ProjectionScreenActor.h"
+#include "SectionalLayoutActor.h"
+#include "StageDeckActor.h"
 #include "TrussStructureActor.h"
+#include "VideoPlacementActor.h"
+#include "VideoWallActor.h"
+
+namespace
+{
+	bool IsEditableBuildActor(const AActor* Actor)
+	{
+		return Cast<ATrussStructureActor>(Actor) ||
+			Cast<AMBPWallActor>(Actor) ||
+			Cast<AStageDeckActor>(Actor) ||
+			Cast<ADrapeRunActor>(Actor) ||
+			Cast<AVideoPlacementActor>(Actor) ||
+			Cast<AVideoWallActor>(Actor) ||
+			Cast<AProjectionScreenActor>(Actor) ||
+			Cast<AAudioGroundSpeakerActor>(Actor) ||
+			Cast<AAudioGroundLineArrayActor>(Actor) ||
+			Cast<ALightFixtureActor>(Actor) ||
+			Cast<ALoungeLayoutActor>(Actor) ||
+			Cast<ASectionalLayoutActor>(Actor) ||
+			Cast<ABarLayoutActor>(Actor) ||
+			Cast<ABarSeatingActor>(Actor) ||
+			Cast<ADiningTableActor>(Actor) ||
+			Cast<ACafeTableActor>(Actor);
+	}
+}
 
 UTargetingPointerComponent::UTargetingPointerComponent()
 {
@@ -61,9 +99,19 @@ void UTargetingPointerComponent::UpdatePointer(APlayerController* PlayerControll
 
 	FHitResult HitResult;
 	ATrussStructureActor* TrussActor = nullptr;
-	const bool bHit = Mode == ETargetingPointerMode::TrussSelection
-		? TraceTrussSelection(PlayerController, PrimaryIgnoredActor, SecondaryIgnoredActor, HitResult, TrussActor)
-		: TraceWorldPlacement(PlayerController, PrimaryIgnoredActor, SecondaryIgnoredActor, HitResult);
+	bool bHit = false;
+	if (Mode == ETargetingPointerMode::TrussSelection)
+	{
+		bHit = TraceTrussSelection(PlayerController, PrimaryIgnoredActor, SecondaryIgnoredActor, HitResult, TrussActor);
+	}
+	else if (Mode == ETargetingPointerMode::EditableSelection)
+	{
+		bHit = TraceEditableSelection(PlayerController, PrimaryIgnoredActor, SecondaryIgnoredActor, HitResult);
+	}
+	else
+	{
+		bHit = TraceWorldPlacement(PlayerController, PrimaryIgnoredActor, SecondaryIgnoredActor, HitResult);
+	}
 
 	if (bHit)
 	{
@@ -260,6 +308,79 @@ bool UTargetingPointerComponent::TraceTrussSelection(APlayerController* PlayerCo
 			{
 				OutHitResult = HitResult;
 				OutTrussActor = OwnerTrussActor;
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool UTargetingPointerComponent::TraceEditableSelection(APlayerController* PlayerController, AActor* PrimaryIgnoredActor, AActor* SecondaryIgnoredActor, FHitResult& OutHitResult)
+{
+	UWorld* World = GetWorld();
+	if (!World || !PlayerController)
+	{
+		return false;
+	}
+
+	FVector ViewLocation = FVector::ZeroVector;
+	FRotator ViewRotation = FRotator::ZeroRotator;
+	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	const FVector TraceEnd = ViewLocation + (ViewRotation.Vector() * TraceDistanceCm);
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(TargetingPointerEditableTrace), true, GetOwner());
+	if (PrimaryIgnoredActor)
+	{
+		QueryParams.AddIgnoredActor(PrimaryIgnoredActor);
+	}
+	if (SecondaryIgnoredActor)
+	{
+		QueryParams.AddIgnoredActor(SecondaryIgnoredActor);
+	}
+
+	FCollisionObjectQueryParams ObjectQueryParams;
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+
+	TArray<FHitResult> HitResults;
+	for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+	{
+		HitResults.Reset();
+		if (!World->LineTraceMultiByObjectType(HitResults, ViewLocation, TraceEnd, ObjectQueryParams, QueryParams))
+		{
+			return false;
+		}
+		const FHitResult& FirstHit = HitResults[0];
+		if (!FirstHit.bStartPenetrating && FirstHit.Distance >= 40.0f)
+		{
+			break;
+		}
+		if (!FirstHit.GetActor())
+		{
+			return false;
+		}
+		QueryParams.AddIgnoredActor(FirstHit.GetActor());
+	}
+	if (HitResults.IsEmpty() || HitResults[0].bStartPenetrating || HitResults[0].Distance < 40.0f)
+	{
+		return false;
+	}
+
+	for (const FHitResult& HitResult : HitResults)
+	{
+		const AActor* HitActor = HitResult.GetActor();
+		if (IsEditableBuildActor(HitActor) || (HitActor && IsEditableBuildActor(HitActor->GetParentActor())))
+		{
+			OutHitResult = HitResult;
+			return true;
+		}
+
+		if (const UActorComponent* HitComponent = HitResult.GetComponent())
+		{
+			if (IsEditableBuildActor(HitComponent->GetOwner()))
+			{
+				OutHitResult = HitResult;
 				return true;
 			}
 		}

@@ -5,7 +5,12 @@
 #include "LoungeLayoutActor.generated.h"
 
 class UBoxComponent;
+class UArrowComponent;
 class UInstancedStaticMeshComponent;
+class USkeletalMeshComponent;
+class USphereComponent;
+class UAnimationAsset;
+class USkeletalMesh;
 class UStaticMesh;
 
 UENUM(BlueprintType)
@@ -242,6 +247,66 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lounge|Debug")
 	int32 CurrentGeneratedMeshCount = 0;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview")
+	bool bShowAISlotPreviewInEditor = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (ClampMin = "0.0", Units = "cm"))
+	float AISlotPreviewSpreadRadiusCm = 220.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (Units = "cm"))
+	FVector AISlotPreviewOffsetCm = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview")
+	TArray<FVector> AISlotPerSlotOffsetsCm;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview")
+	TArray<FRotator> AISlotPerSlotRotationOffsets;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Animation Preview")
+	bool bShowAIAnimationPreviewInEditor = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Animation Preview", meta = (EditCondition = "bShowAIAnimationPreviewInEditor"))
+	TSoftObjectPtr<USkeletalMesh> AIAnimationPreviewMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Animation Preview", meta = (EditCondition = "bShowAIAnimationPreviewInEditor"))
+	TSoftObjectPtr<UAnimationAsset> AIAnimationPreviewDefaultAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Animation Preview", meta = (EditCondition = "bShowAIAnimationPreviewInEditor"))
+	TArray<TSoftObjectPtr<UAnimationAsset>> AIAnimationPreviewPerSlotAnimations;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Animation Preview", meta = (Units = "cm", EditCondition = "bShowAIAnimationPreviewInEditor"))
+	FVector AIAnimationPreviewMeshOffsetCm = FVector(0.0f, 0.0f, -90.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Animation Preview", meta = (EditCondition = "bShowAIAnimationPreviewInEditor"))
+	FRotator AIAnimationPreviewMeshRotation = FRotator(0.0f, -90.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Animation Preview", meta = (EditCondition = "bShowAIAnimationPreviewInEditor"))
+	FVector AIAnimationPreviewMeshScale = FVector::OneVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (Units = "deg"))
+	float AISlotPreviewStartAngleDegrees = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview")
+	bool bUseRowBasedAISlotPreview = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (Units = "cm", EditCondition = "bUseRowBasedAISlotPreview"))
+	FVector SofaAISlotPreviewOffsetCm = FVector(0.0f, -150.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (ClampMin = "0.0", Units = "cm", EditCondition = "bUseRowBasedAISlotPreview"))
+	float SofaAISlotPreviewSpacingCm = 113.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (Units = "cm", EditCondition = "bUseRowBasedAISlotPreview"))
+	FVector ChairAISlotPreviewOffsetCm = FVector(0.0f, 150.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (ClampMin = "0.0", Units = "cm", EditCondition = "bUseRowBasedAISlotPreview"))
+	float ChairAISlotPreviewSpacingCm = 113.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (Units = "cm"))
+	FVector AISlotFacingLocalPointCm = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lounge|AI Preview", meta = (Units = "deg"))
+	float AISlotFacingYawOffsetDegrees = 0.0f;
+
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Lounge")
 	void RebuildLoungeLayout();
 
@@ -253,6 +318,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Lounge")
 	void SetSelectionHighlighted(bool bHighlighted);
+
+	UFUNCTION(BlueprintCallable, Category = "Lounge|AI Preview")
+	void GetAISlotPreviewLocalOffsets(TArray<FVector>& OutOffsets) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Lounge|AI Preview")
+	void GetAISlotPreviewLocalRotations(TArray<FRotator>& OutRotations) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Lounge|AI Preview")
+	void GetAISlotPreviewAnimations(TArray<TSoftObjectPtr<UAnimationAsset>>& OutAnimations) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Lounge|Assets")
 	TArray<FString> GetSofaOptions() const;
@@ -282,6 +356,26 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> GeneratedMeshComponents;
 
+	UPROPERTY(Transient)
+	TArray<FVector> AISlotSourceLocalOffsets;
+
+	UPROPERTY(Transient)
+	int32 AISlotPreviewSofaCount = 0;
+
+	UPROPERTY(Transient)
+	int32 AISlotPreviewChairCount = 0;
+
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USphereComponent>> AISlotPreviewComponents;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UArrowComponent>> AISlotPreviewArrowComponents;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USkeletalMeshComponent>> AIAnimationPreviewComponents;
+#endif
+
 	FBox GeneratedBounds;
 
 	void ClearGenerated();
@@ -298,4 +392,7 @@ private:
 	void AddMeshInstance(UInstancedStaticMeshComponent* Component, UStaticMesh* Mesh, const FTransform& InstanceTransform, ELoungeChairMirrorMode AppliedMirrorMode);
 	void ExpandGeneratedBounds(UStaticMesh* Mesh, const FTransform& Transform);
 	void UpdateSelectionBounds();
+	void AddAISlotSource(const FVector& LocalOffset);
+	void RefreshAISlotPreviewComponents();
+	void RefreshAIAnimationPreviewComponents(const TArray<FVector>& PreviewOffsets);
 };

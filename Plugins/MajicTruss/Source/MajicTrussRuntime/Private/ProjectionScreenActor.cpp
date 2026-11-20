@@ -2,10 +2,14 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/ChildActorComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "MediaPlayer.h"
+#include "MediaSource.h"
+#include "Misc/Paths.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Math/RotationMatrix.h"
 #include "TrussMathLibrary.h"
@@ -27,6 +31,18 @@ UStaticMesh* LoadProjectionMesh(const TCHAR* AssetPath)
 {
 	return Cast<UStaticMesh>(FSoftObjectPath(AssetPath).TryLoad());
 }
+
+void ConfigureSelectionBounds(UBoxComponent* Bounds)
+{
+	Bounds->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Bounds->SetCollisionObjectType(ECC_WorldDynamic);
+	Bounds->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Bounds->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	Bounds->SetGenerateOverlapEvents(false);
+	Bounds->SetHiddenInGame(true);
+	Bounds->SetLineThickness(2.0f);
+	Bounds->ShapeColor = FColor::Cyan;
+}
 }
 
 AProjectionScreenActor::AProjectionScreenActor()
@@ -38,14 +54,11 @@ AProjectionScreenActor::AProjectionScreenActor()
 
 	SelectionBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("SelectionBounds"));
 	SelectionBounds->SetupAttachment(SceneRoot);
-	SelectionBounds->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	SelectionBounds->SetCollisionObjectType(ECC_WorldDynamic);
-	SelectionBounds->SetCollisionResponseToAllChannels(ECR_Ignore);
-	SelectionBounds->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
-	SelectionBounds->SetGenerateOverlapEvents(false);
-	SelectionBounds->SetHiddenInGame(true);
-	SelectionBounds->SetLineThickness(2.0f);
-	SelectionBounds->ShapeColor = FColor::Cyan;
+	ConfigureSelectionBounds(SelectionBounds);
+
+	ScreenSelectionBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("ScreenSelectionBounds"));
+	ScreenSelectionBounds->SetupAttachment(SceneRoot);
+	ConfigureSelectionBounds(ScreenSelectionBounds);
 
 	ScreenKitComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("ScreenKit"));
 	ScreenKitComponent->SetupAttachment(SceneRoot);
@@ -63,7 +76,18 @@ AProjectionScreenActor::AProjectionScreenActor()
 	ScreenCenterMarkerComponent->bDisallowNanite = true;
 	ScreenCenterMarkerComponent->SetStaticMesh(LoadProjectionMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere")));
 
+	VideoSurfaceComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VideoSurface"));
+	VideoSurfaceComponent->SetupAttachment(SceneRoot);
+	VideoSurfaceComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	VideoSurfaceComponent->SetGenerateOverlapEvents(false);
+	VideoSurfaceComponent->SetCanEverAffectNavigation(false);
+	VideoSurfaceComponent->bDisallowNanite = true;
+	VideoSurfaceComponent->SetStaticMesh(LoadProjectionMesh(TEXT("/Engine/BasicShapes/Plane.Plane")));
+
 	ProjectionLightFunctionMaterial = Cast<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Majic_Gear/Projection/Projectors/LFM_Testpattern.LFM_Testpattern")).TryLoad());
+	VideoSurfaceMaterial = Cast<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/Video_Files/Projection_Screen_Video_Mat1.Projection_Screen_Video_Mat1")).TryLoad());
+	VideoMediaPlayer = TSoftObjectPtr<UMediaPlayer>(FSoftObjectPath(TEXT("/Game/Video_Files/Projection_Screen.Projection_Screen")));
+	VideoSource = TSoftObjectPtr<UMediaSource>(FSoftObjectPath(TEXT("/Game/Video_Files/test_pattern.test_pattern")));
 }
 
 void AProjectionScreenActor::OnConstruction(const FTransform& Transform)
@@ -73,6 +97,17 @@ void AProjectionScreenActor::OnConstruction(const FTransform& Transform)
 	if (bBuildOnConstruction)
 	{
 		RebuildProjectionScreen();
+	}
+}
+
+void AProjectionScreenActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	UpdateVideoSurface(FVector(0.0f, 0.0f, CurrentScreenHeightFt * ProjectionCmPerFoot * 0.5f) + ScreenCenterOffsetCm);
+	if (bAutoPlayVideo)
+	{
+		PlayProjectionVideo();
 	}
 }
 
@@ -142,6 +177,83 @@ void AProjectionScreenActor::SetSelectionHighlighted(bool bHighlighted)
 	{
 		SelectionBounds->SetHiddenInGame(!bHighlighted);
 	}
+	if (ScreenSelectionBounds)
+	{
+		ScreenSelectionBounds->SetHiddenInGame(!bHighlighted);
+	}
+}
+
+void AProjectionScreenActor::PlayProjectionVideo()
+{
+	UMediaPlayer* ResolvedMediaPlayer = GetResolvedVideoMediaPlayer();
+	if (!ResolvedMediaPlayer)
+	{
+		return;
+	}
+
+	// The projector owns video playback; placed speaker actors own all audible output.
+	ResolvedMediaPlayer->NativeAudioOut = false;
+	ResolvedMediaPlayer->SetNativeVolume(1.0f);
+	ResolvedMediaPlayer->SetLooping(bLoopVideo);
+	ResolvedMediaPlayer->PlayOnOpen = true;
+
+	if (!ClientVideoFile.FilePath.IsEmpty())
+	{
+		FString ResolvedFilePath = ClientVideoFile.FilePath;
+		if (ResolvedFilePath.StartsWith(TEXT("./")))
+		{
+			ResolvedFilePath = FPaths::Combine(FPaths::ProjectContentDir(), ResolvedFilePath.RightChop(2));
+		}
+		ResolvedFilePath = FPaths::ConvertRelativePathToFull(ResolvedFilePath);
+
+		FString ExpectedUrl = FString::Printf(TEXT("file://%s"), *ResolvedFilePath);
+		ExpectedUrl.ReplaceInline(TEXT("\\"), TEXT("/"));
+		if (!ResolvedMediaPlayer->GetUrl().Equals(ExpectedUrl, ESearchCase::IgnoreCase))
+		{
+			ResolvedMediaPlayer->OpenFile(ResolvedFilePath);
+		}
+		else
+		{
+			ResolvedMediaPlayer->Play();
+		}
+		return;
+	}
+
+	UMediaSource* ResolvedVideoSource = VideoSource.LoadSynchronous();
+	if (!ResolvedVideoSource)
+	{
+		return;
+	}
+
+	if (!ResolvedMediaPlayer->GetUrl().Equals(ResolvedVideoSource->GetUrl(), ESearchCase::IgnoreCase))
+	{
+		ResolvedMediaPlayer->OpenSource(ResolvedVideoSource);
+	}
+	else
+	{
+		ResolvedMediaPlayer->Play();
+	}
+}
+
+void AProjectionScreenActor::PauseProjectionVideo()
+{
+	if (UMediaPlayer* ResolvedMediaPlayer = GetResolvedVideoMediaPlayer())
+	{
+		ResolvedMediaPlayer->Pause();
+	}
+}
+
+void AProjectionScreenActor::StopProjectionVideo()
+{
+	if (UMediaPlayer* ResolvedMediaPlayer = GetResolvedVideoMediaPlayer())
+	{
+		ResolvedMediaPlayer->Close();
+	}
+}
+
+UMediaPlayer* AProjectionScreenActor::GetResolvedVideoMediaPlayer() const
+{
+	return VideoMediaPlayer.LoadSynchronous();
 }
 
 void AProjectionScreenActor::ClearProjectorComponents()
@@ -179,6 +291,15 @@ void AProjectionScreenActor::BuildScreenKit()
 	ScreenKitComponent->SetRelativeLocation(ScreenKitPlacementOffsetCm);
 	ScreenKitComponent->SetRelativeRotation(ScreenKitPlacementRotation);
 	ScreenKitComponent->SetRelativeScale3D(ScreenKitScale);
+
+	if (AActor* ScreenKitActor = ScreenKitComponent->GetChildActor())
+	{
+		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(ScreenKitActor);
+		for (UPrimitiveComponent* Component : PrimitiveComponents)
+		{
+			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+	}
 }
 
 void AProjectionScreenActor::BuildProjector()
@@ -219,6 +340,7 @@ void AProjectionScreenActor::BuildProjector()
 
 	UpdateProjectionLight(ProjectorLocation, ScreenCenterLocation);
 	UpdateScreenCenterMarker(ScreenCenterLocation);
+	UpdateVideoSurface(ScreenCenterLocation);
 }
 
 void AProjectionScreenActor::BuildMountSupport(const FVector& ProjectorLocation, const FRotator& AimRotation)
@@ -346,6 +468,28 @@ void AProjectionScreenActor::AddStaticMeshComponent(TArray<TObjectPtr<UStaticMes
 	ComponentArray.Add(Component);
 }
 
+void AProjectionScreenActor::UpdateVideoSurface(const FVector& ScreenCenterLocation)
+{
+	if (!VideoSurfaceComponent)
+	{
+		return;
+	}
+
+	VideoSurfaceComponent->SetStaticMesh(LoadVideoSurfaceMesh());
+	VideoSurfaceComponent->SetRelativeLocation(ScreenCenterLocation + VideoSurfaceOffsetCm);
+	VideoSurfaceComponent->SetRelativeRotation(VideoSurfaceRotation);
+	VideoSurfaceComponent->SetRelativeScale3D(FVector(
+		(CurrentScreenWidthFt * ProjectionCmPerFoot / 100.0f) * FMath::Max(0.001f, VideoSurfaceScaleMultiplier.X),
+		(CurrentScreenHeightFt * ProjectionCmPerFoot / 100.0f) * FMath::Max(0.001f, VideoSurfaceScaleMultiplier.Y),
+		FMath::Max(0.001f, VideoSurfaceScaleMultiplier.Z)));
+	VideoSurfaceComponent->SetVisibility(bShowVideoSurface);
+	VideoSurfaceComponent->SetHiddenInGame(!bShowVideoSurface);
+	if (VideoSurfaceMaterial)
+	{
+		VideoSurfaceComponent->SetMaterial(0, VideoSurfaceMaterial);
+	}
+}
+
 void AProjectionScreenActor::UpdateProjectionLight(const FVector& ProjectorLocation, const FVector& ScreenCenterLocation)
 {
 	if (!ProjectionLightComponent)
@@ -393,43 +537,53 @@ void AProjectionScreenActor::UpdateScreenCenterMarker(const FVector& ScreenCente
 
 void AProjectionScreenActor::UpdateSelectionBounds()
 {
-	if (!SelectionBounds)
+	if (!SelectionBounds || !ScreenSelectionBounds)
 	{
 		return;
 	}
 
-	FBox Bounds(EForceInit::ForceInit);
+	FBox ScreenBounds(EForceInit::ForceInit);
 	if (ScreenKitComponent && ScreenKitComponent->GetChildActor())
 	{
-		ExpandBoundsFromActor(ScreenKitComponent->GetChildActor(), Bounds);
+		ExpandBoundsFromActor(ScreenKitComponent->GetChildActor(), ScreenBounds);
 	}
 
+	FBox ProjectorBounds(EForceInit::ForceInit);
 	for (UStaticMeshComponent* Component : ProjectorComponents)
 	{
 		if (Component && Component->GetStaticMesh())
 		{
-			Bounds += Component->GetStaticMesh()->GetBoundingBox().TransformBy(Component->GetRelativeTransform());
+			ProjectorBounds += Component->GetStaticMesh()->GetBoundingBox().TransformBy(Component->GetRelativeTransform());
 		}
-	}
-
-	for (UStaticMeshComponent* Component : MountComponents)
-	{
-		if (Component && Component->GetStaticMesh())
-		{
-			Bounds += Component->GetStaticMesh()->GetBoundingBox().TransformBy(Component->GetRelativeTransform());
-		}
-	}
-
-	if (!Bounds.IsValid)
-	{
-		SelectionBounds->SetRelativeLocation(FVector::ZeroVector);
-		SelectionBounds->SetBoxExtent(FVector(50.0f, 50.0f, 50.0f));
-		return;
 	}
 
 	SelectionBounds->SetWorldScale3D(FVector::OneVector);
-	SelectionBounds->SetRelativeLocation(Bounds.GetCenter());
-	SelectionBounds->SetBoxExtent(Bounds.GetExtent().ComponentMax(FVector(50.0f)));
+	if (ProjectorBounds.IsValid)
+	{
+		SelectionBounds->SetRelativeLocation(ProjectorBounds.GetCenter());
+		SelectionBounds->SetBoxExtent(ProjectorBounds.GetExtent().ComponentMax(FVector(25.0f)));
+	}
+	else
+	{
+		SelectionBounds->SetRelativeLocation(ProjectionLightComponent ? ProjectionLightComponent->GetRelativeLocation() : FVector::ZeroVector);
+		SelectionBounds->SetBoxExtent(FVector(50.0f));
+	}
+
+	ScreenSelectionBounds->SetWorldScale3D(FVector::OneVector);
+	if (ScreenBounds.IsValid)
+	{
+		if (VideoSurfaceComponent && VideoSurfaceComponent->GetStaticMesh() && bShowVideoSurface)
+		{
+			ScreenBounds += VideoSurfaceComponent->GetStaticMesh()->GetBoundingBox().TransformBy(VideoSurfaceComponent->GetRelativeTransform());
+		}
+		ScreenSelectionBounds->SetRelativeLocation(ScreenBounds.GetCenter());
+		ScreenSelectionBounds->SetBoxExtent(ScreenBounds.GetExtent().ComponentMax(FVector(25.0f, 25.0f, 15.0f)));
+	}
+	else
+	{
+		ScreenSelectionBounds->SetRelativeLocation(ScreenKitComponent ? ScreenKitComponent->GetRelativeLocation() : FVector::ZeroVector);
+		ScreenSelectionBounds->SetBoxExtent(FVector(50.0f));
+	}
 }
 
 void AProjectionScreenActor::GetScreenDimensionsFt(float& OutWidthFt, float& OutHeightFt) const
@@ -654,6 +808,11 @@ TArray<UStaticMesh*> AProjectionScreenActor::LoadAVCartMeshes() const
 	return Meshes;
 }
 
+UStaticMesh* AProjectionScreenActor::LoadVideoSurfaceMesh() const
+{
+	return LoadProjectionMesh(TEXT("/Engine/BasicShapes/Plane.Plane"));
+}
+
 UStaticMesh* AProjectionScreenActor::LoadMajicGearDefaultMesh(ETrussPieceType PieceType) const
 {
 	const TCHAR* AssetPath = nullptr;
@@ -753,8 +912,14 @@ void AProjectionScreenActor::ExpandBoundsFromActor(AActor* Actor, FBox& Bounds) 
 	{
 		if (Component && Component->GetStaticMesh())
 		{
+			const FBox MeshBounds = Component->GetStaticMesh()->GetBoundingBox();
+			const float MaxScreenDimensionCm = FMath::Max(CurrentScreenWidthFt, CurrentScreenHeightFt) * ProjectionCmPerFoot;
+			if (MeshBounds.GetSize().GetMax() > MaxScreenDimensionCm * 2.0f)
+			{
+				continue;
+			}
 			const FTransform LocalTransform = Component->GetRelativeTransform() * ChildTransform;
-			Bounds += Component->GetStaticMesh()->GetBoundingBox().TransformBy(LocalTransform);
+			Bounds += MeshBounds.TransformBy(LocalTransform);
 		}
 	}
 }

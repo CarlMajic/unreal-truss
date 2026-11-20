@@ -1,14 +1,20 @@
 #include "LoungeLayoutActor.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/SphereComponent.h"
+#include "Animation/AnimationAsset.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Modules/ModuleManager.h"
 
 namespace
 {
 constexpr float LoungeFallbackExtentCm = 75.0f;
+constexpr float DuplicatePreviewSlotDistanceCm = 75.0f;
 
 bool IsLoungeStaticMeshAsset(const FAssetData& AssetData)
 {
@@ -37,6 +43,37 @@ FString MakeComponentSafeName(const FString& Value)
 	}
 	return Safe;
 }
+
+void ConfigureGeneratedFurnitureComponent(UInstancedStaticMeshComponent* MeshComponent)
+{
+	if (!MeshComponent)
+	{
+		return;
+	}
+
+	MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	MeshComponent->SetCollisionObjectType(ECC_WorldStatic);
+	MeshComponent->SetCollisionResponseToAllChannels(ECR_Block);
+	MeshComponent->SetGenerateOverlapEvents(false);
+	MeshComponent->SetCanEverAffectNavigation(true);
+	MeshComponent->bDisallowNanite = true;
+}
+
+FRotator MakeAISlotFacingRotation(const FVector& LocalOffset, const FVector& FacingLocalPoint, float YawOffsetDegrees)
+{
+	FVector Direction = FacingLocalPoint - LocalOffset;
+	Direction.Z = 0.0f;
+	if (Direction.IsNearlyZero())
+	{
+		return FRotator(0.0f, YawOffsetDegrees, 0.0f);
+	}
+
+	FRotator Rotation = Direction.Rotation();
+	Rotation.Pitch = 0.0f;
+	Rotation.Roll = 0.0f;
+	Rotation.Yaw += YawOffsetDegrees;
+	return Rotation;
+}
 }
 
 ALoungeLayoutActor::ALoungeLayoutActor()
@@ -57,6 +94,9 @@ ALoungeLayoutActor::ALoungeLayoutActor()
 	SelectionBounds->SetHiddenInGame(true);
 	SelectionBounds->SetLineThickness(2.0f);
 	SelectionBounds->ShapeColor = FColor::Orange;
+
+	AIAnimationPreviewMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(TEXT("/Game/IdleSitPoseAnimations/Mannequin/Character/Mesh/SK_Mannequin.SK_Mannequin")));
+	AIAnimationPreviewDefaultAnimation = TSoftObjectPtr<UAnimationAsset>(FSoftObjectPath(TEXT("/Game/IdleSitPoseAnimations/Animations/Relaxed_Sit.Relaxed_Sit")));
 }
 
 void ALoungeLayoutActor::OnConstruction(const FTransform& Transform)
@@ -87,6 +127,9 @@ void ALoungeLayoutActor::RebuildLoungeLayout()
 	SofaSpacingCm = FMath::Max(0.0f, SofaSpacingCm);
 	ChairSpacingCm = FMath::Max(0.0f, ChairSpacingCm);
 
+	AISlotSourceLocalOffsets.Reset();
+	AISlotPreviewSofaCount = 0;
+	AISlotPreviewChairCount = 0;
 	ClearGenerated();
 
 	const FString ResolvedSofaItem = ResolveSelectedItem(SofaAssetFolder, SofaItem);
@@ -156,6 +199,8 @@ void ALoungeLayoutActor::RebuildLoungeLayout()
 			TEXT("LoungeSofa"),
 			SofaTransform.Transform,
 			SofaTransform.AppliedMirrorMode);
+		AddAISlotSource(SofaTransform.Transform.GetLocation());
+		++AISlotPreviewSofaCount;
 	}
 
 	for (const FLoungeMirroredTransform& ChairTransform : GetMirroredTransforms(
@@ -178,6 +223,8 @@ void ALoungeLayoutActor::RebuildLoungeLayout()
 			TEXT("LoungeChair"),
 			ChairTransform.Transform,
 			ChairTransform.AppliedMirrorMode);
+		AddAISlotSource(ChairTransform.Transform.GetLocation());
+		++AISlotPreviewChairCount;
 	}
 
 	for (const FLoungeMirroredTransform& EndTableTransform : GetMirroredTransforms(
@@ -244,6 +291,7 @@ void ALoungeLayoutActor::RebuildLoungeLayout()
 	}
 
 	UpdateSelectionBounds();
+	RefreshAISlotPreviewComponents();
 }
 
 void ALoungeLayoutActor::ApplyBuildDefinition(const FLoungeLayoutBuildDefinition& Definition, bool bRebuildNow)
@@ -304,6 +352,76 @@ void ALoungeLayoutActor::SetSelectionHighlighted(bool bHighlighted)
 	if (SelectionBounds)
 	{
 		SelectionBounds->SetHiddenInGame(!bHighlighted);
+	}
+}
+
+void ALoungeLayoutActor::GetAISlotPreviewLocalOffsets(TArray<FVector>& OutOffsets) const
+{
+	OutOffsets.Reset();
+
+	if (!bUseRowBasedAISlotPreview)
+	{
+		for (int32 SourceIndex = 0; SourceIndex < AISlotSourceLocalOffsets.Num(); ++SourceIndex)
+		{
+			const FVector PerSlotOffset = AISlotPerSlotOffsetsCm.IsValidIndex(SourceIndex)
+				? AISlotPerSlotOffsetsCm[SourceIndex]
+				: FVector::ZeroVector;
+			OutOffsets.Add(AISlotSourceLocalOffsets[SourceIndex] + AISlotPreviewOffsetCm + PerSlotOffset);
+		}
+		return;
+	}
+
+	const auto AddCenteredRow = [this, &OutOffsets](int32 Count, const FVector& CenterOffset, float SpacingCm)
+	{
+		const int32 SafeCount = FMath::Max(Count, 0);
+		if (SafeCount <= 0)
+		{
+			return;
+		}
+
+		const float StartX = -0.5f * static_cast<float>(SafeCount - 1) * SpacingCm;
+		for (int32 Index = 0; Index < SafeCount; ++Index)
+		{
+			const int32 SlotIndex = OutOffsets.Num();
+			const FVector PerSlotOffset = AISlotPerSlotOffsetsCm.IsValidIndex(SlotIndex)
+				? AISlotPerSlotOffsetsCm[SlotIndex]
+				: FVector::ZeroVector;
+			OutOffsets.Add(CenterOffset + FVector(StartX + static_cast<float>(Index) * SpacingCm, 0.0f, 0.0f) + AISlotPreviewOffsetCm + PerSlotOffset);
+		}
+	};
+
+	AddCenteredRow(AISlotPreviewSofaCount, SofaAISlotPreviewOffsetCm, SofaAISlotPreviewSpacingCm);
+	AddCenteredRow(AISlotPreviewChairCount, ChairAISlotPreviewOffsetCm, ChairAISlotPreviewSpacingCm);
+}
+
+void ALoungeLayoutActor::GetAISlotPreviewAnimations(TArray<TSoftObjectPtr<UAnimationAsset>>& OutAnimations) const
+{
+	TArray<FVector> PreviewOffsets;
+	GetAISlotPreviewLocalOffsets(PreviewOffsets);
+
+	OutAnimations.Reset();
+	for (int32 Index = 0; Index < PreviewOffsets.Num(); ++Index)
+	{
+		OutAnimations.Add(AIAnimationPreviewPerSlotAnimations.IsValidIndex(Index)
+			? AIAnimationPreviewPerSlotAnimations[Index]
+			: AIAnimationPreviewDefaultAnimation);
+	}
+}
+
+void ALoungeLayoutActor::GetAISlotPreviewLocalRotations(TArray<FRotator>& OutRotations) const
+{
+	TArray<FVector> PreviewOffsets;
+	GetAISlotPreviewLocalOffsets(PreviewOffsets);
+
+	OutRotations.Reset();
+	for (int32 Index = 0; Index < PreviewOffsets.Num(); ++Index)
+	{
+		FRotator Rotation = MakeAISlotFacingRotation(PreviewOffsets[Index], AISlotFacingLocalPointCm, AISlotFacingYawOffsetDegrees);
+		if (AISlotPerSlotRotationOffsets.IsValidIndex(Index))
+		{
+			Rotation += AISlotPerSlotRotationOffsets[Index];
+		}
+		OutRotations.Add(Rotation);
 	}
 }
 
@@ -390,6 +508,7 @@ UInstancedStaticMeshComponent* ALoungeLayoutActor::FindOrCreateMeshBucket(const 
 	const FName ComponentName(*FString::Printf(TEXT("Lounge_%s_%s%s"), Prefix, *SafeAssetName, bReverseCulling ? TEXT("_ReverseCull") : TEXT("")));
 	if (UInstancedStaticMeshComponent* ExistingComponent = FindObjectFast<UInstancedStaticMeshComponent>(this, ComponentName))
 	{
+		ConfigureGeneratedFurnitureComponent(ExistingComponent);
 		GeneratedMeshComponents.AddUnique(ExistingComponent);
 		ExistingComponent->SetReverseCulling(bReverseCulling);
 		return ExistingComponent;
@@ -402,8 +521,7 @@ UInstancedStaticMeshComponent* ALoungeLayoutActor::FindOrCreateMeshBucket(const 
 	}
 
 	MeshComponent->SetupAttachment(SceneRoot);
-	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	MeshComponent->bDisallowNanite = true;
+	ConfigureGeneratedFurnitureComponent(MeshComponent);
 	MeshComponent->SetReverseCulling(bReverseCulling);
 	MeshComponent->RegisterComponent();
 	AddInstanceComponent(MeshComponent);
@@ -708,4 +826,237 @@ void ALoungeLayoutActor::UpdateSelectionBounds()
 
 	SelectionBounds->SetRelativeLocation(GeneratedBounds.GetCenter());
 	SelectionBounds->SetBoxExtent(GeneratedBounds.GetExtent().ComponentMax(FVector(50.0f, 50.0f, 50.0f)));
+}
+
+void ALoungeLayoutActor::AddAISlotSource(const FVector& LocalOffset)
+{
+	AISlotSourceLocalOffsets.Add(LocalOffset);
+}
+
+void ALoungeLayoutActor::RefreshAISlotPreviewComponents()
+{
+#if WITH_EDITOR
+	if (!bShowAISlotPreviewInEditor || !SceneRoot)
+	{
+		for (USphereComponent* PreviewComponent : AISlotPreviewComponents)
+		{
+			if (PreviewComponent)
+			{
+				PreviewComponent->SetVisibility(false);
+			}
+		}
+		for (UArrowComponent* ArrowComponent : AISlotPreviewArrowComponents)
+		{
+			if (ArrowComponent)
+			{
+				ArrowComponent->SetVisibility(false);
+			}
+		}
+		RefreshAIAnimationPreviewComponents(TArray<FVector>());
+		return;
+	}
+
+	TArray<FVector> PreviewOffsets;
+	if (bUseRowBasedAISlotPreview)
+	{
+		GetAISlotPreviewLocalOffsets(PreviewOffsets);
+	}
+
+	FVector OffsetSum = FVector::ZeroVector;
+	for (const FVector& SourceOffset : AISlotSourceLocalOffsets)
+	{
+		if (bUseRowBasedAISlotPreview)
+		{
+			break;
+		}
+
+		const FVector AdjustedOffset = SourceOffset + AISlotPreviewOffsetCm;
+		OffsetSum += AdjustedOffset;
+		bool bDuplicate = false;
+		for (const FVector& ExistingOffset : PreviewOffsets)
+		{
+			if (FVector::DistSquared2D(ExistingOffset, AdjustedOffset) <= FMath::Square(DuplicatePreviewSlotDistanceCm))
+			{
+				bDuplicate = true;
+				break;
+			}
+		}
+		if (!bDuplicate)
+		{
+			PreviewOffsets.Add(AdjustedOffset);
+		}
+	}
+
+	if (!bUseRowBasedAISlotPreview && AISlotSourceLocalOffsets.Num() > PreviewOffsets.Num())
+	{
+		const int32 DesiredCount = AISlotSourceLocalOffsets.Num();
+		const FVector CenterOffset = DesiredCount > 0 ? OffsetSum / static_cast<float>(DesiredCount) : FVector::ZeroVector;
+		PreviewOffsets.Reset();
+		const float AngleStep = 360.0f / FMath::Max(DesiredCount, 1);
+		for (int32 Index = 0; Index < DesiredCount; ++Index)
+		{
+			const float Angle = FMath::DegreesToRadians(AISlotPreviewStartAngleDegrees + AngleStep * Index);
+			PreviewOffsets.Add(CenterOffset + FVector(FMath::Cos(Angle) * AISlotPreviewSpreadRadiusCm, FMath::Sin(Angle) * AISlotPreviewSpreadRadiusCm, 0.0f));
+		}
+	}
+	TArray<FRotator> PreviewRotations;
+	GetAISlotPreviewLocalRotations(PreviewRotations);
+
+	while (AISlotPreviewComponents.Num() < PreviewOffsets.Num())
+	{
+		const FName ComponentName = MakeUniqueObjectName(this, USphereComponent::StaticClass(), TEXT("EditorAISlotPreview"));
+		USphereComponent* PreviewComponent = NewObject<USphereComponent>(this, ComponentName, RF_Transient | RF_TextExportTransient);
+		if (!PreviewComponent)
+		{
+			break;
+		}
+
+		PreviewComponent->SetupAttachment(SceneRoot);
+		PreviewComponent->SetIsVisualizationComponent(true);
+		PreviewComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PreviewComponent->SetGenerateOverlapEvents(false);
+		PreviewComponent->SetSphereRadius(20.0f);
+		PreviewComponent->ShapeColor = FColor::Green;
+		PreviewComponent->SetHiddenInGame(true);
+		PreviewComponent->SetVisibility(true);
+		PreviewComponent->RegisterComponent();
+		AddInstanceComponent(PreviewComponent);
+		AISlotPreviewComponents.Add(PreviewComponent);
+	}
+
+	while (AISlotPreviewArrowComponents.Num() < PreviewOffsets.Num())
+	{
+		const FName ComponentName = MakeUniqueObjectName(this, UArrowComponent::StaticClass(), TEXT("EditorAISlotArrow"));
+		UArrowComponent* ArrowComponent = NewObject<UArrowComponent>(this, ComponentName, RF_Transient | RF_TextExportTransient);
+		if (!ArrowComponent)
+		{
+			break;
+		}
+
+		ArrowComponent->SetupAttachment(SceneRoot);
+		ArrowComponent->SetIsVisualizationComponent(true);
+		ArrowComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ArrowComponent->SetHiddenInGame(true);
+		ArrowComponent->SetVisibility(true);
+		ArrowComponent->ArrowColor = FColor::Green;
+		ArrowComponent->ArrowSize = 1.25f;
+		ArrowComponent->ArrowLength = 75.0f;
+		ArrowComponent->RegisterComponent();
+		AddInstanceComponent(ArrowComponent);
+		AISlotPreviewArrowComponents.Add(ArrowComponent);
+	}
+
+	for (int32 Index = 0; Index < AISlotPreviewComponents.Num(); ++Index)
+	{
+		USphereComponent* PreviewComponent = AISlotPreviewComponents[Index];
+		if (!PreviewComponent)
+		{
+			continue;
+		}
+
+		const bool bHasPreview = PreviewOffsets.IsValidIndex(Index);
+		PreviewComponent->SetVisibility(bHasPreview);
+		PreviewComponent->SetHiddenInGame(true);
+		if (bHasPreview)
+		{
+			PreviewComponent->SetRelativeLocation(PreviewOffsets[Index]);
+		}
+	}
+
+	for (int32 Index = 0; Index < AISlotPreviewArrowComponents.Num(); ++Index)
+	{
+		UArrowComponent* ArrowComponent = AISlotPreviewArrowComponents[Index];
+		if (!ArrowComponent)
+		{
+			continue;
+		}
+
+		const bool bHasPreview = PreviewOffsets.IsValidIndex(Index);
+		ArrowComponent->SetVisibility(bHasPreview);
+		ArrowComponent->SetHiddenInGame(true);
+		if (bHasPreview)
+		{
+			ArrowComponent->SetRelativeLocation(PreviewOffsets[Index]);
+			ArrowComponent->SetRelativeRotation(PreviewRotations.IsValidIndex(Index) ? PreviewRotations[Index] : FRotator::ZeroRotator);
+		}
+	}
+
+	RefreshAIAnimationPreviewComponents(PreviewOffsets);
+#endif
+}
+
+void ALoungeLayoutActor::RefreshAIAnimationPreviewComponents(const TArray<FVector>& PreviewOffsets)
+{
+#if WITH_EDITOR
+	if (!bShowAIAnimationPreviewInEditor || !SceneRoot)
+	{
+		for (USkeletalMeshComponent* PreviewComponent : AIAnimationPreviewComponents)
+		{
+			if (PreviewComponent)
+			{
+				PreviewComponent->SetVisibility(false);
+			}
+		}
+		return;
+	}
+
+	USkeletalMesh* PreviewMesh = AIAnimationPreviewMesh.LoadSynchronous();
+	UAnimationAsset* DefaultAnimation = AIAnimationPreviewDefaultAnimation.LoadSynchronous();
+	if (!PreviewMesh)
+	{
+		return;
+	}
+
+	while (AIAnimationPreviewComponents.Num() < PreviewOffsets.Num())
+	{
+		const FName ComponentName = MakeUniqueObjectName(this, USkeletalMeshComponent::StaticClass(), TEXT("EditorAIAnimationPreview"));
+		USkeletalMeshComponent* PreviewComponent = NewObject<USkeletalMeshComponent>(this, ComponentName, RF_Transient | RF_TextExportTransient);
+		if (!PreviewComponent)
+		{
+			break;
+		}
+
+		PreviewComponent->SetupAttachment(SceneRoot);
+		PreviewComponent->SetIsVisualizationComponent(true);
+		PreviewComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PreviewComponent->SetGenerateOverlapEvents(false);
+		PreviewComponent->SetHiddenInGame(true);
+		PreviewComponent->SetVisibility(true);
+		PreviewComponent->RegisterComponent();
+		AddInstanceComponent(PreviewComponent);
+		AIAnimationPreviewComponents.Add(PreviewComponent);
+	}
+
+	for (int32 Index = 0; Index < AIAnimationPreviewComponents.Num(); ++Index)
+	{
+		USkeletalMeshComponent* PreviewComponent = AIAnimationPreviewComponents[Index];
+		if (!PreviewComponent)
+		{
+			continue;
+		}
+
+		const bool bHasPreview = PreviewOffsets.IsValidIndex(Index);
+		PreviewComponent->SetVisibility(bHasPreview);
+		PreviewComponent->SetHiddenInGame(true);
+		if (!bHasPreview)
+		{
+			continue;
+		}
+
+		UAnimationAsset* SlotAnimation = AIAnimationPreviewPerSlotAnimations.IsValidIndex(Index)
+			? AIAnimationPreviewPerSlotAnimations[Index].LoadSynchronous()
+			: nullptr;
+
+		PreviewComponent->SetSkeletalMesh(PreviewMesh);
+		PreviewComponent->SetRelativeLocation(PreviewOffsets[Index] + AIAnimationPreviewMeshOffsetCm);
+		TArray<FRotator> PreviewRotations;
+		GetAISlotPreviewLocalRotations(PreviewRotations);
+		PreviewComponent->SetRelativeRotation((PreviewRotations.IsValidIndex(Index) ? PreviewRotations[Index] : FRotator::ZeroRotator) + AIAnimationPreviewMeshRotation);
+		PreviewComponent->SetRelativeScale3D(AIAnimationPreviewMeshScale);
+		if (SlotAnimation || DefaultAnimation)
+		{
+			PreviewComponent->PlayAnimation(SlotAnimation ? SlotAnimation : DefaultAnimation, true);
+		}
+	}
+#endif
 }

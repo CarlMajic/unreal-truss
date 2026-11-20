@@ -2,6 +2,7 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "TrussMathLibrary.h"
@@ -68,6 +69,32 @@ int32 PickBlackPipeLengthInches(float RequestedHeightFt)
 
 	return 120;
 }
+
+void ConfigureActiveVideoCollision(UPrimitiveComponent* Component, bool bBlockPawnCollision, bool bAffectNavigation)
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	Component->SetCollisionEnabled(bBlockPawnCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+	Component->SetCollisionObjectType(ECC_WorldStatic);
+	Component->SetCollisionResponseToAllChannels(bBlockPawnCollision ? ECR_Block : ECR_Ignore);
+	Component->SetGenerateOverlapEvents(false);
+	Component->SetCanEverAffectNavigation(bAffectNavigation);
+}
+
+void DisableVideoBlockerCollision(UPrimitiveComponent* Component)
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Component->SetGenerateOverlapEvents(false);
+	Component->SetCanEverAffectNavigation(false);
+}
 }
 
 AVideoPlacementActor::AVideoPlacementActor()
@@ -91,33 +118,39 @@ AVideoPlacementActor::AVideoPlacementActor()
 
 	TenFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TenFootTrussInstances"));
 	TenFootTrussInstances->SetupAttachment(SceneRoot);
+	ConfigureActiveVideoCollision(TenFootTrussInstances, bBlockPawnCollision, bAffectNavigation);
 
 	EightFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("EightFootTrussInstances"));
 	EightFootTrussInstances->SetupAttachment(SceneRoot);
+	ConfigureActiveVideoCollision(EightFootTrussInstances, bBlockPawnCollision, bAffectNavigation);
 
 	FiveFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FiveFootTrussInstances"));
 	FiveFootTrussInstances->SetupAttachment(SceneRoot);
+	ConfigureActiveVideoCollision(FiveFootTrussInstances, bBlockPawnCollision, bAffectNavigation);
 
 	FourFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FourFootTrussInstances"));
 	FourFootTrussInstances->SetupAttachment(SceneRoot);
+	ConfigureActiveVideoCollision(FourFootTrussInstances, bBlockPawnCollision, bAffectNavigation);
 
 	TwoFootTrussInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TwoFootTrussInstances"));
 	TwoFootTrussInstances->SetupAttachment(SceneRoot);
+	ConfigureActiveVideoCollision(TwoFootTrussInstances, bBlockPawnCollision, bAffectNavigation);
 
 	BaseInstances = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BaseInstances"));
 	BaseInstances->SetupAttachment(SceneRoot);
+	ConfigureActiveVideoCollision(BaseInstances, bBlockPawnCollision, bAffectNavigation);
 
 	TVComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TVComponent"));
 	TVComponent->SetupAttachment(SceneRoot);
-	TVComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DisableVideoBlockerCollision(TVComponent);
 
 	AltmanBaseComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("AltmanBaseComponent"));
 	AltmanBaseComponent->SetupAttachment(SceneRoot);
-	AltmanBaseComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DisableVideoBlockerCollision(AltmanBaseComponent);
 
 	BlackPipeComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BlackPipeComponent"));
 	BlackPipeComponent->SetupAttachment(SceneRoot);
-	BlackPipeComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DisableVideoBlockerCollision(BlackPipeComponent);
 
 	const TCHAR* UPMPartNames[] = {
 		TEXT("Bolt"),
@@ -135,12 +168,12 @@ AVideoPlacementActor::AVideoPlacementActor()
 	{
 		UStaticMeshComponent* UpperComponent = CreateDefaultSubobject<UStaticMeshComponent>(*FString::Printf(TEXT("UpperUPM_%s"), PartName));
 		UpperComponent->SetupAttachment(SceneRoot);
-		UpperComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		DisableVideoBlockerCollision(UpperComponent);
 		UpperUPMComponents.Add(UpperComponent);
 
 		UStaticMeshComponent* LowerComponent = CreateDefaultSubobject<UStaticMeshComponent>(*FString::Printf(TEXT("LowerUPM_%s"), PartName));
 		LowerComponent->SetupAttachment(SceneRoot);
-		LowerComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		DisableVideoBlockerCollision(LowerComponent);
 		LowerUPMComponents.Add(LowerComponent);
 	}
 }
@@ -188,6 +221,7 @@ void AVideoPlacementActor::RebuildVideoPlacement()
 		TVComponent->SetRelativeScale3D(TVScale);
 		TVComponent->SetVisibility(true);
 		TVComponent->SetHiddenInGame(false);
+		ConfigureActiveVideoCollision(TVComponent, bBlockPawnCollision, bAffectNavigation);
 
 		const FBox TVBounds = TVMesh->GetBoundingBox().TransformBy(TVComponent->GetRelativeTransform());
 		ExpandGeneratedBounds(TVBounds);
@@ -291,6 +325,7 @@ void AVideoPlacementActor::ClearGenerated()
 		{
 			Component->SetVisibility(false);
 			Component->SetHiddenInGame(true);
+			DisableVideoBlockerCollision(Component);
 		}
 	}
 
@@ -300,6 +335,7 @@ void AVideoPlacementActor::ClearGenerated()
 		{
 			Component->SetVisibility(false);
 			Component->SetHiddenInGame(true);
+			DisableVideoBlockerCollision(Component);
 		}
 	}
 
@@ -309,6 +345,7 @@ void AVideoPlacementActor::ClearGenerated()
 		{
 			Component->SetVisibility(false);
 			Component->SetHiddenInGame(true);
+			DisableVideoBlockerCollision(Component);
 		}
 	}
 }
@@ -514,6 +551,7 @@ void AVideoPlacementActor::PlaceUPMComponents(const FVector& TVCenterLocation)
 			Component->SetRelativeScale3D(UPMScale);
 			Component->SetVisibility(true);
 			Component->SetHiddenInGame(false);
+			ConfigureActiveVideoCollision(Component, bBlockPawnCollision, bAffectNavigation);
 			ExpandGeneratedBounds(Component->GetStaticMesh()->GetBoundingBox().TransformBy(Component->GetRelativeTransform()));
 		}
 	};
@@ -536,6 +574,7 @@ void AVideoPlacementActor::PlaceStaticMeshComponent(UStaticMeshComponent* Compon
 	Component->SetRelativeScale3D(Scale);
 	Component->SetVisibility(true);
 	Component->SetHiddenInGame(false);
+	ConfigureActiveVideoCollision(Component, bBlockPawnCollision, bAffectNavigation);
 	ExpandGeneratedBounds(Mesh->GetBoundingBox().TransformBy(Component->GetRelativeTransform()));
 }
 

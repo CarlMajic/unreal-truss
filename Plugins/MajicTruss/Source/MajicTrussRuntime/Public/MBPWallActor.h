@@ -20,7 +20,8 @@ enum class EMBPPanelStyle : uint8
 	Shimmer UMETA(DisplayName = "Shimmer"),
 	Hive UMETA(DisplayName = "Hive"),
 	Platinum UMETA(DisplayName = "Platinum"),
-	Custom UMETA(DisplayName = "Custom")
+	Custom UMETA(DisplayName = "Custom"),
+	Blank UMETA(DisplayName = "Blank Frame")
 };
 
 UENUM(BlueprintType)
@@ -106,6 +107,15 @@ struct FMBPWallDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall")
 	bool bCenterOnActor = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Supports", meta = (ClampMin = "1"))
+	int32 SupportInterval = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Supports")
+	bool bLeftCap = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Supports")
+	bool bRightCap = false;
 };
 
 UCLASS(BlueprintType)
@@ -167,6 +177,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall")
 	bool bBuildOnConstruction = true;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Wall|Web Import", meta = (ClampMin = "1"))
+	int32 ImportedLayoutVersion = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Web Import", meta = (DisplayName = "JSON File", FilePathFilter = "json"))
+	FString ImportedJsonFile;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Supports", meta = (ClampMin = "1"))
+	int32 SupportInterval = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Supports")
+	bool bLeftCap = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall|Supports")
+	bool bRightCap = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall")
 	TArray<FMBPPanelSlot> PanelSlots;
 
@@ -214,6 +239,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Wall")
 	void SetSelectionHighlighted(bool bHighlighted);
+
+	UFUNCTION(BlueprintCallable, Category = "Wall|Web Import")
+	bool ImportWebLayoutFromJson(const FString& JsonText, FString& OutError);
+
+	UFUNCTION(BlueprintCallable, Category = "Wall|Web Import")
+	bool ImportWebLayoutFromJsonFile(const FString& FilePath, FString& OutError);
+
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Wall", meta = (DisplayName = "Import Web JSON"))
+	void ImportWebLayoutWithFilePicker();
 
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Wall")
 	void ResetSlotsToDefault();

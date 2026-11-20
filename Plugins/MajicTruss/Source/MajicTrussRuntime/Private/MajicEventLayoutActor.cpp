@@ -429,6 +429,8 @@ bool ApplyTruss(ATrussStructureActor& Actor, const FObj& Params, TArray<FString>
 		Definition.RectangleLengthFt = Num(Params, TEXT("length_ft"), Definition.RectangleLengthFt);
 		Definition.RectangleWidthFt = Num(Params, TEXT("width_ft"), Definition.RectangleWidthFt);
 		Definition.RectangleHeightFt = Num(Params, TEXT("height_ft"), Definition.RectangleHeightFt);
+		Definition.RectangleLengthBays = FMath::Clamp(FMath::RoundToInt(Num(Params, TEXT("length_bays"), 1.0)), 1, 20);
+		Definition.RectangleWidthBays = FMath::Clamp(FMath::RoundToInt(Num(Params, TEXT("width_bays"), 1.0)), 1, 20);
 	}
 	else if (Shape == TEXT("tower"))
 	{
@@ -488,6 +490,8 @@ FObj ReadTruss(const ATrussStructureActor& Actor, const FObj& Stamped)
 		Out->SetNumberField(TEXT("length_ft"), Round4(Definition.RectangleLengthFt));
 		Out->SetNumberField(TEXT("width_ft"), Round4(Definition.RectangleWidthFt));
 		Out->SetNumberField(TEXT("height_ft"), Round4(Definition.RectangleHeightFt));
+		Out->SetNumberField(TEXT("length_bays"), Definition.RectangleLengthBays);
+		Out->SetNumberField(TEXT("width_bays"), Definition.RectangleWidthBays);
 		break;
 	case ETrussBuildMode::Tower:
 		Out->SetStringField(TEXT("shape"), TEXT("tower"));

@@ -111,6 +111,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video")
 	bool bBuildOnConstruction = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Collision")
+	bool bBlockPawnCollision = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Collision")
+	bool bAffectNavigation = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Video|Assets")
 	TObjectPtr<UTrussInventoryDataAsset> Inventory = nullptr;
 

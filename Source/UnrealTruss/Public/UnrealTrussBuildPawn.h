@@ -34,6 +34,7 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+	virtual UPawnMovementComponent* GetMovementComponent() const override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -103,6 +104,9 @@ private:
 	TObjectPtr<AActor> HoveredEditSelectionActor;
 
 	UPROPERTY(Transient)
+	TObjectPtr<AActor> MovingEditedActor;
+
+	UPROPERTY(Transient)
 	FVector HoveredTrussHitLocation = FVector::ZeroVector;
 
 	UPROPERTY(Transient)
@@ -144,9 +148,12 @@ private:
 	bool bProjectionEditSelectionModeActive = false;
 	bool bAudioEditSelectionModeActive = false;
 	bool bEditSelectionModeActive = false;
+	bool bEditMoveModeActive = false;
+	bool bBuildPreviewOnlyFromMenu = false;
 	float MoveForwardValue = 0.0f;
 	float MoveRightValue = 0.0f;
 	float MoveUpValue = 0.0f;
+	FTransform MovingEditedActorOriginalTransform = FTransform::Identity;
 
 	void MoveForward(float Value);
 	void MoveRight(float Value);
@@ -176,6 +183,14 @@ private:
 	void ClearHoveredEditSelection();
 	void UpdateHoveredEditSelection();
 	void SetEditableActorSelectionHighlighted(AActor* Actor, bool bHighlighted);
+	void BeginMoveEditedActor();
+	void UpdateMovingEditedActor();
+	void FinishMoveEditedActor(bool bReopenEditMenu);
+	AActor* GetCurrentEditingActor() const;
+	void RotateCurrentEditedActor(float Direction);
+	FVector SnapMoveLocationForCurrentEdit(const FVector& Location) const;
+	void ClearCurrentEditTargets();
+	void SetCurrentEditTargetHighlighted(bool bHighlighted);
 	void DrawEditSubSelectionPreview(const FHitResult& HitResult, AMBPWallActor* MBPWallActor, AStageDeckActor* StageDeckActor) const;
 	bool TraceForTrussHit(FHitResult& OutHitResult, ATrussStructureActor*& OutActor) const;
 	void BeginLightPlacementSelection();
@@ -184,6 +199,12 @@ private:
 	void HandleBuildItemSelected(UBuildItemDataAsset* SelectedItem);
 	UFUNCTION()
 	void HandleBuildMenuActionRequested();
+	UFUNCTION()
+	void HandleBuildMenuMoveRequested();
+	UFUNCTION()
+	void HandleBuildMenuRotateRequested();
+	UFUNCTION()
+	void HandleBuildMenuDeleteRequested();
 	UFUNCTION()
 	void HandleLightPlacementActionRequested();
 	UFUNCTION()

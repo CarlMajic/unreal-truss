@@ -68,6 +68,12 @@ struct FTrussBuildDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "0.0", Units = "ft"))
 	float RectangleHeightFt = 10.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 RectangleLengthBays = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 RectangleWidthBays = 1;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arch", meta = (ClampMin = "4.0", Units = "ft"))
 	float ArchHeightFt = 12.0f;
 
@@ -193,6 +199,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "0.0", Units = "ft"))
 	float RectangleHeightFt = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 RectangleLengthBays = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 RectangleWidthBays = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rectangle", meta = (Units = "cm"))
 	float RectangleYRunXOffsetCm = 30.48f;
@@ -327,6 +339,21 @@ public:
 	bool GetFixtureMountTransform(const FVector& WorldHitLocation, ETrussSlingType SlingType, FTransform& OutWorldTransform) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Truss|Rigging")
+	bool BuildMountedFixtureDefinition(TSubclassOf<AActor> FixtureClass, ETrussSlingType SlingType, const FVector& WorldHitLocation, FMountedFixtureDefinition& OutDefinition) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Truss|Rigging")
+	bool GetFixtureMountTransformFromDefinition(const FMountedFixtureDefinition& FixtureDefinition, FTransform& OutWorldTransform) const;
+
+	// Free mounting: the nearest rail of the nearest horizontal truss piece to a world point, as a
+	// transform relative to this truss. Works for every shape, including rectangle bay runs.
+	UFUNCTION(BlueprintCallable, Category = "Truss|Rigging")
+	bool FindNearestRailMount(const FVector& WorldPoint, ETrussSlingType SlingType, FTransform& OutLocalTransform) const;
+
+	// Moves every attached light back to the nearest rail, for lights a resize left floating.
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Truss|Rigging")
+	void ResnapLights();
+
+	UFUNCTION(BlueprintCallable, Category = "Truss|Rigging")
 	bool AddMountedFixtureDefinition(TSubclassOf<AActor> FixtureClass, ETrussSlingType SlingType, const FVector& WorldHitLocation, bool bRespawnFixtures = true);
 
 	UFUNCTION(BlueprintCallable, Category = "Truss|Rigging")
@@ -363,7 +390,6 @@ private:
 	FBox GetGeneratedBounds() const;
 	void ExpandGeneratedBounds(const FBox& Bounds);
 	void DestroyMountedFixtureActors();
-	bool GetFixtureMountTransformFromDefinition(const FMountedFixtureDefinition& FixtureDefinition, FTransform& OutWorldTransform) const;
 	ETrussFixtureRail GetClosestFixtureRail(const FVector& LocalHitLocation, ETrussSlingType SlingType) const;
 	ETrussFixtureSpan GetClosestFixtureSpan(const FVector& LocalHitLocation) const;
 	TArray<float> GetFixtureRailMinZCandidates() const;

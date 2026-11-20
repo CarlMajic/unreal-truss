@@ -3,9 +3,20 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Dom/JsonObject.h"
+#include "Misc/FileHelper.h"
+#include "Misc/MessageDialog.h"
+#include "Misc/Paths.h"
 #include "UObject/UnrealType.h"
 #include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+
+#if WITH_EDITOR
+#include "DesktopPlatformModule.h"
+#include "IDesktopPlatform.h"
+#endif
 
 namespace
 {
@@ -20,6 +31,8 @@ FString GetStyleAssetFolder(EMBPPanelStyle Style)
 	case EMBPPanelStyle::Empty:
 	case EMBPPanelStyle::Custom:
 		return FString();
+	case EMBPPanelStyle::Blank:
+		return TEXT("/Game/Majic_Gear/MBP/Extra_Frame/StaticMeshes");
 	case EMBPPanelStyle::Acrylic:
 		return TEXT("/Game/Majic_Gear/MBP/Acrylic_Segment/StaticMeshes");
 	case EMBPPanelStyle::Boxwood:
@@ -67,6 +80,84 @@ FString GetExtraFrameAssetFolder()
 
 constexpr int32 ShimmerPlaneColumns = 30;
 constexpr int32 ShimmerPlaneRows = 30;
+
+bool ReadRequiredPositiveNumber(const TSharedPtr<FJsonObject>& Object, const TCHAR* FieldName, double& OutValue, FString& OutError)
+{
+	if (!Object->TryGetNumberField(FieldName, OutValue) || OutValue <= 0.0)
+	{
+		OutError = FString::Printf(TEXT("%s must be a number greater than zero."), FieldName);
+		return false;
+	}
+	return true;
+}
+
+FString NormalizeWebStyle(FString Style)
+{
+	Style.TrimStartAndEndInline();
+	Style.ToLowerInline();
+	Style.ReplaceInline(TEXT("-"), TEXT("_"));
+	Style.ReplaceInline(TEXT(" "), TEXT(""));
+	return Style;
+}
+
+bool ResolveWebStyle(const FString& RawStyle, EMBPPanelStyle& OutStyle, EMBPShimmerVariant& OutShimmerVariant)
+{
+	const FString Style = NormalizeWebStyle(RawStyle.IsEmpty() ? TEXT("empty") : RawStyle);
+	OutShimmerVariant = EMBPShimmerVariant::Gold;
+
+	if (Style == TEXT("empty")) OutStyle = EMBPPanelStyle::Empty;
+	else if (Style == TEXT("blank")) OutStyle = EMBPPanelStyle::Blank;
+	else if (Style == TEXT("acrylic")) OutStyle = EMBPPanelStyle::Acrylic;
+	else if (Style == TEXT("platinum")) OutStyle = EMBPPanelStyle::Platinum;
+	else if (Style == TEXT("hive")) OutStyle = EMBPPanelStyle::Hive;
+	else if (Style == TEXT("drift")) OutStyle = EMBPPanelStyle::Drift;
+	else if (Style == TEXT("diamond") || Style == TEXT("geowall") || Style == TEXT("geo")) OutStyle = EMBPPanelStyle::Geo;
+	else if (Style == TEXT("greenwall")) OutStyle = EMBPPanelStyle::Boxwood;
+	else if (Style == TEXT("shimmer") || Style == TEXT("goldshimmer")) OutStyle = EMBPPanelStyle::Shimmer;
+	else if (Style == TEXT("redshimmer"))
+	{
+		OutStyle = EMBPPanelStyle::Shimmer;
+		OutShimmerVariant = EMBPShimmerVariant::Red;
+	}
+	else if (Style == TEXT("fushashimmer") || Style == TEXT("fuchsiashimmer"))
+	{
+		OutStyle = EMBPPanelStyle::Shimmer;
+		OutShimmerVariant = EMBPShimmerVariant::Fuchsia;
+	}
+	else if (Style == TEXT("holographicshimmer"))
+	{
+		OutStyle = EMBPPanelStyle::Shimmer;
+		OutShimmerVariant = EMBPShimmerVariant::Holographic;
+	}
+	else return false;
+
+	return true;
+}
+
+bool ResolveSupportInterval(const TSharedPtr<FJsonValue>& Value, int32& OutInterval)
+{
+	if (!Value.IsValid())
+	{
+		OutInterval = 2;
+		return true;
+	}
+	if (Value->Type == EJson::Number)
+	{
+		const double Number = Value->AsNumber();
+		OutInterval = FMath::RoundToInt(Number);
+		return FMath::IsNearlyEqual(Number, static_cast<double>(OutInterval)) && OutInterval >= 1;
+	}
+
+	FString Key = Value->AsString();
+	Key.TrimStartAndEndInline();
+	Key.ToLowerInline();
+	if (Key == TEXT("every") || Key == TEXT("every_column")) OutInterval = 1;
+	else if (Key == TEXT("every_other") || Key == TEXT("every_2nd")) OutInterval = 2;
+	else if (Key == TEXT("every_third") || Key == TEXT("every_3rd")) OutInterval = 3;
+	else if (Key == TEXT("ends") || Key == TEXT("ends_only")) OutInterval = 99;
+	else return false;
+	return true;
+}
 }
 
 AMBPWallActor::AMBPWallActor()
@@ -115,6 +206,15 @@ void AMBPWallActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChange
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMBPWallActor, ImportedJsonFile) && !ImportedJsonFile.IsEmpty())
+	{
+		FString Error;
+		if (!ImportWebLayoutFromJsonFile(ImportedJsonFile, Error))
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Error), FText::FromString(TEXT("MBP Import Failed")));
+		}
+		return;
+	}
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AMBPWallActor, BatchTargetIndex) ||
 		PropertyName == GET_MEMBER_NAME_CHECKED(AMBPWallActor, BatchEditAxis) ||
 		PropertyName == GET_MEMBER_NAME_CHECKED(AMBPWallActor, BatchStyle) ||
@@ -216,7 +316,7 @@ void AMBPWallActor::RebuildWall()
 				}
 			}
 
-			if (!FMath::IsNearlyZero(SnappedDepthOffsetCm))
+			if (Slot.Style != EMBPPanelStyle::Blank && !FMath::IsNearlyZero(SnappedDepthOffsetCm))
 			{
 				for (const FSoftObjectPath& MeshPath : GetExtraFrameMeshPaths())
 				{
@@ -259,6 +359,9 @@ void AMBPWallActor::ApplyWallDefinition(const FMBPWallDefinition& Definition, bo
 	VerticalSpacingCm = Definition.VerticalSpacingCm;
 	DepthOffsetStepCm = Definition.DepthOffsetStepCm;
 	bCenterOnActor = Definition.bCenterOnActor;
+	SupportInterval = FMath::Max(1, Definition.SupportInterval);
+	bLeftCap = Definition.bLeftCap;
+	bRightCap = Definition.bRightCap;
 
 	if (bResetSlotsToDefault)
 	{
@@ -288,7 +391,184 @@ FMBPWallDefinition AMBPWallActor::GetWallDefinition() const
 	Definition.VerticalSpacingCm = VerticalSpacingCm;
 	Definition.DepthOffsetStepCm = DepthOffsetStepCm;
 	Definition.bCenterOnActor = bCenterOnActor;
+	Definition.SupportInterval = SupportInterval;
+	Definition.bLeftCap = bLeftCap;
+	Definition.bRightCap = bRightCap;
 	return Definition;
+}
+
+bool AMBPWallActor::ImportWebLayoutFromJson(const FString& JsonText, FString& OutError)
+{
+	OutError.Reset();
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		OutError = TEXT("The selected file is not valid JSON.");
+		return false;
+	}
+
+	double VersionNumber = 1.0;
+	Root->TryGetNumberField(TEXT("version"), VersionNumber);
+	const int32 Version = FMath::RoundToInt(VersionNumber);
+	if (!FMath::IsNearlyEqual(VersionNumber, static_cast<double>(Version)) || (Version != 1 && Version != 2))
+	{
+		OutError = FString::Printf(TEXT("Unsupported MBP layout version: %g."), VersionNumber);
+		return false;
+	}
+
+	double WidthFt = 12.0;
+	double HeightFt = 9.0;
+	if (Root->HasField(TEXT("width_ft")) && !ReadRequiredPositiveNumber(Root, TEXT("width_ft"), WidthFt, OutError)) return false;
+	if (Root->HasField(TEXT("height_ft")) && !ReadRequiredPositiveNumber(Root, TEXT("height_ft"), HeightFt, OutError)) return false;
+
+	int32 ImportedSupportInterval = 2;
+	if (!ResolveSupportInterval(Root->TryGetField(TEXT("support_spacing")), ImportedSupportInterval))
+	{
+		OutError = TEXT("Unsupported support spacing. Use every, every_other, every_third, or ends.");
+		return false;
+	}
+
+	const int32 ImportedColumns = FMath::Max(1, FMath::RoundToInt(WidthFt / 3.0));
+	const int32 ImportedRows = FMath::Max(1, FMath::FloorToInt(HeightFt / 3.0));
+	TArray<FMBPPanelSlot> ImportedSlots;
+	ImportedSlots.SetNum(ImportedColumns * ImportedRows);
+	for (FMBPPanelSlot& Slot : ImportedSlots)
+	{
+		Slot.Style = EMBPPanelStyle::Empty;
+		Slot.ShimmerVariant = EMBPShimmerVariant::Gold;
+		Slot.DepthOffsetCm = 0.0f;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* Cells = nullptr;
+	if (Root->TryGetArrayField(TEXT("cells"), Cells))
+	{
+		for (const TSharedPtr<FJsonValue>& CellValue : *Cells)
+		{
+			const TSharedPtr<FJsonObject> Cell = CellValue.IsValid() ? CellValue->AsObject() : nullptr;
+			if (!Cell.IsValid())
+			{
+				OutError = TEXT("Each layout cell must be a JSON object.");
+				return false;
+			}
+
+			double RowNumber = 0.0;
+			double ColumnNumber = 0.0;
+			if (!Cell->TryGetNumberField(TEXT("row"), RowNumber) || !Cell->TryGetNumberField(TEXT("col"), ColumnNumber))
+			{
+				OutError = TEXT("Each layout cell must have integer row and col values.");
+				return false;
+			}
+			const int32 Row = FMath::RoundToInt(RowNumber);
+			const int32 Column = FMath::RoundToInt(ColumnNumber);
+			if (!FMath::IsNearlyEqual(RowNumber, static_cast<double>(Row)) ||
+				!FMath::IsNearlyEqual(ColumnNumber, static_cast<double>(Column)) || Row < 0 || Column < 0)
+			{
+				OutError = TEXT("Cell row and column must be non-negative integers.");
+				return false;
+			}
+
+			FString WebStyle = TEXT("empty");
+			Cell->TryGetStringField(TEXT("style"), WebStyle);
+			EMBPPanelStyle PanelStyle = EMBPPanelStyle::Empty;
+			EMBPShimmerVariant ShimmerVariant = EMBPShimmerVariant::Gold;
+			if (!ResolveWebStyle(WebStyle, PanelStyle, ShimmerVariant))
+			{
+				OutError = FString::Printf(TEXT("Unsupported MBP panel style: \"%s\"."), *WebStyle);
+				return false;
+			}
+
+			double DepthNumber = 0.0;
+			if (Cell->HasField(TEXT("depth_in")) && !Cell->TryGetNumberField(TEXT("depth_in"), DepthNumber))
+			{
+				OutError = TEXT("Cell depth_in must be an integer.");
+				return false;
+			}
+			const int32 DepthIn = FMath::RoundToInt(DepthNumber);
+			if (!FMath::IsNearlyEqual(DepthNumber, static_cast<double>(DepthIn)) ||
+				(DepthIn != 0 && DepthIn != 12 && DepthIn != 24 && DepthIn != 36))
+			{
+				OutError = TEXT("Cell depth must be 0, 12, 24, or 36 inches.");
+				return false;
+			}
+
+			if (Row < ImportedRows && Column < ImportedColumns)
+			{
+				FMBPPanelSlot& Slot = ImportedSlots[(Row * ImportedColumns) + Column];
+				Slot.Style = PanelStyle;
+				Slot.ShimmerVariant = ShimmerVariant;
+				Slot.DepthOffsetCm = static_cast<float>(DepthIn) * 2.54f;
+			}
+		}
+	}
+	else if (Root->HasField(TEXT("cells")))
+	{
+		OutError = TEXT("Layout cells must be a list.");
+		return false;
+	}
+
+	Modify();
+	Columns = ImportedColumns;
+	Rows = ImportedRows;
+	PanelWidthCm = 91.44f;
+	PanelHeightCm = 91.44f;
+	DepthOffsetStepCm = 30.48f;
+	SupportInterval = ImportedSupportInterval;
+	bLeftCap = false;
+	bRightCap = false;
+	Root->TryGetBoolField(TEXT("left_cap"), bLeftCap);
+	Root->TryGetBoolField(TEXT("right_cap"), bRightCap);
+	ImportedLayoutVersion = Version;
+	PanelSlots = MoveTemp(ImportedSlots);
+	bHasCachedDefaultStyle = true;
+	CachedDefaultStyle = DefaultStyle;
+	CachedDefaultShimmerVariant = DefaultShimmerVariant;
+	CachedDefaultShimmerMaterial = DefaultShimmerMaterial;
+	RebuildWall();
+	MarkPackageDirty();
+	return true;
+}
+
+bool AMBPWallActor::ImportWebLayoutFromJsonFile(const FString& FilePath, FString& OutError)
+{
+	FString JsonText;
+	if (!FFileHelper::LoadFileToString(JsonText, *FilePath))
+	{
+		OutError = FString::Printf(TEXT("Could not read JSON file: %s"), *FilePath);
+		return false;
+	}
+	if (!ImportWebLayoutFromJson(JsonText, OutError))
+	{
+		return false;
+	}
+	ImportedJsonFile = FPaths::ConvertRelativePathToFull(FilePath);
+	return true;
+}
+
+void AMBPWallActor::ImportWebLayoutWithFilePicker()
+{
+#if WITH_EDITOR
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("The file picker is unavailable.")));
+		return;
+	}
+
+	TArray<FString> SelectedFiles;
+	const FString StartDirectory = ImportedJsonFile.IsEmpty() ? FPaths::ProjectDir() : FPaths::GetPath(ImportedJsonFile);
+	if (!DesktopPlatform->OpenFileDialog(nullptr, TEXT("Import MBP Web Layout"), StartDirectory, TEXT(""),
+		TEXT("MBP Layout JSON (*.json)|*.json"), EFileDialogFlags::None, SelectedFiles) || SelectedFiles.IsEmpty())
+	{
+		return;
+	}
+
+	FString Error;
+	if (!ImportWebLayoutFromJsonFile(SelectedFiles[0], Error))
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Error), FText::FromString(TEXT("MBP Import Failed")));
+	}
+#endif
 }
 
 bool AMBPWallActor::GetSlotIndicesFromWorldLocation(const FVector& WorldLocation, int32& OutRow, int32& OutColumn) const
@@ -437,7 +717,6 @@ void AMBPWallActor::SyncSlotsToDefaultStyleIfNeeded()
 {
 	if (!bHasCachedDefaultStyle)
 	{
-		ApplyDefaultStyleToAllSlots();
 		bHasCachedDefaultStyle = true;
 		CachedDefaultStyle = DefaultStyle;
 		CachedDefaultShimmerVariant = DefaultShimmerVariant;
